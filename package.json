@@ -1,7 +1,7 @@
 {
   "name": "sita-servis-planlayici",
   "productName": "Sita Yapı",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Vitra yetkili servis için günlük randevu, rota ve teknisyen takip uygulaması",
   "private": true,
   "main": "electron/main.js",
