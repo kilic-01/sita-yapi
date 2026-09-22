@@ -115,7 +115,19 @@ app.whenReady().then(async () => {
   });
 
   if (!isDev) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    // package.json'daki "publish" alanı (GitHub Releases, kilic-01/sita-yapi)
+    // sayesinde checkForUpdatesAndNotify() açılışta GitHub'daki en son
+    // sürümü kontrol eder; daha yenisi varsa indirir ve OS'in kendi native
+    // bildirimini gösterip yeniden başlatınca kurar — ekstra UI kodu
+    // gerekmez. Hatalar (ör. internet yok) sessizce loglanır, uygulama
+    // açılışını ASLA engellemez.
+    autoUpdater.on("error", (err) => console.error("Güncelleme hatası:", err.message));
+    autoUpdater.on("update-available", (info) => console.log("Güncelleme mevcut:", info.version));
+    autoUpdater.on("update-not-available", () => console.log("Uygulama güncel."));
+    autoUpdater.on("update-downloaded", (info) =>
+      console.log("Güncelleme indirildi, yeniden başlatılınca kurulacak:", info.version)
+    );
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => console.error("Güncelleme kontrolü başarısız:", err.message));
   }
 });
 

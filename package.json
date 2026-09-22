@@ -11,6 +11,8 @@
     "build:renderer": "vite build",
     "build": "npm run build:renderer && electron-builder --mac",
     "build:win": "npm run build:renderer && electron-builder --win",
+    "publish:mac": "npm run build:renderer && electron-builder --mac --publish always",
+    "publish:win": "npm run build:renderer && electron-builder --win --publish always",
     "phone-test": "npm run build:renderer && cross-env NODE_ENV=development node server/index.js",
     "test": "node --test electron/"
   },
@@ -53,6 +55,11 @@
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "kilic-01",
+      "repo": "sita-yapi"
+    },
     "mac": {
       "category": "public.app-category.business",
       "icon": "assets/icon-mac.png"
