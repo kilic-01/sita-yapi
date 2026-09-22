@@ -215,6 +215,15 @@ ipcMain.handle("users:update", (_e, { id, patch, actingUserId }) => handlers.upd
 ipcMain.handle("users:delete", (_e, { id, actingUserId }) => handlers.deleteUser(id, actingUserId));
 ipcMain.handle("auth:login", (_e, { name, password }) => handlers.login(name, password));
 
+// "Beni Hatırla" işaretliyken localStorage'a yazılan rememberedUserId,
+// Chromium tarafından periyodik/boşta kaldığında diske yazılıyor — kullanıcı
+// giriş yaptıktan hemen sonra uygulamayı kapatırsa (özellikle ilk kurulumda
+// hemen denerken) bu yazma diske YANSIMADAN kaybolabiliyordu, bir sonraki
+// açılışta "beni hatırla" hiç çalışmamış gibi görünüyordu. Renderer, ilgili
+// localStorage.setItem'dan HEMEN SONRA bunu çağırıp yazmayı zorla diske
+// yazdırıyor.
+ipcMain.handle("app:flushStorage", () => mainWindow?.webContents.session.flushStorageData());
+
 ipcMain.handle("activityLog:list", (_e, opts) => handlers.listActivityLog(opts));
 
 // Doğrudan yazıcıya göndermek yerine, önce Chromium'un kendi PDF

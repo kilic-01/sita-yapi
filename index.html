@@ -88,6 +88,7 @@
             updateUser: (id, patch) => call("PUT", `/users/${id}`, patch),
             deleteUser: (id) => call("DELETE", `/users/${id}`),
             login: (name, password) => call("POST", "/login", { name, password }),
+            flushStorage: () => Promise.resolve(),
             printCurrent: (_opts) => {
               window.print();
               return Promise.resolve();

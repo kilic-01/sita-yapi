@@ -401,7 +401,15 @@ export default function App() {
     const user = await window.api.addUser(name, password, "admin");
     setUsers([user]);
     setCurrentUser(user);
-    if (remember) localStorage.setItem("rememberedUserId", user.id);
+    if (remember) {
+      localStorage.setItem("rememberedUserId", user.id);
+      // Chromium bu yazmayı periyodik/boşta kaldığında diske yansıtır —
+      // kullanıcı girişten hemen sonra uygulamayı kapatırsa (özellikle ilk
+      // kurulumda hemen denerken) yazma diske işlenmeden kaybolup bir
+      // sonraki açılışta "beni hatırla" hiç çalışmamış gibi görünebiliyordu.
+      // Hemen zorla diske yazdırıyoruz.
+      window.api.flushStorage?.();
+    }
   }
 
   async function handleLogin(name, password, remember) {
@@ -412,6 +420,7 @@ export default function App() {
       // girişte önceden hatırlanan oturumu SİLMEYİZ — bunu sadece "Çıkış" yapar.
       if (remember) {
         localStorage.setItem("rememberedUserId", user.id);
+        window.api.flushStorage?.();
       }
       return true;
     }

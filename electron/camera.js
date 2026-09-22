@@ -8,7 +8,18 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegPathRaw from "ffmpeg-static";
+
+// ffmpeg-static'in kendi hesapladığı yol, paketlenmiş uygulamada HÂLÂ
+// "app.asar" içini gösteriyor — ama gerçek çalıştırılabilir dosya
+// package.json'daki asarUnpack sayesinde "app.asar.unpacked" klasörüne
+// çıkarılıyor. spawn(), asar arşivinin İÇİNDEKİ bir binary'yi doğrudan
+// çalıştıramaz (Node'un fs/require'ı asar'ı şeffaf okusa da, spawn işletim
+// sisteminin kendi dosya sistemine gerçek bir yol ister) — bu yüzden
+// "Error: spawn ENOTDIR" ile başarısız oluyordu. Yolu unpacked konuma
+// çeviriyoruz; geliştirme modunda zaten "app.asar" hiç geçmediği için bu
+// değişiklik etkisiz kalır.
+const ffmpegPath = ffmpegPathRaw.replace("app.asar", "app.asar.unpacked");
 
 const HTTP_PORT = 17342;
 const IDLE_TIMEOUT_MS = 90_000;
@@ -147,6 +158,16 @@ export function ensureHttpServer() {
       });
       res.end(data);
     });
+  });
+  // Sunucu hatası (ör. port zaten kullanımda — aynı bilgisayarda hem
+  // geliştirme hem paketlenmiş sürüm aynı anda açık kaldığında olur)
+  // dinleyicisiz bırakılırsa Node bunu "uncaught exception" olarak
+  // fırlatıp TÜM uygulamayı çökertiyordu. Artık sadece loglanıp kamera
+  // özelliği devre dışı kalıyor — geri kalan uygulama normal çalışmaya
+  // devam ediyor.
+  server.on("error", (err) => {
+    console.error("Kamera sunucusu başlatılamadı:", err.message);
+    server = null;
   });
   server.listen(HTTP_PORT, "127.0.0.1");
 

@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld("api", {
   updateUser: (id, patch, actingUserId) => ipcRenderer.invoke("users:update", { id, patch, actingUserId }),
   deleteUser: (id, actingUserId) => ipcRenderer.invoke("users:delete", { id, actingUserId }),
   login: (name, password) => ipcRenderer.invoke("auth:login", { name, password }),
+  flushStorage: () => ipcRenderer.invoke("app:flushStorage"),
 
   listActivityLog: (opts) => ipcRenderer.invoke("activityLog:list", opts),
 
