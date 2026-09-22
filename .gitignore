@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+.DS_Store
+
+# Gerçek API anahtarları/Supabase kimlik bilgileri burada — asla commit'lenmez.
+# Şablon için electron/config.example.js'e bakın.
+electron/config.js

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sita Yapı</title>
+    <script>
+      // Electron içinde preload.cjs zaten window.api'yi tanımlar. Bir tarayıcıda
+      // (örn. telefonda test için) açıldığında window.api yoktur — burada
+      // aynı isimlerle çalışan, HTTP üzerinden server/index.js'e konuşan bir
+      // köprü tanımlanır. Böylece React bileşenlerinin hiçbiri değişmeden
+      // hem masaüstü hem tarayıcı üzerinden çalışabilir.
+      if (!window.api) {
+        (function () {
+          async function call(method, path, body) {
+            const res = await fetch("/api" + path, {
+              method,
+              headers: { "Content-Type": "application/json" },
+              body: body !== undefined ? JSON.stringify(body) : undefined,
+            });
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : undefined;
+            if (!res.ok) throw new Error(data?.message || "İstek başarısız");
+            return data;
+          }
+
+          window.api = {
+            listAppointments: () => call("GET", "/appointments"),
+            addAppointment: (input) => call("POST", "/appointments", input),
+            updateAppointment: (id, patch) => call("PUT", `/appointments/${id}`, patch),
+            deleteAppointment: (id) => call("DELETE", `/appointments/${id}`),
+            setAppointmentStatus: (id, status, actingUserId) =>
+              call("PUT", `/appointments/${id}/status`, { status, actingUserId }),
+            reassignAppointment: (id, technicianId, actingUserId) =>
+              call("PUT", `/appointments/${id}/reassign`, { technicianId, actingUserId }),
+            listTechnicians: () => call("GET", "/technicians"),
+            setTechnicians: (list) => call("PUT", "/technicians", list),
+            listOfficeStaff: () => call("GET", "/office-staff"),
+            setOfficeStaff: (list, actingUserId) => call("PUT", "/office-staff", { list, actingUserId }),
+            listHolidays: () => call("GET", "/holidays"),
+            setHolidays: (list, actingUserId) => call("PUT", "/holidays", { list, actingUserId }),
+            listPendingParts: () => call("GET", "/pending-parts"),
+            addPendingPart: (input) => call("POST", "/pending-parts", input),
+            updatePendingPart: (id, patch) => call("PUT", `/pending-parts/${id}`, patch),
+            deletePendingPart: (id, actingUserId) => call("DELETE", `/pending-parts/${id}`, { actingUserId }),
+            markPendingPartReminderSent: (id, userId) =>
+              call("PUT", `/pending-parts/${id}/mark-reminder-sent`, { userId }),
+            listPartCheckouts: () => call("GET", "/part-checkouts"),
+            addPartCheckout: (input) => call("POST", "/part-checkouts", input),
+            reconcilePartCheckout: (id, patch) => call("PUT", `/part-checkouts/${id}/reconcile`, patch),
+            updatePartCheckout: (id, patch) => call("PUT", `/part-checkouts/${id}`, patch),
+            deletePartCheckout: (id, actingUserId) => call("DELETE", `/part-checkouts/${id}`, { actingUserId }),
+            listIncomingOrders: () => call("GET", "/incoming-orders"),
+            addIncomingOrder: (input) => call("POST", "/incoming-orders", input),
+            updateIncomingOrder: (id, patch) => call("PUT", `/incoming-orders/${id}`, patch),
+            deleteIncomingOrder: (id, actingUserId) => call("DELETE", `/incoming-orders/${id}`, { actingUserId }),
+            markIncomingOrderReminderNotified: (id, userId) =>
+              call("PUT", `/incoming-orders/${id}/mark-reminder-notified`, { userId }),
+            dismissIncomingOrderReminder: (id, userId) =>
+              call("PUT", `/incoming-orders/${id}/dismiss-reminder`, { userId }),
+            // Realtime (Supabase) ve WhatsApp gömülü görünümü sadece masaüstü
+            // uygulamasında mevcut — tarayıcı köprüsünde zararsız no-op'lar.
+            onSyncStatusChange: () => () => {},
+            showWhatsApp: () => Promise.resolve(),
+            hideWhatsApp: () => Promise.resolve(),
+            reloadWhatsApp: () => Promise.resolve(),
+            setWhatsAppBounds: () => Promise.resolve(),
+            listMessagesFor: (userId) => call("GET", `/messages/${userId}`),
+            sendMessage: (senderId, recipientId, body) => call("POST", "/messages", { senderId, recipientId, body }),
+            markMessagesRead: (currentUserId, otherUserId) => call("PUT", "/messages/read", { currentUserId, otherUserId }),
+            listVehicles: () => call("GET", "/vehicles"),
+            setVehicles: (list) => call("PUT", "/vehicles", list),
+            getSettings: () => call("GET", "/settings"),
+            updateSettings: (patch) => call("PUT", "/settings", patch),
+            buildRoutes: (scheduledDate, actingUserId) =>
+              call("POST", "/routes", { scheduledDate, actingUserId }),
+            getShopLocation: () => call("GET", "/shop-location"),
+            addSale: (input) => call("POST", "/sales", input),
+            getGoogleMapsApiKey: () => call("GET", "/maps/api-key"),
+            getMapUsageCount: () => call("GET", "/maps/usage-count"),
+            incrementMapUsageCount: () => call("POST", "/maps/usage-count/increment"),
+            syncFuelTransactions: (actingUserId) => call("POST", "/fuel/sync", { actingUserId }),
+            listFuelTransactions: () => call("GET", "/fuel"),
+            listFuelDevices: () => call("GET", "/fuel/devices"),
+            listUsers: () => call("GET", "/users"),
+            addUser: (name, password, role, hiddenTabs) =>
+              call("POST", "/users", { name, password, role, hiddenTabs }),
+            updateUser: (id, patch) => call("PUT", `/users/${id}`, patch),
+            deleteUser: (id) => call("DELETE", `/users/${id}`),
+            login: (name, password) => call("POST", "/login", { name, password }),
+            printCurrent: (_opts) => {
+              window.print();
+              return Promise.resolve();
+            },
+            callPhone: (phoneNumber) => {
+              const digits = String(phoneNumber || "").replace(/[^\d+]/g, "");
+              if (digits) window.location.href = "tel:" + digits;
+              return Promise.resolve();
+            },
+            listDepots: () => call("GET", "/depots"),
+            setDepots: (list) => call("PUT", "/depots", list),
+            listStockItems: () => call("GET", "/stock"),
+            setStockItems: (list) => call("PUT", "/stock", list),
+            addStockItem: (item) => call("POST", "/stock", item),
+            updateStockItem: (id, patch) => call("PUT", `/stock/${id}`, patch),
+            deleteStockItem: (id, actingUserId) => call("DELETE", `/stock/${id}`, { actingUserId }),
+            listSuppliers: () => call("GET", "/suppliers"),
+            setSuppliers: (list) => call("PUT", "/suppliers", list),
+            // Tarayıcıda gömülü görünüm mümkün değil, yeni sekmede açılır.
+            showSupplier: (url) => {
+              window.open(url, "_blank");
+              return Promise.resolve();
+            },
+            setSupplierBounds: () => Promise.resolve(),
+            hideSupplier: () => Promise.resolve(),
+            reloadSupplierView: () => Promise.resolve(),
+            // Arka planda gizli pencere açma (otomatik arama) sadece masaüstü
+            // uygulamasında mevcut — tarayıcıda boş liste döner.
+            searchAllSuppliers: () => Promise.resolve([]),
+            // Tedarikçi oturumlarını arka planda "ısıtma" (gizli pencere) ve
+            // yerel dosyaya yedek dışa aktarma sadece masaüstü uygulamasında
+            // mevcut — tarayıcıda zararsız no-op.
+            warmSuppliers: () => Promise.resolve(),
+            exportBackup: () => Promise.reject(new Error("Yedekleme sadece masaüstü uygulamasında yapılabilir.")),
+            onSupplierAutofillFailed: () => () => {},
+            platform: "web",
+            getSystemIdleSeconds: () => Promise.resolve(0),
+            getScreensaverImage: () => Promise.resolve(null),
+            holdAppointmentForLeave: (id, actingUserId) =>
+              call("PUT", `/appointments/${id}/hold-for-leave`, { actingUserId }),
+            listActivityLog: () => call("GET", "/activity-log"),
+            listQuotes: () => call("GET", "/quotes"),
+            addQuote: (input) => call("POST", "/quotes", input),
+            updateQuote: (id, patch) => call("PUT", `/quotes/${id}`, patch),
+            deleteQuote: (id) => call("DELETE", `/quotes/${id}`),
+            // PDF oluşturma/mail/WhatsApp sadece masaüstü uygulamasında
+            // mevcut (dosya sistemi/varsayılan uygulama erişimi gerektirir).
+            generateQuotePdf: () => Promise.resolve(null),
+            openQuoteMailClient: () => Promise.resolve(),
+            openQuoteWhatsapp: () => Promise.resolve(),
+            // Depo kameraları (ffmpeg/RTSP) sadece masaüstü uygulamasında
+            // çalışır — tarayıcı test köprüsünde devre dışı.
+            getCameraSettings: () => Promise.resolve([]),
+            updateCameraSettings: () => Promise.reject(new Error("Kameralar sadece masaüstü uygulamasında yapılandırılabilir.")),
+            startCamera: () => Promise.reject(new Error("Kameralar sadece masaüstü uygulamasında görüntülenebilir.")),
+            stopCamera: () => Promise.resolve(),
+            // Gerçek zamanlı değişiklik bildirimi (Supabase Realtime) sadece
+            // masaüstü uygulamasında — tarayıcıda hiçbir şey yapmayan bir
+            // "abonelik iptal" fonksiyonu döner.
+            onDataChanged: () => () => {},
+          };
+        })();
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

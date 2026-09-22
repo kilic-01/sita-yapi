@@ -1,0 +1,1356 @@
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020;
+}
+
+:root {
+  --navy: #0e2a3b;
+  --teal-1: #3eaca7;
+  --teal-2: #3caca6;
+  --teal-3: #5ec3b2;
+  --green-1: #a2d4ab;
+  --green-2: #61a294;
+  --blue-teal-1: #3b8d92;
+  --blue-teal-2: #327f93;
+  --bg: #f4f8f7;
+  --card-bg: #ffffff;
+  --border: #dbe7e4;
+  --text: #0e2a3b;
+  --text-muted: #5b6b70;
+  --danger: #ff3b30;
+  --success: #34c759;
+  --shadow: 0 1px 3px rgba(14, 42, 59, 0.06);
+
+  /* Apple sistem rengi (System Blue) — buton/aktif sekme vurgusu */
+  --accent: #007aff;
+  --accent-text: #ffffff;
+  --btn-secondary-text: var(--accent);
+  --btn-danger-text: var(--danger);
+
+  /* Header her zaman Apple toolbar mantığıyla açık/koyu temaya göre değişir */
+  --header-bg: #f5f5f7;
+  --header-text: #1d1d1f;
+  --header-border: rgba(0, 0, 0, 0.08);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d10;
+    --card-bg: #17191c;
+    --border: rgba(255, 255, 255, 0.09);
+    --text: #edeef0;
+    --text-muted: #8b8e94;
+    --danger: #ff453a;
+    --success: #30d158;
+    --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --accent: #0a84ff;
+    --header-bg: #1c1c1e;
+    --header-text: #f5f5f7;
+    --header-border: rgba(255, 255, 255, 0.08);
+    --btn-secondary-text: #ffffff;
+    --btn-danger-text: #ffffff;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0d10;
+  --card-bg: #17191c;
+  --border: rgba(255, 255, 255, 0.09);
+  --text: #edeef0;
+  --text-muted: #8b8e94;
+  --danger: #ff453a;
+  --success: #30d158;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --accent: #0a84ff;
+  --header-bg: #1c1c1e;
+  --header-text: #f5f5f7;
+  --header-border: rgba(255, 255, 255, 0.08);
+  --btn-secondary-text: #ffffff;
+  --btn-danger-text: #ffffff;
+  color-scheme: dark;
+}
+
+/* Tedarikçi logoları SVG ise (genelde siyah çizgili logo), koyu modda
+   siyah kısımları beyaza dönsün diye tamamen ters çevriliyor. Renkli
+   PNG/JPG logolara bu sınıf verilmiyor, o yüzden onlar etkilenmez. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .supplier-logo-svg {
+    filter: invert(1);
+  }
+}
+:root[data-theme="dark"] .supplier-logo-svg {
+  filter: invert(1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+small {
+  color: var(--text-muted);
+}
+
+body {
+  margin: 0;
+  /* Mac'te -apple-system Apple'ın kendi sistem fontunu (SF) kullanır —
+     hiçbir font dosyası gömülmeden, sadece işletim sistemine "hangi font
+     kuruluysa onu kullan" der. Windows'ta otomatik olarak kendi sistem
+     fontuna (Segoe UI) düşer. Inter, ikisi de yoksa (örn. Linux) yedektir. */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.splash {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: var(--bg);
+}
+
+.splash img {
+  width: 520px;
+  max-width: 80vw;
+  animation: fadeIn 0.6s ease-in;
+}
+
+.splash-version {
+  color: var(--text);
+  opacity: 0.45;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  animation: fadeIn 0.6s ease-in;
+}
+
+/* Kaydırma çubuğunu görsel olarak gizler ama kaydırma işlevi çalışmaya
+   devam eder — macOS'ta zaten ince/otomatik gizlenen bir kaydırma çubuğu
+   olduğu için fark edilmiyordu, Windows'ta kalın ve hep görünür olduğu
+   için anasayfa widget'larında rahatsız edici duruyordu. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.spin {
+  animation: spin 1.1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.login-screen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: var(--bg);
+}
+
+.login-screen img {
+  width: 380px;
+  max-width: 70vw;
+}
+
+.login-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 260px;
+}
+
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1.25rem;
+  height: 96px;
+  background: color-mix(in srgb, var(--header-bg) 70%, transparent);
+  color: var(--header-text);
+  border-bottom: 1px solid var(--header-border);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.header-logo {
+  height: 100%;
+  max-height: 88px;
+  width: auto;
+  display: block;
+}
+
+.dock {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding: 0.4rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--header-text) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--header-text) 10%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.dock-item {
+  position: relative;
+  height: 40px;
+  border-radius: 11px;
+  border: none;
+  background: transparent;
+  color: var(--header-text);
+  opacity: 0.72;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  transform-origin: bottom center;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease,
+    background 0.15s ease, color 0.15s ease;
+}
+
+.dock-item:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--header-text) 10%, transparent);
+}
+
+.dock-item.active {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.dock-icon {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dock-dot {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.msg-unread-badge {
+  background: var(--danger);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.msg-bubble {
+  max-width: 70%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 14px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.msg-bubble.mine {
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.msg-bubble.theirs {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.messages-dock {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 0;
+  z-index: 500;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  /* Beyaz/açık tasarımda arka planla karışmasın diye tüm panelin (başlık +
+     gövde) etrafına tek, belirgin bir gölge — box-shadow yerine
+     drop-shadow, çünkü iki ayrı köşeli kutudan oluşan panelin tamamını
+     tek bir gölge şekliyle sarar. */
+  filter: drop-shadow(0 8px 28px rgba(0, 0, 0, 0.28));
+}
+
+.messages-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.messages-dock-body {
+  height: 420px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* MessagesDock'un solunda, aynı çubuk deseni — içi gömülü WhatsApp Web
+   (WebContentsView) tarafından dolduruluyor, bkz. WhatsAppDock.jsx. */
+.whatsapp-dock {
+  position: fixed;
+  /* WhatsApp Web'in kendi arayüzü (sohbet listesi + mesaj alanı yan yana)
+     dar bir alanda sıkışıp kullanışsız oluyor — bu yüzden dock geniş
+     açılıyor. Her ekran farklı olduğu için boyut sabit değil: açıkken
+     sağ-alt köşeden elle sürüklenip her bilgisayara göre ayarlanabilir
+     (bkz. WhatsAppDock.jsx — seçilen boyut localStorage'da saklanır). */
+  right: calc(1.5rem + 300px + 0.75rem);
+  bottom: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  filter: drop-shadow(0 8px 28px rgba(0, 0, 0, 0.28));
+}
+
+.whatsapp-dock.is-open {
+  overflow: hidden;
+  min-width: 420px;
+  min-height: 360px;
+  max-width: calc(100vw - 300px - 3rem);
+  max-height: calc(100vh - 4rem);
+}
+
+/* Panel sağ-altta (right/bottom) sabitlendiği için native CSS "resize"
+   (her zaman sağ-alt köşede tutamaç gösterir) burada büyümeyi SOL ve
+   YUKARI yönde hissettirmiyordu ve tutamağı da görünmüyordu — bunun
+   yerine sol-üst köşede kendi tutamağımızı gösterip WhatsAppDock.jsx'te
+   elle (mousedown/mousemove) sürüklemeyi yönetiyoruz, panel her zaman
+   sol ve yukarı doğru büyür/küçülür. */
+.whatsapp-dock-resize-handle {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 20;
+  border-radius: 4px;
+}
+
+.whatsapp-dock-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--header-text);
+  border-left: 2px solid var(--header-text);
+  opacity: 0.5;
+}
+
+.whatsapp-dock-body {
+  flex: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+}
+
+.msg-bubble-time {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font-size: 0.65rem;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.msg-read-icon {
+  flex-shrink: 0;
+}
+
+.msg-read-icon.read {
+  color: var(--success);
+  opacity: 1;
+}
+
+/* İmleç ikona geldiğinde ismi ikonun SAĞINDA, gerçek bir genişleme
+   olarak açılır — üstüne binen bir balon değil, komşu ikonları iterek
+   yer açan bir kayma (21st.dev "icon bar" bileşenindeki hover davranışı). */
+.dock-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding-right: 0;
+  transition: max-width 0.22s ease, opacity 0.18s ease, padding-right 0.22s ease;
+}
+
+.dock-item:hover .dock-label,
+.dock-item:focus-visible .dock-label {
+  max-width: 140px;
+  opacity: 1;
+  padding-right: 0.9rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-item {
+    transform: none !important;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+
+  .dock-label {
+    transition: opacity 0.15s ease;
+  }
+}
+
+/* MarqueeText.jsx — uzun bir etiket (ör. "Firmalardan Gelen Siparişler")
+   kendi kutusuna sığmadığında sessizce kırpmak yerine, üzerine gelindiğinde
+   soldan sağa kayıp geri dönerek TAM metni okutur. --marquee-distance sıfır
+   olan (taşmayan) kısa etiketlerde transform hep translateX(0) kalır, yani
+   hiçbir şey kımıldamaz — animasyon sadece gerçek taşma varsa görünür etki
+   yaratır. */
+.marquee {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.marquee-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.dock-item:hover .marquee-text,
+.dock-item:focus-visible .marquee-text,
+.sidebar-item:hover .marquee-text,
+.sidebar-item:focus-visible .marquee-text,
+.sidebar-user-info:hover .marquee-text {
+  animation: marquee-scroll 4s ease-in-out infinite;
+}
+
+@keyframes marquee-scroll {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  50%,
+  65% {
+    transform: translateX(var(--marquee-distance, 0));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-item:hover .marquee-text,
+  .dock-item:focus-visible .marquee-text,
+  .sidebar-item:hover .marquee-text,
+  .sidebar-item:focus-visible .marquee-text,
+  .sidebar-user-info:hover .marquee-text {
+    animation: none;
+  }
+}
+
+.header-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--header-text) 10%, transparent);
+  color: var(--header-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.header-icon-btn:hover {
+  background: color-mix(in srgb, var(--header-text) 18%, transparent);
+}
+
+.header-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.content {
+  padding: calc(96px + 1.5rem) 1.5rem 1.5rem;
+}
+
+/* --- Sol kenar çubuğu (Sidebar.jsx) — Ayarlar > Görünüm'den seçilebilen
+   ikinci düzen. Header ile aynı arka plan/metin tema değişkenlerini
+   (--header-bg/--header-text) kullanır ki karanlık/aydınlık modda tutarlı
+   kalsın. */
+.content.with-sidebar {
+  padding: 1.5rem 1.5rem 1.5rem calc(220px + 1.5rem);
+  transition: padding-left 0.2s ease;
+}
+
+.content.with-sidebar.sidebar-collapsed {
+  padding-left: calc(64px + 1.5rem);
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--header-bg) 92%, transparent);
+  color: var(--header-text);
+  border-right: 1px solid var(--header-border);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  z-index: 100;
+  transition: width 0.2s ease;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.9rem 0.85rem;
+  border-bottom: 1px solid var(--header-border);
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-top {
+  align-items: center;
+}
+
+.sidebar-logo {
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+}
+
+.sidebar-logo.collapsed {
+  width: 34px;
+  height: 34px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.6rem 0.5rem;
+}
+
+.sidebar-group {
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--header-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sidebar-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 8px 8px 0;
+  color: var(--header-text);
+  opacity: 0.75;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 0.15s ease, opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar.collapsed .sidebar-item {
+  justify-content: center;
+  padding: 0.6rem;
+}
+
+.sidebar-item:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--header-text) 8%, transparent);
+}
+
+.sidebar-item.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--teal-3) 16%, transparent);
+  color: var(--blue-teal-2);
+  border-left-color: var(--teal-3);
+}
+
+.sidebar-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 18px;
+  justify-content: center;
+}
+
+.sidebar-item-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.9rem;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid var(--header-border);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.sidebar-user {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sidebar-user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem;
+}
+
+.sidebar.collapsed .sidebar-user-info {
+  justify-content: center;
+}
+
+.sidebar-user-name {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-flyout {
+  position: absolute;
+  left: 100%;
+  bottom: 0;
+  margin-left: 8px;
+  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  min-width: 280px;
+  max-width: 360px;
+  z-index: 1100;
+  overflow: hidden;
+}
+
+.sidebar-flyout-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 0.8rem;
+}
+
+.sidebar-flyout-row:last-child {
+  border-bottom: none;
+}
+
+.sidebar-flyout-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.home-grid-item {
+  margin-bottom: 0;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.home-grid-item.editing {
+  outline: 2px dashed var(--border);
+  outline-offset: 2px;
+  user-select: none;
+}
+
+.home-widget-handle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -1.25rem -1.25rem 0.75rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+  color: var(--text-muted, inherit);
+  opacity: 0.75;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.home-widget-handle:active {
+  cursor: grabbing;
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: var(--accent) !important;
+  opacity: 0.15 !important;
+  border-radius: 10px;
+}
+
+.search-result-row {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 0.5rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  color: inherit;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.search-result-row:last-child {
+  border-bottom: none;
+}
+
+.search-result-row:hover {
+  background: var(--bg);
+}
+
+.stats-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.75rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.stats-strip-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.stats-strip-number {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.stats-strip-label {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.stats-strip-divider {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.week-strip {
+  display: flex;
+  gap: 0.35rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.week-strip-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  padding: 0.5rem 0.25rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+}
+
+.week-strip-badge {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--card-bg);
+}
+
+.week-strip-day.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.week-strip-dow {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  text-transform: capitalize;
+}
+
+.week-strip-date {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.65rem 0;
+  cursor: pointer;
+}
+
+.schedule-row:last-child {
+  border-bottom: none;
+}
+
+.schedule-row-bar {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.schedule-row-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  display: flex;
+}
+
+.schedule-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.schedule-row-sub {
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.schedule-row-side {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.tech-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+input,
+select,
+textarea {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: filter 0.12s ease;
+}
+
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+button.primary:active {
+  filter: brightness(0.94);
+}
+
+button.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
+button.secondary {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: none;
+  color: var(--btn-secondary-text);
+  padding: 0.55rem 1.1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: filter 0.12s ease;
+}
+
+button.secondary:hover {
+  filter: brightness(1.15);
+}
+
+button.danger {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: none;
+  color: var(--btn-danger-text);
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: filter 0.12s ease;
+}
+
+button.danger:hover {
+  filter: brightness(1.15);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.15s ease;
+  margin-right: 0.3rem;
+}
+
+.icon-btn.edit {
+  color: var(--accent);
+}
+
+.icon-btn.edit:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.icon-btn.delete {
+  color: var(--danger);
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-item:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.dropdown-item + .dropdown-item {
+  border-top: 1px solid var(--border);
+}
+
+.icon-btn.delete:hover {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
+.icon-btn:hover {
+  opacity: 1;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge.acil {
+  background: #fde3e1;
+  color: var(--danger);
+}
+
+.badge.normal {
+  background: var(--green-1);
+  color: var(--navy);
+}
+
+.form-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.form-row label {
+  flex: 1;
+  min-width: 200px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.success {
+  color: var(--success);
+  font-size: 0.85rem;
+}
+
+.tech-column {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem;
+  min-width: 260px;
+  flex: 1;
+}
+
+.tech-column h3 {
+  margin-top: 0;
+  color: var(--blue-teal-2);
+}
+
+.stops {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.stop {
+  border-left: 3px solid var(--teal-2);
+  padding-left: 0.6rem;
+}
+
+.stop.acil {
+  border-left-color: var(--danger);
+}
+
+.route-columns {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* --- A4 Yazdırma --- */
+.print-page {
+  display: none;
+}
+
+@media print {
+  /* "visibility: hidden" öğeleri boyaMAZ ama yerlerini normal akışta
+     KORUR — bu yüzden #root'un (uygulamanın tüm görünmez ekranı: uzun
+     tablolar, kenar çubuğu vb.) gerçek yüksekliği hâlâ sayfa sayısına
+     dahil ediliyordu: hem gereksiz BOŞ fazladan sayfalar açılıyordu, hem
+     de o sayfalarda body'nin kendi (visibility kuralının etkilemediği)
+     açık renkli arka planı görünüyordu. #root'u yükseksiz/taşma-gizli
+     yapmak onu doküman yüksekliğinden tamamen çıkarır — üzerine bindirilen
+     .print-page/.print-pages zaten "position: absolute" olduğu için akıştan
+     bağımsız, buradan etkilenmez.
+  */
+  html,
+  body {
+    background: #fff !important;
+  }
+  /* Rota çıktısında bazı teknisyenlerin durakları bir sayfaya sığmayıp iki
+     yarım sayfaya taşabiliyordu — yazı boyutunu küçültmek daha fazla
+     durağın TEK sayfada kalmasını sağlıyor. rem/em tabanlı TÜM ölçüler
+     (başlık, durak başlığı, satır aralıkları/boşluklar) kök font boyutuna
+     göre hesaplandığı için tek bir yerden orantılı olarak küçülüyor —
+     çıktıda görünmeyen ekran arayüzü zaten visibility:hidden/height:0
+     olduğundan bu değişiklik SADECE yazdırma çıktısını etkiler. */
+  html {
+    font-size: 13px;
+  }
+  /* "height: 0" TEK BAŞINA yetmiyordu — #root'un normal (ekran) kuralı
+     "min-height: 100vh" (yukarıda, satır ~126) min-height, height'tan
+     BÜYÜKSE HER ZAMAN kazanır; yani #root gerçek yükseklikte (100vh)
+     kalmaya devam edip PDF'in sonuna, içeriğin ekrandaki uzunluğuna göre
+     değişen sayıda tamamen boş sayfa ekliyordu. min-height'i de burada
+     sıfırlamak şart. */
+  #root {
+    height: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-page,
+  .print-page * {
+    visibility: visible;
+  }
+  .print-page {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 15mm;
+    box-sizing: border-box;
+    /* Sabit (tema DEĞİŞKENİ kullanmayan) açık renk şeması — uygulama o an
+       karanlık modda olsa bile çıktı hep beyaz kağıtta koyu metin olsun.
+       Aksi halde --text karanlık modda neredeyse beyaza döndüğü için düz
+       metin (adres/telefon) beyaz kağıtta görünmez hale geliyordu. */
+    background: #fff;
+    color: #1a1a1a;
+  }
+  /* Rota çıktısı YATAY A4 basılıyor (bkz. electron/main.js'teki printToPDF
+     landscape:true çağrısı, sadece rota yazdırmasında kullanılıyor) — TEK,
+     doğal akışta uzayan bir kutu (bkz. PrintView.jsx: artık teknisyenler
+     ikişerli sabit sayfalara ZORLANMIYOR, page-break-inside:avoid/
+     page-break-after:avoid ile her sayfa doğal olarak doldukça dolar).
+     Bu yüzden kutunun kendi padding'i (üstteki 15mm) SADECE en baştaki
+     ve en sondaki fiziksel sayfaya uygulanır, ARADAKİ sayfalara değil —
+     o yüzden kenar boşluğunu kutunun CSS padding'i değil, Chromium'un
+     NATIVE sayfa kenar boşluğu belirliyor (main.js, marginType:"custom"),
+     her fiziksel sayfada tutarlı kalsın diye. */
+  .print-page.landscape {
+    width: 297mm;
+    min-height: 0;
+    padding: 0;
+  }
+  .print-page-section {
+    width: 100%;
+  }
+  .print-cut-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 1.25rem 0 1.5rem;
+    color: #5b6b70;
+  }
+  .print-cut-rule {
+    flex: 1;
+    border-top: 1px dashed #ccc;
+  }
+  .print-page .print-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    /* Teknisyen başlığı, sayfanın en altında yalnız kalıp durakları
+       sonraki sayfaya bırakmasın diye kendinden sonraki içerikle bir
+       arada tutulur. */
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  .print-page .print-header img {
+    height: 36px;
+  }
+  .print-page .print-header h2 {
+    margin: 0;
+    color: var(--navy);
+  }
+  /* page-break-inside olmadan bir durağın adı/adresi bir sayfada, kendi
+     şikayet notu SONRAKİ sayfada yalnız başına kalabiliyordu (sayfa sınırı
+     tam durağın ortasına denk geldiğinde) — aralarında büyük bir boşluk
+     bırakıp okumayı zorlaştırıyordu. Artık bir durak sığmıyorsa BÜTÜN
+     durak (ad+adres+not) birlikte bir sonraki sayfaya kayıyor. */
+  .print-stop {
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px dashed #ccc;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .print-stop .order {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--blue-teal-2);
+  }
+  /* Not/şikayet, sadece renge değil kalınlığa ve kenarlığa da dayanır ki
+     siyah-beyaz yazıcıda da diğer alanlardan (adres, telefon) ayırt
+     edilebilir kalsın. */
+  .print-note {
+    margin-top: 0.3rem;
+    padding: 0.2rem 0 0.2rem 0.5rem;
+    border-left: 3px solid #ff3b30;
+    font-weight: 600;
+  }
+}
