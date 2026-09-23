@@ -12,11 +12,53 @@ import Modal from "./Modal.jsx";
 const PERMISSION_TABS = TABS.filter((t) => !t.adminOnly && t.id !== "cameras");
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 
+// Ayarlar sekmesi artık personele de açık (bkz. navTabs.jsx) ama içindeki
+// bölümlerin çoğu admin-only kalıyor (Kullanıcılar/Çalışanlar/Tatiller/
+// Tedarikçiler/API Anahtarları/Güvenlik/Aktivite Kaydı — bkz.
+// SettingsPage.jsx'teki not). Sadece bu 3 bölüm admin tarafından kişi
+// başına açılıp kapatılabiliyor; anahtarlar (`key`) SettingsPage.jsx'teki
+// canSeeSection() çağrılarıyla birebir eşleşmeli.
+export const GRANTABLE_SECTIONS = [
+  { key: "vehicles", label: "Araçlar" },
+  { key: "depots", label: "Depolar" },
+  { key: "stockCsv", label: "Stok CSV İçe/Dışa Aktar" },
+];
+
+function SettingsSectionsCheckboxes({ settingsSections, onChange }) {
+  return (
+    <div style={{ marginTop: "0.5rem" }}>
+      <small style={{ opacity: 0.7 }}>Ayarlar içinde görebileceği bölümler:</small>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "0.3rem" }}>
+        {GRANTABLE_SECTIONS.map((section) => (
+          <label
+            key={section.key}
+            style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem", fontWeight: 400 }}
+          >
+            <input
+              type="checkbox"
+              checked={settingsSections.includes(section.key)}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked
+                    ? [...settingsSections, section.key]
+                    : settingsSections.filter((k) => k !== section.key)
+                )
+              }
+            />
+            {section.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EditUserModal({ user, users, currentUser, onClose, onSaved, onNotify }) {
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState(user.role);
   const [password, setPassword] = useState("");
   const [hiddenTabs, setHiddenTabs] = useState(user.hiddenTabs || []);
+  const [settingsSections, setSettingsSections] = useState(user.settingsSections || []);
   const [photo, setPhoto] = useState(user.photo || "");
   const [photoPosition, setPhotoPosition] = useState(user.photoPosition || { x: 50, y: 50 });
   const [cropTarget, setCropTarget] = useState(null);
@@ -48,7 +90,7 @@ function EditUserModal({ user, users, currentUser, onClose, onSaved, onNotify })
     setError("");
     setBusy(true);
     try {
-      const patch = { name: name.trim(), role, hiddenTabs, photo, photoPosition };
+      const patch = { name: name.trim(), role, hiddenTabs, settingsSections, photo, photoPosition };
       if (password) patch.password = password;
       await window.api.updateUser(user.id, patch, currentUser.id);
       onSaved();
@@ -142,6 +184,7 @@ function EditUserModal({ user, users, currentUser, onClose, onSaved, onNotify })
                   </label>
                 ))}
               </div>
+              <SettingsSectionsCheckboxes settingsSections={settingsSections} onChange={setSettingsSections} />
             </div>
           )}
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
@@ -163,6 +206,7 @@ export default function UsersSection({ users, currentUser, onSaved, onNotify }) 
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("staff");
   const [newHiddenTabs, setNewHiddenTabs] = useState([]);
+  const [newSettingsSections, setNewSettingsSections] = useState([]);
   const [error, setError] = useState("");
   const [editingUser, setEditingUser] = useState(null);
 
@@ -174,11 +218,12 @@ export default function UsersSection({ users, currentUser, onSaved, onNotify }) 
       return;
     }
     try {
-      await window.api.addUser(newName.trim(), newPassword, newRole, newHiddenTabs, currentUser.id);
+      await window.api.addUser(newName.trim(), newPassword, newRole, newHiddenTabs, newSettingsSections, currentUser.id);
       setNewName("");
       setNewPassword("");
       setNewRole("staff");
       setNewHiddenTabs([]);
+      setNewSettingsSections([]);
       onSaved();
       onNotify?.("success", "Kullanıcı eklendi.");
     } catch (err) {
@@ -284,6 +329,7 @@ export default function UsersSection({ users, currentUser, onSaved, onNotify }) 
                 </label>
               ))}
             </div>
+            <SettingsSectionsCheckboxes settingsSections={newSettingsSections} onChange={setNewSettingsSections} />
           </div>
         )}
       </form>

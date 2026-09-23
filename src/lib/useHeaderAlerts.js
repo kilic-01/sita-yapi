@@ -16,10 +16,10 @@ export function useSyncStatus() {
   }, []);
   const syncInfo =
     syncStatus === "SUBSCRIBED"
-      ? { color: "#2ecc71", label: "Bağlı" }
+      ? { color: "#2ecc71", label: "Bağlı", isProblem: false }
       : syncStatus === "CLOSED"
-      ? { color: "#95a5a6", label: "Bağlantı kapalı" }
-      : { color: "#e74c3c", label: "Bağlantı sorunu — yeniden deneniyor" };
+      ? { color: "#95a5a6", label: "Bağlantı kapalı", isProblem: true }
+      : { color: "#e74c3c", label: "Bağlantı sorunu — yeniden deneniyor", isProblem: true };
   return syncInfo;
 }
 

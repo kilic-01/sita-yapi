@@ -55,14 +55,48 @@ const REALTIME_TABLES = [
   "partCheckouts",
 ];
 
+let realtimeChannel = null;
+let reconnectTimer = null;
+
+// Supabase Realtime kanalının kendi "rejoin" mekanizması (Phoenix
+// kanallarının standart davranışı) var, ama pratikte laptop uyku/uyanma,
+// ofis Wi-Fi'ının kısa kesintileri ya da NAT/firewall'ın boşta duran bir
+// TCP bağlantısını sessizce düşürmesi gibi durumlarda bu kendi kendine
+// toparlanma ya ÇOK GEÇ tetikleniyor ya da hiç tetiklenmiyor — dispatcher
+// diğer bilgisayarlarda yeni/değişen randevuları göremeyip elle "reload"
+// atmak zorunda kalıyordu (bkz. Header.jsx'teki "Bağlantı sorunu — yeniden
+// deneniyor" göstergesi: UI zaten otomatik toparlanmayı VAAT EDİYORDU ama
+// bunu gerçekten yapan kod hiç yoktu). Bu yüzden durum CHANNEL_ERROR/
+// TIMED_OUT/CLOSED olduğunda kütüphaneyi beklemek yerine kanalı KENDİMİZ
+// birkaç saniye sonra sıfırdan kurup yeniden abone oluyoruz.
 function subscribeToRealtime() {
+  clearTimeout(reconnectTimer);
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel);
+  }
   const channel = supabase.channel("db-changes");
   for (const table of REALTIME_TABLES) {
     channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
       onChangeCallback?.(table);
     });
   }
-  channel.subscribe((status) => onSyncStatusCallback?.(status));
+  channel.subscribe((status) => {
+    onSyncStatusCallback?.(status);
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      reconnectTimer = setTimeout(subscribeToRealtime, 5000);
+    }
+  });
+  realtimeChannel = channel;
+}
+
+// Sistem uykudan uyandığında (ör. laptop kapağı açıldığında) mevcut
+// WebSocket bağlantısı sunucu tarafında çoktan zaman aşımına uğramış
+// olabilir ama işletim sistemi bunu henüz "kapandı" olarak bildirmemiş
+// olabilir — bu durumda yukarıdaki hata tabanlı otomatik yeniden bağlanma
+// hiç tetiklenmeyebilir. main.js'teki powerMonitor "resume" olayı bunu
+// beklemeden bağlantıyı hemen tazeler.
+export function forceReconnectRealtime() {
+  if (supabase) subscribeToRealtime();
 }
 
 // Ayarlar > Güvenlik'teki "Tüm Veriyi Yedekle" butonu için — Supabase
@@ -71,7 +105,8 @@ function subscribeToRealtime() {
 // içeren tablolar (users, suppliers) burada da diğer public API'lerdeki
 // gibi temizlenmiş haliyle döner — getUsers()/getSuppliers() zaten bunu
 // yapıyor, diğer tablolar için ham selectAll yeterli.
-export async function exportAllTables() {
+export async function exportAllTables(actingUserId) {
+  await requireAdmin(actingUserId, "Tüm veriyi yedekleme");
   const tables = {};
   for (const table of REALTIME_TABLES) {
     if (table === "users") {
@@ -156,6 +191,33 @@ async function actorDisplayName(actorUserId) {
   return data?.name || "Bilinmeyen kullanıcı";
 }
 
+// Ayarlar sekmesindeki admin-only bölümlerin (Kullanıcılar, API Anahtarları,
+// Güvenlik, Çalışanlar, Tatiller, Tedarikçiler, Aktivite Kaydı) arkasındaki
+// yazma/okuma işlemleri için ortak yetki kontrolü — arayüzde buton
+// gizlenmesi TEK BAŞINA bir güvenlik sınırı değil, çünkü preload'daki
+// window.api.* fonksiyonları renderer'dan doğrudan çağrılabilir
+// (deleteStockItemRow'daki mevcut desenle aynı, tek yerde toplanmış hali).
+// PostgREST bir sütun bulunamadığında "Could not find the 'X' column of 'Y'
+// in the schema cache" şeklinde bir hata döndürüyor — "settingsSections"
+// gibi henüz SQL migrasyonu çalıştırılmamış opsiyonel sütunlar için bunu
+// yakalayıp o alan olmadan tekrar denemek üzere kullanılıyor (bkz. addUser/
+// updateUser). Böylece migrasyon çalıştırılana kadar özellik sessizce
+// devre dışı kalır ama kullanıcı ekleme/güncelleme tamamen bloke olmaz.
+function isMissingColumnError(error, columnName) {
+  return Boolean(error?.message?.includes(`'${columnName}'`) && error.message.includes("schema cache"));
+}
+
+export async function requireAdmin(actingUserId, actionLabel) {
+  const { data: actingUser } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", actingUserId)
+    .maybeSingle();
+  if (actingUser?.role !== "admin") {
+    throw new Error(`${actionLabel} yetkisi sadece yönetici hesaplarında.`);
+  }
+}
+
 // Aksiyonu yapan kullanıcının GÜNCEL adını bulup tam cümleyi oluşturur ve
 // "activityLog" tablosuna ekler. actionText SADECE fiil+nesne kısmıdır
 // (örn. "randevu oluşturdu: Ahmet Yılmaz") — özne (kullanıcı adı) burada
@@ -173,7 +235,8 @@ export async function logActivity(actorUserId, entityType, actionText) {
   }
 }
 
-export async function getActivityLog({ limit = 200 } = {}) {
+export async function getActivityLog({ limit = 200 } = {}, actingUserId) {
+  await requireAdmin(actingUserId, "Aktivite kaydını görüntüleme");
   const { data, error } = await supabase
     .from("activityLog")
     .select("*")
@@ -193,6 +256,22 @@ export async function getAppointmentById(id) {
   const { data, error } = await supabase.from("appointments").select("*").eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+// reassignAppointment/updateAppointment'taki "bu teknisyenin o günkü sıradaki
+// son durağı nedir" hesabı için — tablo 20 binin üzerinde satıra ulaştığında
+// (bkz. selectAll'un neden sayfalama yaptığını açıklayan not) her atama
+// değişikliğinde TÜM randevuları çekmek yerine sunucu tarafında filtrelenmiş,
+// küçük (tek gün/tek teknisyen) bir sonuç istiyoruz.
+export async function getRoutedStopOrders(technicianId, scheduledDate) {
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("id,stopOrder")
+    .eq("assignedTechnicianId", technicianId)
+    .eq("scheduledDate", scheduledDate)
+    .eq("status", "routed");
+  if (error) throw new Error(error.message);
+  return data || [];
 }
 
 export async function addAppointment(input) {
@@ -438,6 +517,7 @@ export function getTechnicians() {
 }
 
 export async function setTechnicians(list, actingUserId) {
+  await requireAdmin(actingUserId, "Çalışan listesini güncelleme");
   const result = await replaceTable("technicians", list);
   await logActivity(actingUserId, "technician", "teknisyen listesini güncelledi");
   return result;
@@ -453,6 +533,7 @@ export function getOfficeStaff() {
 }
 
 export async function setOfficeStaff(list, actingUserId) {
+  await requireAdmin(actingUserId, "Çalışan listesini güncelleme");
   const result = await replaceTable("officeStaff", list);
   await logActivity(actingUserId, "officeStaff", "ofis çalışanı listesini güncelledi");
   return result;
@@ -468,6 +549,7 @@ export function getHolidays() {
 }
 
 export async function setHolidays(list, actingUserId) {
+  await requireAdmin(actingUserId, "Tatil listesini güncelleme");
   const result = await replaceTable("holidays", list);
   await logActivity(actingUserId, "holidays", "resmi/dini tatil listesini güncelledi");
   return result;
@@ -510,6 +592,7 @@ export async function getSupplierById(id) {
 }
 
 export async function setSuppliers(list, actingUserId) {
+  await requireAdmin(actingUserId, "Tedarikçi listesini güncelleme");
   const { data: existingRows, error } = await supabase.from("suppliers").select("*");
   if (error) throw new Error(error.message);
   const existingById = new Map((existingRows || []).map((s) => [s.id, s]));
@@ -593,10 +676,7 @@ export async function updateStockItem(id, patch, actingUserId) {
 // olmayanlara gösterilmiyor, ama bu kontrol olmadan biri IPC/HTTP çağrısını
 // doğrudan tetikleyerek bunu atlatabilirdi (bkz. StockPage.jsx'teki not).
 export async function deleteStockItemRow(id, actingUserId) {
-  const { data: actingUser } = await supabase.from("users").select("role").eq("id", actingUserId).maybeSingle();
-  if (actingUser?.role !== "admin") {
-    throw new Error("Stok kalemi silme yetkisi sadece yönetici hesaplarında.");
-  }
+  await requireAdmin(actingUserId, "Stok kalemi silme");
   const { data: existing } = await supabase.from("stockItems").select("code, name").eq("id", id).maybeSingle();
   const { error } = await supabase.from("stockItems").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -804,6 +884,7 @@ function sanitizeUser(user) {
     name: user.name,
     role: user.role,
     hiddenTabs: user.hiddenTabs || [],
+    settingsSections: user.settingsSections || [],
     photo: user.photo || "",
     photoPosition: user.photoPosition || { x: 50, y: 50 },
   };
@@ -814,17 +895,34 @@ export async function getUsers() {
   return rows.map(sanitizeUser);
 }
 
-export async function addUser({ name, password, role, hiddenTabs, photo, photoPosition, actingUserId }) {
+export async function addUser({ name, password, role, hiddenTabs, settingsSections, photo, photoPosition, actingUserId }) {
+  // İlk kurulum: hiç kullanıcı yokken (LoginGate.jsx'in "İlk kullanıcıyı
+  // oluştur" akışı) henüz kimse giriş yapmamış olduğu için actingUserId de
+  // yok — bu durumda admin kontrolü ATLANIR, aksi halde uygulama hiçbir
+  // zaman ilk kez kurulamazdı. Sonraki her addUser çağrısı (en az bir
+  // kullanıcı zaten varken) admin gerektirir.
+  const { count } = await supabase.from("users").select("id", { count: "exact", head: true });
+  if (count > 0) {
+    await requireAdmin(actingUserId, "Kullanıcı ekleme");
+  }
   const user = {
     id: uuid(),
     name,
     passwordHash: hashPassword(password),
     role: role === "admin" ? "admin" : "staff",
     hiddenTabs: hiddenTabs || [],
+    settingsSections: settingsSections || [],
     photo: photo || "",
     photoPosition: photoPosition || { x: 50, y: 50 },
   };
-  const { data, error } = await supabase.from("users").insert(user).select().single();
+  let { data, error } = await supabase.from("users").insert(user).select().single();
+  if (error && isMissingColumnError(error, "settingsSections")) {
+    // "settingsSections" sütunu (Ayarlar sekmesi bölüm izinleri için) henüz
+    // eklenmemiş olabilir — SQL migrasyonu çalıştırılana kadar kullanıcı
+    // eklemeyi tamamen bloke etmemek için o alan olmadan tekrar deneriz.
+    delete user.settingsSections;
+    ({ data, error } = await supabase.from("users").insert(user).select().single());
+  }
   if (error) throw new Error(error.message);
   await logActivity(
     actingUserId,
@@ -834,7 +932,22 @@ export async function addUser({ name, password, role, hiddenTabs, photo, photoPo
   return sanitizeUser(data);
 }
 
-export async function updateUser(id, { name, password, role, hiddenTabs, photo, photoPosition, actingUserId }) {
+// Ayarlar sekmesi artık personele de açık olduğu için buraya iki farklı
+// çağıran ulaşabiliyor: (1) admin, Kullanıcılar bölümünden BAŞKA birini
+// (veya kendini) her alanla güncelliyor — mevcut davranış; (2) personel,
+// YENİ "Profilim" bölümünden SADECE KENDİ kaydını, sadece ad/şifre/fotoğraf
+// alanlarıyla güncelliyor. Rol/izin alanları (role/hiddenTabs/
+// settingsSections) admin olmayan bir çağrıda patch'te gelse bile sessizce
+// yok sayılır — aksi halde personel kendi kendine yetki yükseltebilirdi.
+// Başka bir kullanıcının id'siyle admin olmayan bir çağrı gelirse tamamen
+// reddedilir.
+export async function updateUser(id, { name, password, role, hiddenTabs, settingsSections, photo, photoPosition, actingUserId }) {
+  const { data: actingUser } = await supabase.from("users").select("role").eq("id", actingUserId).maybeSingle();
+  const isAdmin = actingUser?.role === "admin";
+  if (!isAdmin && id !== actingUserId) {
+    throw new Error("Bu kullanıcıyı güncelleme yetkiniz yok.");
+  }
+
   const { data: user, error: fetchErr } = await supabase
     .from("users")
     .select("*")
@@ -852,31 +965,55 @@ export async function updateUser(id, { name, password, role, hiddenTabs, photo, 
     patch.passwordHash = hashPassword(password);
     changedLabels.push("şifre");
   }
-  if (Array.isArray(hiddenTabs)) {
-    patch.hiddenTabs = hiddenTabs;
-    if (JSON.stringify(hiddenTabs) !== JSON.stringify(user.hiddenTabs || [])) changedLabels.push("izinler");
-  }
   if (photo !== undefined) {
     patch.photo = photo;
     if (photo !== (user.photo || "")) changedLabels.push("fotoğraf");
   }
   if (photoPosition !== undefined) patch.photoPosition = photoPosition;
-  if (role === "admin" || role === "staff") {
-    if (user.role === "admin" && role === "staff") {
-      const { data: admins } = await supabase
-        .from("users")
-        .select("id")
-        .eq("role", "admin")
-        .neq("id", id);
-      if (!admins || admins.length === 0) {
-        throw new Error("Son kalan yönetici personel yapılamaz.");
+
+  // Rol/izin alanları SADECE admin çağrılarında işlenir.
+  if (isAdmin) {
+    if (Array.isArray(hiddenTabs)) {
+      patch.hiddenTabs = hiddenTabs;
+      if (JSON.stringify(hiddenTabs) !== JSON.stringify(user.hiddenTabs || [])) changedLabels.push("izinler");
+    }
+    if (Array.isArray(settingsSections)) {
+      patch.settingsSections = settingsSections;
+      if (JSON.stringify(settingsSections) !== JSON.stringify(user.settingsSections || [])) {
+        changedLabels.push("ayarlar izinleri");
       }
     }
-    patch.role = role;
-    if (role !== user.role) changedLabels.push("rol");
+    if (role === "admin" || role === "staff") {
+      if (user.role === "admin" && role === "staff") {
+        const { data: admins } = await supabase
+          .from("users")
+          .select("id")
+          .eq("role", "admin")
+          .neq("id", id);
+        if (!admins || admins.length === 0) {
+          throw new Error("Son kalan yönetici personel yapılamaz.");
+        }
+      }
+      patch.role = role;
+      if (role !== user.role) changedLabels.push("rol");
+    }
   }
 
-  const { data, error } = await supabase.from("users").update(patch).eq("id", id).select().single();
+  // Admin olmayan bir çağrıda role/hiddenTabs/settingsSections yok
+  // sayıldığı için (yukarıda), SADECE bu alanları göndermeye çalışan bir
+  // istek patch'i tamamen boş bırakabilir — boş bir .update({}) PostgREST'te
+  // anlamsız/hatalı bir sorguya yol açıyordu, bu yüzden burada no-op olarak
+  // erken dönüyoruz.
+  if (Object.keys(patch).length === 0) {
+    return sanitizeUser(user);
+  }
+
+  let { data, error } = await supabase.from("users").update(patch).eq("id", id).select().single();
+  if (error && isMissingColumnError(error, "settingsSections")) {
+    delete patch.settingsSections;
+    if (Object.keys(patch).length === 0) return sanitizeUser(user);
+    ({ data, error } = await supabase.from("users").update(patch).eq("id", id).select().single());
+  }
   if (error) throw new Error(error.message);
   if (changedLabels.length) {
     await logActivity(actingUserId, "user", `kullanıcı güncelledi: ${data.name} (${changedLabels.join(", ")})`);
@@ -891,6 +1028,7 @@ export async function updateUser(id, { name, password, role, hiddenTabs, photo, 
 const CREATED_UPDATED_BY_TABLES = ["appointments", "pendingParts", "partCheckouts", "quotes", "incomingOrders"];
 
 export async function deleteUser(id, actingUserId) {
+  await requireAdmin(actingUserId, "Kullanıcı silme");
   const { data: allUsers, error } = await supabase.from("users").select("id, role, name");
   if (error) throw new Error(error.message);
   if (allUsers.length <= 1) {

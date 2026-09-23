@@ -29,7 +29,7 @@ export const TABS = [
   { id: "cameras", label: "Kameralar", icon: <Video size={18} strokeWidth={1.75} /> },
   { id: "history", label: "Geçmiş", icon: <History size={18} strokeWidth={1.75} /> },
   { id: "other", label: "Diğer", icon: <MoreHorizontal size={18} strokeWidth={1.75} /> },
-  { id: "settings", label: "Ayarlar", icon: <SettingsIcon size={18} />, adminOnly: true },
+  { id: "settings", label: "Ayarlar", icon: <SettingsIcon size={18} /> },
 ];
 
 // Sidebar'daki gruplama (bölücü çizgilerle) — sadece görsel bir gruplama,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TrashIcon } from "./icons.jsx";
 import Modal from "./Modal.jsx";
+import ToggleSwitch from "./ToggleSwitch.jsx";
 
 function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, onNotify }) {
   const isNew = !holiday;
@@ -62,7 +63,7 @@ function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, on
             </label>
           </div>
           <label style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "0.4rem", marginTop: "0.75rem" }}>
-            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
+            <ToggleSwitch checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
             <span>Her yıl tekrarla</span>
           </label>
           <small style={{ opacity: 0.7 }}>

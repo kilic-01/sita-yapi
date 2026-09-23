@@ -4,6 +4,7 @@ import { TechnicianAvatar, PhotoCropEditor } from "../lib/avatars.jsx";
 import { isOnLeave, todayISO, suggestAnnualLeaveDays } from "../lib/format.js";
 import { LeaveRangesEditor, LeaveSummaryModal } from "./LeaveComponents.jsx";
 import Modal from "./Modal.jsx";
+import ToggleSwitch from "./ToggleSwitch.jsx";
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 
@@ -209,11 +210,7 @@ function EditEmployeeModal({
                 </select>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexDirection: "row" }}>
-                <input
-                  type="checkbox"
-                  checked={assignable}
-                  onChange={(e) => setAssignable(e.target.checked)}
-                />
+                <ToggleSwitch checked={assignable} onChange={(e) => setAssignable(e.target.checked)} />
                 İş Atanabilir
               </label>
             </div>

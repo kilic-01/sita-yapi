@@ -7,7 +7,7 @@ import { geocodeAddress } from "./googleMaps.js";
 import { buildGeocodeAttempts } from "./geocodeQuery.js";
 import { estimateJobDurationMinutes } from "./gemini.js";
 import { getRandomFeaturedImage } from "./wikimedia.js";
-import { assignToTechnicians, orderTechnicianStops, isOnLeave } from "./routing.js";
+import { assignToTechnicians, orderTechnicianStops, isOnLeave, haversineDistance } from "./routing.js";
 import { GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, FILOTIM_API_KEY, SHOP_LOCATION } from "./config.js";
 import { fetchFuelPurchases, fetchFuelDevices, fetchFleetSummary } from "./filotimSync.js";
 
@@ -49,6 +49,37 @@ function checkGeocodeQuality(result, addressDetail) {
     return `Google bu adresi "${expectedIlce}" ilçesinde bulamadı, bunun yerine "${result.formattedAddress}" konumunu buldu — aynı isimli sokak başka bir ilçede olabilir. Lütfen adresi kontrol edin.`;
   }
   return null;
+}
+
+// buildRoutes'ta konumu belirsiz/hiç bulunamamış (geocodeProblem) bir randevuyu
+// hangi teknisyenin rotasına ekleyeceğimize karar verir. Konumu (yaklaşık da
+// olsa) varsa, o gün GERÇEKTEN konumlanmış duraklara (referencePoints) en
+// yakın olanın teknisyenini seçer — açı/kümeleme hesabına hiç dahil edilmez,
+// sadece son eklenen ekstra durak olarak iliştirilir. Konumu hiç yoksa (Google
+// adresi tamamen bulamadı) coğrafi mesafe hesaplanamaz; bunun yerine aynı
+// ilçede başka bir durağı olan teknisyen aranır. Hiçbir referans/eşleşme
+// yoksa (o gün kimsenin rotası yok, ya da hiç aynı ilçede iş yok) null döner
+// — randevu eskisi gibi "pending" kalıp dispatcher'ın elle müdahalesini bekler.
+function pickNearestTechnicianId(problem, referencePoints) {
+  if (referencePoints.length === 0) return null;
+  if (problem.lat != null && problem.lng != null) {
+    let bestId = null;
+    let bestDist = Infinity;
+    for (const ref of referencePoints) {
+      const d = haversineDistance(problem, ref);
+      if (d < bestDist) {
+        bestDist = d;
+        bestId = ref.technicianId;
+      }
+    }
+    return bestId;
+  }
+  const ilce = problem.addressDetail?.ilce?.trim().toLocaleUpperCase("tr");
+  if (!ilce) return null;
+  const match = referencePoints.find(
+    (ref) => ref.addressDetail?.ilce?.trim().toLocaleUpperCase("tr") === ilce
+  );
+  return match ? match.technicianId : null;
 }
 
 // Geocoding artık randevu kaydını BEKLETMİYOR (bkz. addAppointment/
@@ -134,13 +165,7 @@ export async function addAppointment(input) {
       throw new Error(`${technician.name}, ${input.scheduledDate} tarihinde izinli — randevu atanamaz.`);
     }
 
-    const allAppointments = await db.getAppointments();
-    const siblings = allAppointments.filter(
-      (a) =>
-        a.assignedTechnicianId === technician.id &&
-        a.scheduledDate === input.scheduledDate &&
-        a.status === "routed"
-    );
+    const siblings = await db.getRoutedStopOrders(technician.id, input.scheduledDate);
     const maxOrder = siblings.reduce((max, a) => Math.max(max, a.stopOrder ?? -1), -1);
 
     status = "routed";
@@ -217,14 +242,7 @@ export async function updateAppointment(id, patch) {
         throw new Error(`${technician.name}, ${targetDate} tarihinde izinli — randevu atanamaz.`);
       }
 
-      const allAppointments = await db.getAppointments();
-      const siblings = allAppointments.filter(
-        (a) =>
-          a.id !== id &&
-          a.assignedTechnicianId === technician.id &&
-          a.scheduledDate === targetDate &&
-          a.status === "routed"
-      );
+      const siblings = (await db.getRoutedStopOrders(technician.id, targetDate)).filter((a) => a.id !== id);
       const maxOrder = siblings.reduce((max, a) => Math.max(max, a.stopOrder ?? -1), -1);
 
       finalPatch.status = "routed";
@@ -319,8 +337,14 @@ export async function setAppointmentStatus(id, status, actingUserId) {
 }
 
 export async function reassignAppointment(id, technicianId, actingUserId) {
-  const allAppointments = await db.getAppointments();
-  const appointment = allAppointments.find((a) => a.id === id);
+  // ÖNEMLİ: burada bilerek db.getAppointments() (tüm ~20 bin+ randevuyu
+  // sayfalayarak çeken fonksiyon) KULLANILMIYOR — sadece tek bir randevuyu
+  // bulmak ve bir teknisyenin bir gündeki sıradaki son durağını hesaplamak
+  // için tüm tabloyu çekmek her atama değişikliğini birkaç saniyeye
+  // uzatıyordu; kullanıcı işlemin başarısız olduğunu sanıp aynı teknisyeni
+  // tekrar tekrar seçiyordu. Bunun yerine tek randevuyu id'den, "kardeş"
+  // durakları da sunucu tarafında filtrelenmiş küçük bir sorguyla çekiyoruz.
+  const appointment = await db.getAppointmentById(id);
   if (!appointment) throw new Error("Randevu bulunamadı");
 
   // Arayüzdeki dropdown zaten izinli/atanamaz teknisyenleri gizliyor, ama
@@ -337,12 +361,7 @@ export async function reassignAppointment(id, technicianId, actingUserId) {
     throw new Error(`${technician.name}, ${appointment.scheduledDate} tarihinde izinli — randevu atanamaz.`);
   }
 
-  const siblings = allAppointments.filter(
-    (a) =>
-      a.assignedTechnicianId === technicianId &&
-      a.scheduledDate === appointment.scheduledDate &&
-      a.status === "routed"
-  );
+  const siblings = await db.getRoutedStopOrders(technicianId, appointment.scheduledDate);
   const maxOrder = siblings.reduce((max, a) => Math.max(max, a.stopOrder ?? -1), -1);
 
   const updated = await db.updateAppointment(id, {
@@ -417,14 +436,20 @@ export function setVehicles(list, actingUserId) {
   return db.setVehicles(list, actingUserId);
 }
 
-export async function getSettings() {
+// API anahtarları burada döndüğü için (Gemini/Filotim dahil) SADECE admin
+// çağırabilir — canlı trafik haritası gibi tek bir anahtara ihtiyaç duyan
+// admin-olmayan akışlar bunun yerine getGoogleMapsApiKeyForClient()
+// kullanır (bkz. o fonksiyonun üstündeki not).
+export async function getSettings(actingUserId) {
+  await db.requireAdmin(actingUserId, "Ayarları görüntüleme");
   const [settings, apiKeys] = await Promise.all([db.getSettings(), currentApiKeys()]);
   return { ...settings, ...apiKeys };
 }
 
 export async function updateSettings(patch, actingUserId) {
+  await db.requireAdmin(actingUserId, "Ayarları güncelleme");
   await db.updateSettings(patch, actingUserId);
-  return getSettings();
+  return getSettings(actingUserId);
 }
 
 export async function buildRoutes(scheduledDate, actingUserId) {
@@ -475,16 +500,32 @@ export async function buildRoutes(scheduledDate, actingUserId) {
   // havuzuna hiç girmez — dispatcher bilerek o teknisyende bırakmıştı.
   // manuallyAssigned işler de girmez — randevu OLUŞTURULURKEN bilerek belirli
   // bir teknisyene sabitlenmiş, otomatik rotalama bunu değiştirmemeli.
-  // geocodeIssue işaretli randevular (Google'ın adresi yanlış ilçede
-  // bulduğu ya da sadece kaba/mahalle merkezi bir tahmin yaptığı adresler)
-  // da havuza girmez — konumu güvenilir olmayan bir işi açı hesabına dahil
-  // etmek, o işi (ve dolayısıyla teknisyeni) tamamen alakasız bir bölgeye
-  // savurabiliyordu. Bunlar da "skipped" olarak dönüp dispatcher'ın adresi
-  // düzeltip elle rotalamasını bekler.
   const pending = todaysAppointments.filter(
     (a) => a.lat != null && !a.geocodeIssue && !a.heldForLeave && !a.manuallyAssigned
   );
-  const skipped = todaysAppointments.filter((a) => a.lat == null || a.geocodeIssue);
+  // Adresi hiç bulunamamış (lat==null) VEYA güvenilirliği şüpheli
+  // (geocodeIssue — Google'ın yanlış ilçede bulduğu ya da sadece kaba/mahalle
+  // merkezi bir tahmin yaptığı adresler) randevular açı/kümeleme hesabına HİÇ
+  // dahil edilmiyor — konumu güvenilir olmayan bir işi bu hesaba katmak, işi
+  // (ve dolayısıyla teknisyeni) tamamen alakasız bir bölgeye savurabiliyordu.
+  // Ama artık tamamen dışarıda da bırakılmıyorlar: aşağıda ana dağıtım/
+  // sıralama bittikten SONRA, o gün gerçekten konumlanmış duraklardan
+  // coğrafi olarak en yakınının teknisyenine "ekstra durak" olarak
+  // iliştiriliyorlar (bkz. pickNearestTechnicianId) — geocodeIssue alanı
+  // silinmiyor, dispatcher hangi durağın konumunun doğrulanması gerektiğini
+  // rota içinde de görüyor. Hiçbir referans/eşleşme yoksa (o gün kimsenin
+  // rotası yoksa, ya da konumu tamamen yoksa ve aynı ilçede iş de yoksa)
+  // eskisi gibi "pending" kalıp dispatcher'ın elle müdahalesini bekler.
+  const geocodeProblem = todaysAppointments.filter(
+    (a) => (a.lat == null || a.geocodeIssue) && !a.heldForLeave && !a.manuallyAssigned
+  );
+  // heldForLeave/manuallyAssigned işler zaten sabit bir teknisyene bağlı ve
+  // güvenilir bir konuma sahipse (kendileri de bir geocodeIssue TAŞIMIYORSA),
+  // bunlar da referencePoints'e katkı sağlamalı — dispatcher'ın elle attığı
+  // ya da izinde beklettiği bir iş de o bölgede "gerçek" bir referans.
+  const alreadyFixedWithLocation = todaysAppointments.filter(
+    (a) => (a.heldForLeave || a.manuallyAssigned) && a.lat != null && !a.geocodeIssue && a.assignedTechnicianId
+  );
 
   // Tamamlanmış işler sabit kalıp sıra numaralarını korur; yeni rotalanan
   // işler onların ARDINDAN numaralanmalı, yoksa aynı teknisyende iki iş
@@ -496,6 +537,8 @@ export async function buildRoutes(scheduledDate, actingUserId) {
   const buckets = assignToTechnicians(pending, technicians, shopCoord);
 
   const results = [];
+  const nextStopOrder = new Map();
+  const referencePoints = [];
   for (let i = 0; i < technicians.length; i++) {
     const technician = technicians[i];
     const completedCount = completedToday.filter(
@@ -514,20 +557,53 @@ export async function buildRoutes(scheduledDate, actingUserId) {
       });
     }
 
-    results.push({
-      technician,
-      stops: ordered.map((s, idx) => ({ ...s, stopOrder: completedCount + idx })),
-    });
+    const stops = ordered.map((s, idx) => ({ ...s, stopOrder: completedCount + idx }));
+    results.push({ technician, stops });
+    nextStopOrder.set(technician.id, completedCount + stops.length);
+    for (const s of stops) {
+      referencePoints.push({ technicianId: technician.id, lat: s.lat, lng: s.lng, addressDetail: s.addressDetail });
+    }
+  }
+  for (const a of completedToday) {
+    if (a.lat != null && a.assignedTechnicianId) {
+      referencePoints.push({ technicianId: a.assignedTechnicianId, lat: a.lat, lng: a.lng, addressDetail: a.addressDetail });
+    }
+  }
+  for (const a of alreadyFixedWithLocation) {
+    referencePoints.push({ technicianId: a.assignedTechnicianId, lat: a.lat, lng: a.lng, addressDetail: a.addressDetail });
   }
 
-  if (pending.length > 0) {
-    await db.logActivity(actingUserId, "appointment", `rota oluşturdu: ${scheduledDate}, ${pending.length} randevu`);
+  const stillUnassigned = [];
+  for (const problem of geocodeProblem) {
+    const technicianId = pickNearestTechnicianId(problem, referencePoints);
+    if (!technicianId) {
+      stillUnassigned.push(problem);
+      continue;
+    }
+    const stopOrder = nextStopOrder.get(technicianId) ?? 0;
+    nextStopOrder.set(technicianId, stopOrder + 1);
+    await db.updateAppointment(problem.id, {
+      status: "routed",
+      assignedTechnicianId: technicianId,
+      stopOrder,
+      actingUserId,
+    });
+    const result = results.find((r) => r.technician.id === technicianId);
+    result?.stops.push({ ...problem, assignedTechnicianId: technicianId, status: "routed", stopOrder });
+    if (problem.lat != null) {
+      referencePoints.push({ technicianId, lat: problem.lat, lng: problem.lng, addressDetail: problem.addressDetail });
+    }
+  }
+
+  const routedCount = pending.length + (geocodeProblem.length - stillUnassigned.length);
+  if (routedCount > 0) {
+    await db.logActivity(actingUserId, "appointment", `rota oluşturdu: ${scheduledDate}, ${routedCount} randevu`);
   }
 
   return {
     routes: results,
-    skippedCount: skipped.length,
-    skippedCustomers: skipped.map((a) => a.customerName),
+    skippedCount: stillUnassigned.length,
+    skippedCustomers: stillUnassigned.map((a) => a.customerName),
   };
 }
 
@@ -561,6 +637,23 @@ export async function addSale(input) {
 export async function getGoogleMapsApiKeyForClient() {
   const { googleMapsApiKey } = await currentApiKeys();
   return googleMapsApiKey;
+}
+
+// Hareketsizlik ekran koruyucusu (bkz. App.jsx'teki idle-lock efekti) TÜM
+// giriş yapmış kullanıcılarda çalışmalı, sadece admin oturumunda değil —
+// ama tam `settings` (API anahtarları dahil) sadece admin'e özel. Bu yüzden
+// getGoogleMapsApiKeyForClient ile AYNI desen: sadece bu iki alanı, hassas
+// olmayan haliyle, herkese açık döndürüyoruz.
+export async function getIdleLockConfig() {
+  const settings = await db.getSettings();
+  return {
+    // "settings" tablosu her değeri metin olarak saklıyor (bkz. db.js
+    // updateSettings) — bu yüzden false bile geri "false" string'i olarak
+    // gelir ve Boolean("false") === true olurdu. Sadece gerçek boolean
+    // true/gerçek string "true" ise etkin sayılır.
+    idleLockEnabled: settings.idleLockEnabled === true || settings.idleLockEnabled === "true",
+    idleTimeoutMinutes: Number(settings.idleTimeoutMinutes) || 5,
+  };
 }
 
 export function getMapUsageCount() {
@@ -671,8 +764,8 @@ export function listUsers() {
   return db.getUsers();
 }
 
-export function addUser(name, password, role, hiddenTabs, actingUserId) {
-  return db.addUser({ name, password, role, hiddenTabs, actingUserId });
+export function addUser(name, password, role, hiddenTabs, settingsSections, actingUserId) {
+  return db.addUser({ name, password, role, hiddenTabs, settingsSections, actingUserId });
 }
 
 export function updateUser(id, patch, actingUserId) {
@@ -727,8 +820,8 @@ export function dismissIncomingOrderReminder(id, userId) {
   return db.dismissIncomingOrderReminder(id, userId);
 }
 
-export function listActivityLog(opts) {
-  return db.getActivityLog(opts);
+export function listActivityLog(opts, actingUserId) {
+  return db.getActivityLog(opts, actingUserId);
 }
 
 export function listMessagesFor(userId) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, Menu, PanelTop } from "lucide-react";
+import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, Menu, PanelTop, Wifi, WifiOff } from "lucide-react";
 import { TAB_GROUPS } from "./navTabs.jsx";
 import { useSyncStatus, useHeaderAlerts } from "../lib/useHeaderAlerts.js";
 import MarqueeText from "./MarqueeText.jsx";
@@ -280,10 +280,13 @@ export default function Sidebar({
         {currentUser && (
           <div className="sidebar-user">
             <div className="sidebar-user-info">
-              <span
-                title={syncInfo.label}
-                style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: syncInfo.color, flexShrink: 0 }}
-              />
+              <span title={syncInfo.label} style={{ display: "inline-flex", flexShrink: 0 }}>
+                {syncInfo.isProblem ? (
+                  <WifiOff size={14} strokeWidth={2} color="var(--danger)" />
+                ) : (
+                  <Wifi size={14} strokeWidth={1.75} style={{ opacity: 0.6 }} />
+                )}
+              </span>
               {!collapsed && (
                 <span className="sidebar-user-name">
                   <MarqueeText text={currentUser.name} />

@@ -35,9 +35,15 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
     [dayAppointments, technicians]
   );
 
-  // Backend'deki buildRoutes ile aynı mantık: adresi geocode edilememiş
-  // VEYA geocode kalitesi şüpheli (yanlış ilçe/kaba tahmin) işler otomatik
-  // rotalamaya hiç girmiyor, elle düzeltilip tekrar kaydedilmeyi bekliyor.
+  // Backend'deki buildRoutes ile aynı mantık: adresi geocode edilememiş VEYA
+  // geocode kalitesi şüpheli (yanlış ilçe/kaba tahmin) işler artık o gün
+  // gerçekten konumlanmış en yakın durağın teknisyenine otomatik iliştiriliyor
+  // (bkz. handlers.js pickNearestTechnicianId) — bu yüzden status "routed"a
+  // döner ve aşağıdaki `unresolvedIssue`de DEĞİL, doğrudan ilgili teknisyenin
+  // rota kartında (⚠ işaretiyle) görünür. Burada (`status === "pending"`)
+  // sadece HİÇBİR teknisyene bağdaştırılamayan (o gün başka rotalanmış iş
+  // yok, ya da aynı ilçede eşleşme de yok) gerçekten "tıkanmış" randevular
+  // kalır — dispatcher'ın elle müdahalesi gerekir.
   //
   // İki ayrı durum var, kullanıcıya farklı gösterilmeli: `geocodeIssue`
   // dolu olanlar GERÇEKTEN sorunlu (Google adresi bulamadı/düşük
@@ -121,9 +127,10 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
         {error && <div className="error">{error}</div>}
         {unresolvedIssue.length > 0 && (
           <div className="error">
-            {unresolvedIssue.length} randevu adres konumu bulunamadığı ya da güvenilir olmadığı için rotalanamadı:{" "}
+            {unresolvedIssue.length} randevu adres konumu bulunamadığı ya da güvenilir olmadığı için hiçbir
+            teknisyene bağdaştırılamadı (o gün başka rotalanmış iş yok ya da aynı ilçede eşleşme bulunamadı):{" "}
             {unresolvedIssue.map((a) => a.customerName).join(", ")}. Bu randevuları Randevular
-            sekmesinden açıp adresi düzeltip tekrar kaydedin.
+            sekmesinden açıp adresi düzeltip tekrar kaydedin, ya da elle bir teknisyene atayın.
           </div>
         )}
         {pendingLocation.length > 0 && (
@@ -165,6 +172,11 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
                         {s.status === "completed" ? " ✔" : ""}
                       </strong>
                       <div>{s.address}</div>
+                      {s.geocodeIssue && (
+                        <div style={{ color: "var(--danger)", fontSize: "0.85em", marginTop: "0.2rem" }}>
+                          ⚠ En yakın adrese bağdaştırıldı, konum kesin değil: {s.geocodeIssue}
+                        </div>
+                      )}
                       {s.complaint && <div>Şikayet: {s.complaint}</div>}
                       {s.estimatedDurationMinutes && (
                         <div>Tahmini süre: {s.estimatedDurationMinutes} dk</div>

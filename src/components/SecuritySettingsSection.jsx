@@ -1,18 +1,40 @@
 import { useState } from "react";
+import ToggleSwitch from "./ToggleSwitch.jsx";
 
 const DEFAULT_MINUTES = 5;
 
 export default function SecuritySettingsSection({ settings, onSaved, currentUser, onTestScreensaver, onNotify }) {
   const current = settings.idleTimeoutMinutes ?? DEFAULT_MINUTES;
+  // Varsayılan KAPALI — dispatcher bilerek açmadıkça hiçbir bilgisayarda
+  // ekran koruyucu/otomatik-kilit devreye girmez (bkz. App.jsx idle-check
+  // efekti, idleLockConfig.idleLockEnabled'a bakıyor). "settings" tablosu
+  // her değeri metin olarak sakladığı için (bkz. electron/db.js
+  // updateSettings) false bile "false" string'i olarak gelir — bu yüzden
+  // düz Boolean(...) burada YANLIŞ sonuç verirdi (her string truthy'dir).
+  const enabled = settings.idleLockEnabled === true || settings.idleLockEnabled === "true";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(current));
   const [error, setError] = useState("");
   const [backingUp, setBackingUp] = useState(false);
+  const [togglingLock, setTogglingLock] = useState(false);
+
+  async function handleToggleEnabled(e) {
+    const next = e.target.checked;
+    setTogglingLock(true);
+    try {
+      const saved = await window.api.updateSettings({ idleLockEnabled: next }, currentUser?.id);
+      onSaved(saved);
+    } catch (err) {
+      onNotify?.("error", err.message || "Kaydedilemedi.");
+    } finally {
+      setTogglingLock(false);
+    }
+  }
 
   async function handleBackup() {
     setBackingUp(true);
     try {
-      const filePath = await window.api.exportBackup();
+      const filePath = await window.api.exportBackup(currentUser?.id);
       if (filePath) onNotify?.("success", `Yedek kaydedildi: ${filePath}`);
     } catch (err) {
       onNotify?.("error", err.message || "Yedek alınamadı.");
@@ -43,45 +65,51 @@ export default function SecuritySettingsSection({ settings, onSaved, currentUser
   return (
     <div>
       <p style={{ marginTop: 0 }}>
-        Program bu süre kadar hiç kullanılmadığında (fare/klavye hareketsiz kalırsa), bilgisayar açık
-        kalsa bile ekran koruyucu devreye girer ve dokunulduğunda kullanıcı adı/şifre ekranına döner —
-        şirket verilerinin gözetimsiz bırakılmaması için.
+        Etkinleştirirseniz, program burada belirlenen süre kadar hiç kullanılmadığında (fare/klavye
+        hareketsiz kalırsa) bilgisayar açık kalsa bile ekran koruyucu devreye girer ve dokunulduğunda
+        kullanıcı adı/şifre ekranına döner — şirket verilerinin gözetimsiz bırakılmaması için.
+        Varsayılan olarak KAPALIDIR.
       </p>
       {error && <div className="error">{error}</div>}
-      {editing ? (
-        <form onSubmit={handleSave} className="form-row" style={{ alignItems: "flex-end" }}>
-          <label>
-            Hareketsizlik Süresi (dakika)
-            <input
-              type="number"
-              min={1}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              autoFocus
-            />
-          </label>
-          <button className="primary" type="submit">
-            Kaydet
-          </button>
-          <button type="button" className="secondary" onClick={() => setEditing(false)}>
-            İptal
-          </button>
-        </form>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span>
-            <strong>{current}</strong> dakika
-          </span>
-          <button type="button" className="secondary" onClick={startEdit}>
-            Düzenle
-          </button>
-          {onTestScreensaver && (
-            <button type="button" className="secondary" onClick={onTestScreensaver}>
-              Ekran Koruyucuyu Şimdi Dene
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.9rem" }}>
+        <ToggleSwitch checked={enabled} onChange={handleToggleEnabled} disabled={togglingLock} />
+        Hareketsizlikte ekran koruyucu/otomatik kilidi etkinleştir
+      </label>
+      {enabled &&
+        (editing ? (
+          <form onSubmit={handleSave} className="form-row" style={{ alignItems: "flex-end" }}>
+            <label>
+              Hareketsizlik Süresi (dakika)
+              <input
+                type="number"
+                min={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <button className="primary" type="submit">
+              Kaydet
             </button>
-          )}
-        </div>
-      )}
+            <button type="button" className="secondary" onClick={() => setEditing(false)}>
+              İptal
+            </button>
+          </form>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <span>
+              <strong>{current}</strong> dakika
+            </span>
+            <button type="button" className="secondary" onClick={startEdit}>
+              Düzenle
+            </button>
+            {onTestScreensaver && (
+              <button type="button" className="secondary" onClick={onTestScreensaver}>
+                Ekran Koruyucuyu Şimdi Dene
+              </button>
+            )}
+          </div>
+        ))}
 
       <hr style={{ margin: "1.25rem 0", border: "none", borderTop: "1px solid var(--border)" }} />
 

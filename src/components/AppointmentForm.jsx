@@ -5,6 +5,7 @@ import { composeAddress } from "../lib/turkeyAddressData.js";
 import { STATUS_LABELS, toLocalISODate, toTitleCase, holidayOnDate } from "../lib/format.js";
 import { findCustomerAppointments, normalizeForMatch } from "../lib/customerMatch.js";
 import SuggestionDropdown from "./SuggestionDropdown.jsx";
+import ToggleSwitch from "./ToggleSwitch.jsx";
 
 // Teknisyen ciro raporunda (HistoryPage.jsx) her kalemin hangi kovaya
 // gireceğini belirleyen sabit kategori — serbest metin etikete göre tahmin
@@ -698,12 +699,7 @@ export default function AppointmentForm({
           </strong>
         </span>
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <input
-            type="checkbox"
-            checked={form.feePaid}
-            onChange={(e) => setField("feePaid", e.target.checked)}
-            style={{ width: "auto" }}
-          />
+          <ToggleSwitch checked={form.feePaid} onChange={(e) => setField("feePaid", e.target.checked)} />
           Tahsil Edildi
         </label>
       </div>

@@ -34,7 +34,7 @@
             reassignAppointment: (id, technicianId, actingUserId) =>
               call("PUT", `/appointments/${id}/reassign`, { technicianId, actingUserId }),
             listTechnicians: () => call("GET", "/technicians"),
-            setTechnicians: (list) => call("PUT", "/technicians", list),
+            setTechnicians: (list, actingUserId) => call("PUT", "/technicians", { list, actingUserId }),
             listOfficeStaff: () => call("GET", "/office-staff"),
             setOfficeStaff: (list, actingUserId) => call("PUT", "/office-staff", { list, actingUserId }),
             listHolidays: () => call("GET", "/holidays"),
@@ -70,23 +70,25 @@
             markMessagesRead: (currentUserId, otherUserId) => call("PUT", "/messages/read", { currentUserId, otherUserId }),
             listVehicles: () => call("GET", "/vehicles"),
             setVehicles: (list) => call("PUT", "/vehicles", list),
-            getSettings: () => call("GET", "/settings"),
-            updateSettings: (patch) => call("PUT", "/settings", patch),
+            getSettings: (actingUserId) =>
+              call("GET", `/settings?actingUserId=${encodeURIComponent(actingUserId || "")}`),
+            updateSettings: (patch, actingUserId) => call("PUT", "/settings", { patch, actingUserId }),
             buildRoutes: (scheduledDate, actingUserId) =>
               call("POST", "/routes", { scheduledDate, actingUserId }),
             getShopLocation: () => call("GET", "/shop-location"),
             addSale: (input) => call("POST", "/sales", input),
             getGoogleMapsApiKey: () => call("GET", "/maps/api-key"),
+            getIdleLockConfig: () => call("GET", "/settings/idle-lock-config"),
             getMapUsageCount: () => call("GET", "/maps/usage-count"),
             incrementMapUsageCount: () => call("POST", "/maps/usage-count/increment"),
             syncFuelTransactions: (actingUserId) => call("POST", "/fuel/sync", { actingUserId }),
             listFuelTransactions: () => call("GET", "/fuel"),
             listFuelDevices: () => call("GET", "/fuel/devices"),
             listUsers: () => call("GET", "/users"),
-            addUser: (name, password, role, hiddenTabs) =>
-              call("POST", "/users", { name, password, role, hiddenTabs }),
-            updateUser: (id, patch) => call("PUT", `/users/${id}`, patch),
-            deleteUser: (id) => call("DELETE", `/users/${id}`),
+            addUser: (name, password, role, hiddenTabs, settingsSections, actingUserId) =>
+              call("POST", "/users", { name, password, role, hiddenTabs, settingsSections, actingUserId }),
+            updateUser: (id, patch, actingUserId) => call("PUT", `/users/${id}`, { patch, actingUserId }),
+            deleteUser: (id, actingUserId) => call("DELETE", `/users/${id}`, { actingUserId }),
             login: (name, password) => call("POST", "/login", { name, password }),
             flushStorage: () => Promise.resolve(),
             printCurrent: (_opts) => {
@@ -106,7 +108,7 @@
             updateStockItem: (id, patch) => call("PUT", `/stock/${id}`, patch),
             deleteStockItem: (id, actingUserId) => call("DELETE", `/stock/${id}`, { actingUserId }),
             listSuppliers: () => call("GET", "/suppliers"),
-            setSuppliers: (list) => call("PUT", "/suppliers", list),
+            setSuppliers: (list, actingUserId) => call("PUT", "/suppliers", { list, actingUserId }),
             // Tarayıcıda gömülü görünüm mümkün değil, yeni sekmede açılır.
             showSupplier: (url) => {
               window.open(url, "_blank");
@@ -129,7 +131,8 @@
             getScreensaverImage: () => Promise.resolve(null),
             holdAppointmentForLeave: (id, actingUserId) =>
               call("PUT", `/appointments/${id}/hold-for-leave`, { actingUserId }),
-            listActivityLog: () => call("GET", "/activity-log"),
+            listActivityLog: (opts, actingUserId) =>
+              call("GET", `/activity-log?actingUserId=${encodeURIComponent(actingUserId || "")}`),
             listQuotes: () => call("GET", "/quotes"),
             addQuote: (input) => call("POST", "/quotes", input),
             updateQuote: (id, patch) => call("PUT", `/quotes/${id}`, patch),

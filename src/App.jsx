@@ -49,6 +49,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [idleLockConfig, setIdleLockConfig] = useState(null);
   const [cameras, setCameras] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [shopLocation, setShopLocation] = useState(null);
@@ -179,8 +180,15 @@ export default function App() {
       stockItems: () => window.api.listStockItems().then(setStockItems),
       depots: () => window.api.listDepots().then(setDepots),
       settings: () => {
-        if (currentUser?.role === "admin") window.api.getSettings().then(setSettings);
-        if (currentUser) window.api.getCameraSettings().then(setCameras);
+        if (currentUser?.role === "admin") window.api.getSettings(currentUser.id).then(setSettings);
+        if (currentUser) {
+          window.api.getCameraSettings().then(setCameras);
+          // Ekran koruyucu/otomatik-kilit ayarı (etkin mi, kaç dakika) HERKESTE
+          // uygulanmalı — sadece admin'e özel tam `settings` (API anahtarları)
+          // ile karıştırılmasın diye ayrı, hassas olmayan bir uçtan çekiliyor
+          // (bkz. handlers.js getIdleLockConfig).
+          window.api.getIdleLockConfig().then(setIdleLockConfig);
+        }
       },
       users: () => window.api.listUsers().then(setUsers),
       quotes: () => currentUser && window.api.listQuotes().then(setQuotes),
@@ -194,7 +202,7 @@ export default function App() {
           .then(setMessages)
           .catch((err) => console.error("Mesajlar yüklenemedi:", err)),
       activityLog: () => {
-        if (currentUser?.role === "admin") window.api.listActivityLog().then(setActivityLog);
+        if (currentUser?.role === "admin") window.api.listActivityLog(undefined, currentUser.id).then(setActivityLog);
       },
     };
     const unsubscribe = window.api.onDataChanged(({ table }) => {
@@ -335,11 +343,23 @@ export default function App() {
   // oturumundayken belleğe alınır.
   useEffect(() => {
     if (currentUser?.role === "admin") {
-      window.api.getSettings().then(setSettings);
-      window.api.listActivityLog().then(setActivityLog);
+      window.api.getSettings(currentUser.id).then(setSettings);
+      window.api.listActivityLog(undefined, currentUser.id).then(setActivityLog);
     } else {
       setSettings(null);
       setActivityLog([]);
+    }
+  }, [currentUser]);
+
+  // Ekran koruyucu/otomatik-kilit yapılandırması TÜM giriş yapmış
+  // kullanıcılarda (rolden bağımsız) yüklenmeli — aksi halde personel
+  // bilgisayarlarında admin'in kapattığı/ayarladığı süre hiç uygulanmaz,
+  // hep varsayılan değere düşerdi (bkz. getIdleLockConfig'in üstündeki not).
+  useEffect(() => {
+    if (currentUser) {
+      window.api.getIdleLockConfig().then(setIdleLockConfig);
+    } else {
+      setIdleLockConfig(null);
     }
   }, [currentUser]);
 
@@ -429,6 +449,12 @@ export default function App() {
 
   function handleLogout() {
     localStorage.removeItem("rememberedUserId");
+    // Yazma tarafında (handleLogin/handleCreateFirstUser) zaten zorla diske
+    // yazdırılıyordu ama SİLME tarafında bu hiç yapılmıyordu — Chromium bu
+    // silmeyi diske yansıtmadan uygulama kapanır/çökerse, bir sonraki açılışta
+    // eski rememberedUserId hâlâ diskte kalıp beklenmedik bir otomatik
+    // girişe yol açabilirdi.
+    window.api.flushStorage?.();
     setCurrentUser(null);
     setSessionNotice("");
   }
@@ -438,14 +464,14 @@ export default function App() {
   // bu yana geçen süre ölçülüyor (powerMonitor), ki kullanıcı başka bir
   // programla meşgulken yanlışlıkla kilitlenmesin.
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !idleLockConfig?.idleLockEnabled) return;
     const interval = setInterval(async () => {
       const idleSeconds = await window.api.getSystemIdleSeconds();
-      const thresholdMinutes = settings?.idleTimeoutMinutes ?? 5;
+      const thresholdMinutes = idleLockConfig.idleTimeoutMinutes ?? 5;
       if (idleSeconds >= thresholdMinutes * 60) setLocked(true);
     }, 15000);
     return () => clearInterval(interval);
-  }, [currentUser, settings?.idleTimeoutMinutes]);
+  }, [currentUser, idleLockConfig]);
 
   function handleIdleWake() {
     setLocked(false);
@@ -881,7 +907,7 @@ export default function App() {
             onFuelDevicesSynced={setFuelDevices}
           />
         )}
-        {activeTab === "settings" && currentUser.role === "admin" && settings && (
+        {activeTab === "settings" && (
           <SettingsPage
             appointments={appointments}
             technicians={technicians}
@@ -901,6 +927,7 @@ export default function App() {
             onHolidaysSaved={setHolidays}
             onVehiclesSaved={setVehicles}
             onUsersSaved={refreshUsers}
+            onCurrentUserUpdated={setCurrentUser}
             onSuppliersSaved={setSuppliers}
             onDepotsSaved={setDepots}
             onStockSaved={setStockItems}

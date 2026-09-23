@@ -82,7 +82,8 @@ app.get("/api/technicians", async (req, res, next) => {
 });
 app.put("/api/technicians", async (req, res, next) => {
   try {
-    res.json(await handlers.setTechnicians(req.body));
+    const { list, actingUserId } = req.body;
+    res.json(await handlers.setTechnicians(list, actingUserId));
   } catch (err) {
     next(err);
   }
@@ -121,14 +122,15 @@ app.put("/api/vehicles", async (req, res, next) => {
 
 app.get("/api/settings", async (req, res, next) => {
   try {
-    res.json(await handlers.getSettings());
+    res.json(await handlers.getSettings(req.query.actingUserId));
   } catch (err) {
     next(err);
   }
 });
 app.put("/api/settings", async (req, res, next) => {
   try {
-    res.json(await handlers.updateSettings(req.body));
+    const { patch, actingUserId } = req.body;
+    res.json(await handlers.updateSettings(patch, actingUserId));
   } catch (err) {
     next(err);
   }
@@ -155,6 +157,13 @@ app.post("/api/sales", async (req, res, next) => {
 app.get("/api/maps/api-key", async (req, res, next) => {
   try {
     res.json(await handlers.getGoogleMapsApiKeyForClient());
+  } catch (err) {
+    next(err);
+  }
+});
+app.get("/api/settings/idle-lock-config", async (req, res, next) => {
+  try {
+    res.json(await handlers.getIdleLockConfig());
   } catch (err) {
     next(err);
   }
@@ -198,7 +207,7 @@ app.get("/api/fuel/devices", async (req, res, next) => {
 
 app.get("/api/activity-log", async (req, res, next) => {
   try {
-    res.json(await handlers.listActivityLog());
+    res.json(await handlers.listActivityLog(undefined, req.query.actingUserId));
   } catch (err) {
     next(err);
   }
@@ -269,8 +278,9 @@ app.put("/api/suppliers", async (req, res, next) => {
     // yok — düz metin şifrenin diske yazılmasını önlemek için burada atarız.
     // Mevcut kayıtlı kimlik bilgisi (varsa) db.js'teki birleştirme mantığıyla
     // korunur.
-    const sanitized = (req.body || []).map(({ password, hasCredentials, ...rest }) => rest);
-    res.json(await handlers.setSuppliers(sanitized));
+    const { list, actingUserId } = req.body || {};
+    const sanitized = (list || []).map(({ password, hasCredentials, ...rest }) => rest);
+    res.json(await handlers.setSuppliers(sanitized, actingUserId));
   } catch (err) {
     next(err);
   }
@@ -285,22 +295,23 @@ app.get("/api/users", async (req, res, next) => {
 });
 app.post("/api/users", async (req, res, next) => {
   try {
-    const { name, password, role, hiddenTabs } = req.body;
-    res.json(await handlers.addUser(name, password, role, hiddenTabs));
+    const { name, password, role, hiddenTabs, settingsSections, actingUserId } = req.body;
+    res.json(await handlers.addUser(name, password, role, hiddenTabs, settingsSections, actingUserId));
   } catch (err) {
     next(err);
   }
 });
 app.put("/api/users/:id", async (req, res, next) => {
   try {
-    res.json(await handlers.updateUser(req.params.id, req.body));
+    const { patch, actingUserId } = req.body;
+    res.json(await handlers.updateUser(req.params.id, patch, actingUserId));
   } catch (err) {
     next(err);
   }
 });
 app.delete("/api/users/:id", async (req, res, next) => {
   try {
-    await handlers.deleteUser(req.params.id);
+    await handlers.deleteUser(req.params.id, req.body?.actingUserId);
     res.json({ ok: true });
   } catch (err) {
     next(err);

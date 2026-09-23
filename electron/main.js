@@ -102,6 +102,12 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("sync:status", { status });
   });
 
+  // Laptop uyku modundan çıktığında mevcut Realtime WebSocket'i sunucu
+  // tarafında zaten kopmuş olabilir — kütüphanenin kendi hata algılamasını
+  // beklemeden bağlantıyı hemen tazeliyoruz (bkz. db.js'teki
+  // forceReconnectRealtime açıklaması).
+  powerMonitor.on("resume", () => db.forceReconnectRealtime());
+
   await createWindow();
 
   // Fire-and-forget — hiçbir şekilde açılışı bekletmez, hata olursa
@@ -189,7 +195,7 @@ ipcMain.handle("holidays:set", (_e, { list, actingUserId }) => handlers.setHolid
 ipcMain.handle("vehicles:list", () => handlers.listVehicles());
 ipcMain.handle("vehicles:set", (_e, { list, actingUserId }) => handlers.setVehicles(list, actingUserId));
 
-ipcMain.handle("settings:get", () => handlers.getSettings());
+ipcMain.handle("settings:get", (_e, actingUserId) => handlers.getSettings(actingUserId));
 ipcMain.handle("settings:update", (_e, { patch, actingUserId }) => handlers.updateSettings(patch, actingUserId));
 
 ipcMain.handle("routes:build", (_e, { scheduledDate, actingUserId }) =>
@@ -200,6 +206,7 @@ ipcMain.handle("shop:location", () => handlers.getShopLocation());
 ipcMain.handle("sales:add", (_e, input) => handlers.addSale(input));
 
 ipcMain.handle("maps:getApiKey", () => handlers.getGoogleMapsApiKeyForClient());
+ipcMain.handle("settings:getIdleLockConfig", () => handlers.getIdleLockConfig());
 ipcMain.handle("maps:getUsageCount", () => handlers.getMapUsageCount());
 ipcMain.handle("maps:incrementUsageCount", () => handlers.incrementMapUsageCount());
 
@@ -208,8 +215,8 @@ ipcMain.handle("fuel:list", () => handlers.listFuelTransactions());
 ipcMain.handle("fuel:devices:list", () => handlers.listFuelDevices());
 
 ipcMain.handle("users:list", () => handlers.listUsers());
-ipcMain.handle("users:add", (_e, { name, password, role, hiddenTabs, actingUserId }) =>
-  handlers.addUser(name, password, role, hiddenTabs, actingUserId)
+ipcMain.handle("users:add", (_e, { name, password, role, hiddenTabs, settingsSections, actingUserId }) =>
+  handlers.addUser(name, password, role, hiddenTabs, settingsSections, actingUserId)
 );
 ipcMain.handle("users:update", (_e, { id, patch, actingUserId }) => handlers.updateUser(id, patch, actingUserId));
 ipcMain.handle("users:delete", (_e, { id, actingUserId }) => handlers.deleteUser(id, actingUserId));
@@ -224,7 +231,7 @@ ipcMain.handle("auth:login", (_e, { name, password }) => handlers.login(name, pa
 // yazdırıyor.
 ipcMain.handle("app:flushStorage", () => mainWindow?.webContents.session.flushStorageData());
 
-ipcMain.handle("activityLog:list", (_e, opts) => handlers.listActivityLog(opts));
+ipcMain.handle("activityLog:list", (_e, opts, actingUserId) => handlers.listActivityLog(opts, actingUserId));
 
 // Doğrudan yazıcıya göndermek yerine, önce Chromium'un kendi PDF
 // görüntüleyicisinde (kendi yazdırma/yakınlaştırma araç çubuğu dahil) bir
@@ -314,14 +321,15 @@ ipcMain.handle("quotes:generatePdf", async (_e, { defaultFileName }) => {
 // kendi otomatik günlük yedeğine ek, admin'in istediği an elinde hazır
 // ikinci bir güvenlik ağı. Tüm tabloları tek bir zaman damgalı JSON
 // dosyası olarak indirir.
-ipcMain.handle("backup:export", async () => {
+ipcMain.handle("backup:export", async (_e, actingUserId) => {
+  await db.requireAdmin(actingUserId, "Tüm veriyi yedekleme");
   const defaultName = `sita-yapi-yedek-${new Date().toISOString().slice(0, 10)}.json`;
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultName,
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
   if (canceled || !filePath) return null;
-  const backup = await handlers.exportAllTables();
+  const backup = await handlers.exportAllTables(actingUserId);
   const fs = await import("node:fs/promises");
   await fs.writeFile(filePath, JSON.stringify(backup, null, 2));
   return filePath;

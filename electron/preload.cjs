@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld("api", {
   listVehicles: () => ipcRenderer.invoke("vehicles:list"),
   setVehicles: (list, actingUserId) => ipcRenderer.invoke("vehicles:set", { list, actingUserId }),
 
-  getSettings: () => ipcRenderer.invoke("settings:get"),
+  getSettings: (actingUserId) => ipcRenderer.invoke("settings:get", actingUserId),
   updateSettings: (patch, actingUserId) => ipcRenderer.invoke("settings:update", { patch, actingUserId }),
 
   buildRoutes: (scheduledDate, actingUserId) =>
@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld("api", {
   getShopLocation: () => ipcRenderer.invoke("shop:location"),
   addSale: (input) => ipcRenderer.invoke("sales:add", input),
   getGoogleMapsApiKey: () => ipcRenderer.invoke("maps:getApiKey"),
+  getIdleLockConfig: () => ipcRenderer.invoke("settings:getIdleLockConfig"),
   getMapUsageCount: () => ipcRenderer.invoke("maps:getUsageCount"),
   incrementMapUsageCount: () => ipcRenderer.invoke("maps:incrementUsageCount"),
 
@@ -59,14 +60,14 @@ contextBridge.exposeInMainWorld("api", {
   listFuelDevices: () => ipcRenderer.invoke("fuel:devices:list"),
 
   listUsers: () => ipcRenderer.invoke("users:list"),
-  addUser: (name, password, role, hiddenTabs, actingUserId) =>
-    ipcRenderer.invoke("users:add", { name, password, role, hiddenTabs, actingUserId }),
+  addUser: (name, password, role, hiddenTabs, settingsSections, actingUserId) =>
+    ipcRenderer.invoke("users:add", { name, password, role, hiddenTabs, settingsSections, actingUserId }),
   updateUser: (id, patch, actingUserId) => ipcRenderer.invoke("users:update", { id, patch, actingUserId }),
   deleteUser: (id, actingUserId) => ipcRenderer.invoke("users:delete", { id, actingUserId }),
   login: (name, password) => ipcRenderer.invoke("auth:login", { name, password }),
   flushStorage: () => ipcRenderer.invoke("app:flushStorage"),
 
-  listActivityLog: (opts) => ipcRenderer.invoke("activityLog:list", opts),
+  listActivityLog: (opts, actingUserId) => ipcRenderer.invoke("activityLog:list", opts, actingUserId),
 
   printCurrent: (opts) => ipcRenderer.invoke("print:current", opts),
 
@@ -144,7 +145,7 @@ contextBridge.exposeInMainWorld("api", {
     return () => ipcRenderer.removeListener("sync:status", listener);
   },
 
-  exportBackup: () => ipcRenderer.invoke("backup:export"),
+  exportBackup: (actingUserId) => ipcRenderer.invoke("backup:export", actingUserId),
 
   // Tedarikçi sitesinde otomatik giriş için kullanıcı adı/şifre alanı
   // bulunamadığında (site değişmiş, 2FA vb.) çağrılır — callback({ supplierId }) alır.

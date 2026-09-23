@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, PanelLeft } from "lucide-react";
+import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, PanelLeft, Wifi, WifiOff } from "lucide-react";
 import { TABS } from "./navTabs.jsx";
 import { useSyncStatus, useHeaderAlerts } from "../lib/useHeaderAlerts.js";
 import MarqueeText from "./MarqueeText.jsx";
@@ -367,15 +367,11 @@ export default function Header({
               cursor: "default",
             }}
           >
-            <span
-              style={{
-                display: "inline-block",
-                width: 9,
-                height: 9,
-                borderRadius: "50%",
-                background: syncInfo.color,
-              }}
-            />
+            {syncInfo.isProblem ? (
+              <WifiOff size={15} strokeWidth={2} color="var(--danger)" />
+            ) : (
+              <Wifi size={15} strokeWidth={1.75} style={{ opacity: 0.6 }} />
+            )}
             {showSyncTooltip && (
               <span
                 style={{
