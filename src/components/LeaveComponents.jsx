@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { TrashIcon } from "./icons.jsx";
+import { TeamIllustration } from "./illustrations.jsx";
 import {
   suggestAnnualLeaveDays,
   countDeductibleLeaveDays,
@@ -122,7 +123,10 @@ export function LeaveSummaryModal({ title = "Yıllık İzin Tablosu", people, ho
           </select>
         </label>
         {rows.length === 0 ? (
-          <p>Henüz kimse eklenmedi.</p>
+          <div style={{ textAlign: "center", padding: "1rem 0" }}>
+            <TeamIllustration size={110} />
+            <p>Henüz kimse eklenmedi.</p>
+          </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>

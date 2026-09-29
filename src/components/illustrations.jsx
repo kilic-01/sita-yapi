@@ -1,26 +1,32 @@
-// Basit, marka renklerini (CSS değişkenleri) kullanan çizgisel SVG
-// illüstrasyonlar. Vektör oldukları için her ekran çözünürlüğünde/DPI'da
-// net görünürler ve tema (açık/koyu) değişince otomatik uyum sağlarlar.
+// unDraw'dan (undraw.co, açık kaynak/ücretsiz lisans) marka rengimize
+// (--teal-1: #3EACA7) göre yeniden renklendirilmiş illüstrasyonlar —
+// önceden tüm boş-liste ekranlarında tek bir elle çizilmiş ikon tekrar
+// ediyordu, artık bağlama uygun birkaç farklı illüstrasyon var.
+import emptySrc from "../assets/illustrations/undraw-empty.svg";
+import carRepairSrc from "../assets/illustrations/undraw-car-repair.svg";
+import chattingSrc from "../assets/illustrations/undraw-chatting.svg";
+import noDataSrc from "../assets/illustrations/undraw-no-data.svg";
+import vacationSrc from "../assets/illustrations/undraw-vacation.svg";
+import teamSrc from "../assets/illustrations/undraw-team.svg";
 
-export function EmptyStateIllustration({ size = 140 }) {
-  return (
-    <svg
-      viewBox="0 0 200 160"
-      width={size}
-      height={(size * 160) / 200}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <rect x="40" y="30" width="120" height="100" rx="14" stroke="var(--border)" strokeWidth="3" />
-      <path d="M40 56 H160" stroke="var(--border)" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="58" cy="43" r="3" fill="var(--border)" />
-      <circle cx="70" cy="43" r="3" fill="var(--border)" />
-      <circle cx="100" cy="96" r="24" stroke="var(--accent)" strokeWidth="3" />
-      <path d="M100 85v22M89 96h22" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  );
+function illustration(src) {
+  return function Illustration({ size = 140 }) {
+    return <img src={src} alt="" width={size} style={{ maxWidth: "100%", height: "auto" }} />;
+  };
 }
+
+// Genel amaçlı boş-liste illüstrasyonu.
+export const EmptyStateIllustration = illustration(emptySrc);
+// Araçlar sekmesi gibi konuya özel boş durumlar için.
+export const CarRepairIllustration = illustration(carRepairSrc);
+// Mesajlar panelinde henüz hiç mesaj yokken.
+export const ChattingIllustration = illustration(chattingSrc);
+// Grafik/rapor için yeterli veri yokken (yakıt grafiği, aktivite kaydı).
+export const NoDataIllustration = illustration(noDataSrc);
+// Tatil/izin listeleri boşken.
+export const VacationIllustration = illustration(vacationSrc);
+// Çalışan listesi boşken.
+export const TeamIllustration = illustration(teamSrc);
 
 export function WelcomeIllustration({ size = 96 }) {
   return (

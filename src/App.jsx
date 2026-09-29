@@ -98,7 +98,10 @@ export default function App() {
   function showToast(type, text) {
     setToast({ type, text });
     clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+    // Sabit 3sn süre uzun mesajlarda (ör. geocode uyarısı) okumaya yetmiyordu —
+    // süreyi metin uzunluğuna göre ölçekliyoruz, kısa mesajlar yine 3sn'de kalır.
+    const duration = Math.min(8000, Math.max(3000, 1800 + text.length * 60));
+    toastTimerRef.current = setTimeout(() => setToast(null), duration);
   }
 
   useEffect(() => {

@@ -479,20 +479,25 @@ export default function MapPage({ appointments, technicians, shopLocation }) {
             <p style={{ opacity: 0.7, marginTop: "-0.5rem" }}>
               {AREAS_BY_ILCE.length} ilçe, {serviceAreas.features.length} mahalle
             </p>
-            {AREAS_BY_ILCE.map(([ilce, mahalleler]) => (
-              <div key={ilce} style={{ marginBottom: "1rem" }}>
-                <strong style={{ color: DISTRICT_COLORS[ilce] || DEFAULT_DISTRICT_COLOR }}>{ilce}</strong>
-                <span style={{ opacity: 0.6, fontSize: "0.8rem" }}> ({mahalleler.length})</span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem 1rem", marginTop: "0.4rem" }}>
-                  {mahalleler.map((m) => (
-                    <span key={m} style={{ fontSize: "0.85rem" }}>
-                      {m}
-                    </span>
-                  ))}
+            {/* 87 mahalle sığmayınca popup'ın kendisi (ve onunla birlikte tüm
+                sayfa) uzayıp gidiyordu — liste artık kendi içinde kayıyor,
+                popup'ın boyu sabit kalıyor. */}
+            <div style={{ maxHeight: "55vh", overflowY: "auto", paddingRight: "0.5rem" }}>
+              {AREAS_BY_ILCE.map(([ilce, mahalleler]) => (
+                <div key={ilce} style={{ marginBottom: "1rem" }}>
+                  <strong style={{ color: DISTRICT_COLORS[ilce] || DEFAULT_DISTRICT_COLOR }}>{ilce}</strong>
+                  <span style={{ opacity: 0.6, fontSize: "0.8rem" }}> ({mahalleler.length})</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem 1rem", marginTop: "0.4rem" }}>
+                    {mahalleler.map((m) => (
+                      <span key={m} style={{ fontSize: "0.85rem" }}>
+                        {m}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.75rem" }}>
               <button type="button" className="secondary" onClick={() => setShowAreaList(false)}>
                 Kapat
               </button>

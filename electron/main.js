@@ -947,6 +947,44 @@ ipcMain.handle("suppliers:reload", () => {
 // sonra oturum uygulama yeniden başlatılsa da açık kalır (tıpkı gerçek bir
 // tarayıcıdaki WhatsApp Web gibi).
 let whatsappView = null;
+let whatsappUnreadTimer = null;
+
+// Sohbet listesindeki her okunmamış rozeti WhatsApp Web kendi erişilebilirlik
+// (accessibility) etiketiyle işaretliyor — "N unread message(s)" (İngilizce
+// hesaplarda) ya da "N okunmamış mesaj" (Türkçe hesaplarda). Bu metne göre
+// toplam sayıyı çıkarıyoruz; sınıf adları (CSS class'ları) WhatsApp'ın kendi
+// derlemesinde sürümden sürüme değiştiği için onlara güvenilemez, ama
+// erişilebilirlik etiketleri görece kararlı kalıyor. WhatsApp DOM'unu
+// değiştirirse bu sayaç sessizce 0 dönmeye başlar — kritik bir özellik değil.
+const WHATSAPP_UNREAD_SCRIPT = `
+  (function () {
+    try {
+      var total = 0;
+      var spans = document.querySelectorAll('span[aria-label]');
+      for (var i = 0; i < spans.length; i++) {
+        var label = spans[i].getAttribute('aria-label') || '';
+        var m = label.match(/^(\\d+)\\s/);
+        if (m && /unread|okunmam/i.test(label)) total += parseInt(m[1], 10);
+      }
+      return total;
+    } catch (e) {
+      return 0;
+    }
+  })()
+`;
+
+function pollWhatsAppUnread() {
+  if (!whatsappView) return;
+  whatsappView.webContents
+    .executeJavaScript(WHATSAPP_UNREAD_SCRIPT)
+    .then((count) => {
+      mainWindow?.webContents.send("whatsapp:unreadCount", Number(count) || 0);
+    })
+    .catch(() => {
+      // Sayfa henüz yüklenmemiş/giriş ekranındaysa (QR kod) script başarısız
+      // olur — sessizce yoksay, bir sonraki turda tekrar denenir.
+    });
+}
 
 function ensureWhatsAppView() {
   if (!whatsappView) {
@@ -954,6 +992,10 @@ function ensureWhatsAppView() {
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
     mainWindow.contentView.addChildView(whatsappView);
+    // Dock ilk açılışta değil, uygulama/dock bileşeni mount olur olmaz
+    // (bkz. "whatsapp:init") arka planda sessizce yükleniyor — bu yüzden
+    // kullanıcı henüz paneli açmadan GİZLİ kalması gerekiyor.
+    whatsappView.setVisible(false);
     // WhatsApp Web, varsayılan Electron User-Agent'ındaki "Electron/x.y.z"
     // imzasını görünce "desteklenmeyen tarayıcı" hatası gösteriyor — bu
     // yüzden aynı Chromium sürümüne sahip standart bir Chrome UA'sıyla
@@ -966,8 +1008,20 @@ function ensureWhatsAppView() {
     });
     whatsappView.webContents.loadURL("https://web.whatsapp.com");
   }
+  // Panel hiç açılmasa bile (sadece uygulama açıkken) okunmamış sayısı
+  // güncel kalsın diye görünürlükten bağımsız çalışan tek bir zamanlayıcı.
+  if (!whatsappUnreadTimer) {
+    whatsappUnreadTimer = setInterval(pollWhatsAppUnread, 5000);
+  }
   return whatsappView;
 }
+
+// Dock kapalıyken bile ikonun üzerinde okunmamış rozeti gösterebilmek için
+// görünümün en baştan (panel hiç açılmadan) arka planda yüklenmeye
+// başlaması gerekiyor — WhatsAppDock bileşeni mount olunca bunu çağırır.
+ipcMain.handle("whatsapp:init", () => {
+  ensureWhatsAppView();
+});
 
 ipcMain.handle("whatsapp:show", (_e, bounds) => {
   const view = ensureWhatsAppView();

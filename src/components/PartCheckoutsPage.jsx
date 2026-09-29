@@ -4,6 +4,7 @@ import { todayISO } from "../lib/format.js";
 import Modal from "./Modal.jsx";
 import PartCheckoutsPrintView from "./PartCheckoutsPrintView.jsx";
 import SuggestionDropdown from "./SuggestionDropdown.jsx";
+import { EmptyStateIllustration } from "./illustrations.jsx";
 
 const STOCK_RESULT_LIMIT = 8;
 const VAT_RATE = 1.2;
@@ -39,7 +40,12 @@ export default function PartCheckoutsPage({
 }) {
   const [date, setDate] = useState(todayISO());
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [technicianId, setTechnicianId] = useState("");
+  // Tek bir teknisyen yerine bir DİZİ — aynı zimmet aynı anda birden fazla
+  // kişiye (ör. usta + o gün ona eşlik eden çırak) verilebilsin diye. Her
+  // seçili kişi, formdaki her ürün satırı için AYRI bir zimmet kaydı alır
+  // (stoktan da ona göre düşülür) — bir ürünün tek zimmetinin paylaştırılması
+  // değil, herkesin kendi zimmeti.
+  const [technicianIds, setTechnicianIds] = useState([""]);
   const [productRows, setProductRows] = useState([emptyProductRow()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -212,24 +218,40 @@ export default function PartCheckoutsPage({
   const dayCheckouts = useMemo(() => partCheckouts.filter((c) => c.date === date), [partCheckouts, date]);
 
   // Teknisyene göre grupla — dispatcher sabah "kim ne aldı"yı, akşam "kimde
-  // ne var, mutabakatı bekleyen ne"yi teknisyen bazlı görmek istiyor.
+  // ne var, mutabakatı bekleyen ne"yi teknisyen bazlı görmek istiyor. Aynı
+  // "Zimmetle" işleminde birden fazla kişi seçildiyse (aynı araçla birlikte
+  // işlere giden bir ekip) o kişilerin zimmetleri ortak bir "groupId" paylaşır
+  // — bu durumda ayrı ayrı değil, TEK bir başlık altında (isimler yan yana)
+  // gösterilir. groupId'si olmayan (eski veya tek kişilik) zimmetler eskisi
+  // gibi kendi technicianId'sine göre gruplanır.
   const byTechnician = useMemo(() => {
     const groups = new Map();
     for (const c of dayCheckouts) {
-      if (!groups.has(c.technicianId)) groups.set(c.technicianId, []);
-      groups.get(c.technicianId).push(c);
+      const key = c.groupId || c.technicianId;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(c);
     }
     return groups;
   }, [dayCheckouts]);
 
-  // İsme göre alfabetik sıralı liste — her teknisyen bir başlık, tıklanınca
-  // o günkü zimmetleri açılır/kapanır (accordion) gösterilir.
+  // İsme göre alfabetik sıralı liste — her grup bir başlık, tıklanınca
+  // o günkü zimmetleri açılır/kapanır (accordion) gösterilir. Bir grupta
+  // birden fazla kişi olabileceği için (bkz. yukarı) her girdiye ait
+  // benzersiz teknisyenlerin listesi de burada çıkarılıyor.
   const sortedTechnicianEntries = useMemo(() => {
-    return [...byTechnician.entries()].sort(([aId], [bId]) => {
-      const aName = technicians.find((t) => t.id === aId)?.name || "";
-      const bName = technicians.find((t) => t.id === bId)?.name || "";
-      return aName.localeCompare(bName, "tr");
-    });
+    return [...byTechnician.entries()]
+      .map(([key, rows]) => {
+        const groupTechnicianIds = [...new Set(rows.map((c) => c.technicianId))];
+        const groupTechnicians = groupTechnicianIds
+          .map((id) => technicians.find((t) => t.id === id))
+          .filter(Boolean);
+        return [key, rows, groupTechnicians];
+      })
+      .sort(([, , aTechs], [, , bTechs]) => {
+        const aName = aTechs[0]?.name || "";
+        const bName = bTechs[0]?.name || "";
+        return aName.localeCompare(bName, "tr");
+      });
   }, [byTechnician, technicians]);
 
   // Yazdırma çıktısı için aynı (alfabetik sıralı) gruplamayı stok kalemi ve
@@ -237,15 +259,16 @@ export default function PartCheckoutsPage({
   // görülen sırayla aynı çıksın diye.
   const printGroups = useMemo(
     () =>
-      sortedTechnicianEntries.map(([techId, rows]) => ({
-        technician: technicians.find((t) => t.id === techId),
+      sortedTechnicianEntries.map(([groupKey, rows, groupTechnicians]) => ({
+        groupKey,
+        technicians: groupTechnicians,
         rows: rows.map((checkout) => ({
           checkout,
           stock: stockItems.find((s) => s.id === checkout.stockItemId),
           appointment: checkout.appointmentId ? appointments.find((a) => a.id === checkout.appointmentId) : null,
         })),
       })),
-    [sortedTechnicianEntries, technicians, stockItems, appointments]
+    [sortedTechnicianEntries, stockItems, appointments]
   );
 
   function draftFor(checkoutId) {
@@ -261,7 +284,7 @@ export default function PartCheckoutsPage({
   }
 
   function resetCheckoutForm() {
-    setTechnicianId("");
+    setTechnicianIds([""]);
     setProductRows([emptyProductRow()]);
     setError("");
     Object.values(productRowSearchTimers.current).forEach(clearTimeout);
@@ -275,15 +298,28 @@ export default function PartCheckoutsPage({
   function startCheckoutForApprentice(apprenticeId) {
     setApprenticePickerForTech(null);
     resetCheckoutForm();
-    setTechnicianId(apprenticeId);
+    setTechnicianIds([apprenticeId]);
     setShowCheckoutModal(true);
+  }
+
+  function updateTechnicianAt(idx, value) {
+    setTechnicianIds((prev) => prev.map((id, i) => (i === idx ? value : id)));
+  }
+
+  function addTechnicianSlot() {
+    setTechnicianIds((prev) => [...prev, ""]);
+  }
+
+  function removeTechnicianAt(idx) {
+    setTechnicianIds((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function handleCheckout(e) {
     e.preventDefault();
     setError("");
-    if (!technicianId) {
-      setError("Teknisyen seçin.");
+    const validTechnicianIds = [...new Set(technicianIds.filter(Boolean))];
+    if (validTechnicianIds.length === 0) {
+      setError("En az bir teknisyen seçin.");
       return;
     }
     const validRows = productRows.filter((r) => r.selectedStock && Number(r.qty) > 0);
@@ -292,27 +328,39 @@ export default function PartCheckoutsPage({
       return;
     }
 
+    // Aynı ürün her seçili kişiye AYRI AYRI zimmetleniyor — stoktan da o
+    // kadar kez düşüyor, bu yüzden yetersizlik uyarısı kişi sayısıyla
+    // çarpılmış toplam ihtiyacı göstermeli.
     for (const r of validRows) {
-      if (Number(r.qty) > Number(r.selectedStock.quantity)) {
+      const totalNeeded = Number(r.qty) * validTechnicianIds.length;
+      if (totalNeeded > Number(r.selectedStock.quantity)) {
         const proceed = window.confirm(
-          `${r.selectedStock.code}: stokta sadece ${r.selectedStock.quantity} ${r.selectedStock.unit || "adet"} görünüyor. Yine de zimmetlensin mi?`
+          `${r.selectedStock.code}: ${validTechnicianIds.length} kişiye ${r.qty} adet zimmetlemek toplam ${totalNeeded} adet gerektiriyor, stokta sadece ${r.selectedStock.quantity} ${r.selectedStock.unit || "adet"} görünüyor. Yine de zimmetlensin mi?`
         );
         if (!proceed) return;
       }
     }
 
     setSaving(true);
+    // Birden fazla kişi seçildiyse (aynı araçla birlikte gidenler) hepsinin
+    // zimmeti ortak bir "groupId" paylaşır ki listede ayrı ayrı değil, tek
+    // bir başlık altında (isimler yan yana) gösterilebilsinler. Tek kişilik
+    // zimmetlerde grup kavramı anlamsız, groupId gönderilmiyor.
+    const groupId = validTechnicianIds.length > 1 ? crypto.randomUUID() : null;
     try {
       // Ard arda (transaction yok) — bir satır başarısız olursa öncekiler
       // zaten kaydedilmiş olur, onChanged() yine de en güncel durumu getirir.
-      for (const r of validRows) {
-        await window.api.addPartCheckout({
-          technicianId,
-          stockItemId: r.selectedStock.id,
-          date,
-          qtyTaken: Number(r.qty),
-          actingUserId: currentUser?.id,
-        });
+      for (const techId of validTechnicianIds) {
+        for (const r of validRows) {
+          await window.api.addPartCheckout({
+            technicianId: techId,
+            stockItemId: r.selectedStock.id,
+            date,
+            qtyTaken: Number(r.qty),
+            actingUserId: currentUser?.id,
+            groupId,
+          });
+        }
       }
       resetCheckoutForm();
       setShowCheckoutModal(false);
@@ -458,19 +506,24 @@ export default function PartCheckoutsPage({
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>{date} Zimmetleri</h3>
-        {byTechnician.size === 0 && <p>Bu tarih için zimmet yok.</p>}
-        {sortedTechnicianEntries.map(([techId, rows]) => {
-          const tech = technicians.find((t) => t.id === techId);
-          const isExpanded = expandedTechIds.has(techId);
-          const techAppointments = appointments.filter(
-            (a) => a.assignedTechnicianId === techId && a.scheduledDate === date
-          );
+        {byTechnician.size === 0 && (
+          <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+            <EmptyStateIllustration />
+            <p>Bu tarih için zimmet yok.</p>
+          </div>
+        )}
+        {sortedTechnicianEntries.map(([groupKey, rows, groupTechnicians]) => {
+          const isExpanded = expandedTechIds.has(groupKey);
+          // Grup birden fazla kişiden oluşuyorsa "çırağa zimmetle" butonu
+          // grubun ilk kişisiyle eşleştirir — yeni, ayrı bir zimmet açar,
+          // mevcut grubu değiştirmez.
+          const primaryTechId = groupTechnicians[0]?.id;
           return (
-            <div key={techId} style={{ marginBottom: "0.75rem" }}>
+            <div key={groupKey} style={{ marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
                 <button
                   type="button"
-                  onClick={() => toggleTechExpanded(techId)}
+                  onClick={() => toggleTechExpanded(groupKey)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -491,7 +544,14 @@ export default function PartCheckoutsPage({
                   ) : (
                     <ChevronRight size={16} strokeWidth={1.75} />
                   )}
-                  <h4 style={{ margin: 0 }}>{tech?.name || "Bilinmeyen teknisyen"}</h4>
+                  {/* Aynı araçla birlikte giden birden fazla kişi seçildiyse
+                      (bkz. Yeni Zimmet formundaki "Başka Kişi Ekle") isimler
+                      burada yan yana, virgülle ayrılmış tek bir başlıkta. */}
+                  <h4 style={{ margin: 0 }}>
+                    {groupTechnicians.length > 0
+                      ? groupTechnicians.map((t) => t.name).join(", ")
+                      : "Bilinmeyen teknisyen"}
+                  </h4>
                   <small style={{ opacity: 0.6 }}>({rows.length} kalem)</small>
                 </button>
                 {apprentices.length > 0 && (
@@ -502,12 +562,12 @@ export default function PartCheckoutsPage({
                       title="Bugün bu ustayla giden bir çırağa zimmetle"
                       aria-label="Çırağa zimmetle"
                       onClick={() =>
-                        setApprenticePickerForTech((prev) => (prev === techId ? null : techId))
+                        setApprenticePickerForTech((prev) => (prev === primaryTechId ? null : primaryTechId))
                       }
                     >
                       <Plus size={14} strokeWidth={1.75} />
                     </button>
-                    {apprenticePickerForTech === techId && (
+                    {apprenticePickerForTech === primaryTechId && (
                       <div
                         style={{
                           position: "absolute",
@@ -523,7 +583,7 @@ export default function PartCheckoutsPage({
                         }}
                       >
                         <div style={{ padding: "0.4rem 0.6rem", opacity: 0.6, fontSize: "0.75rem" }}>
-                          Bugün {tech?.name || "bu usta"} ile giden çırak
+                          Bugün {groupTechnicians[0]?.name || "bu usta"} ile giden çırak
                         </div>
                         {apprentices.map((a) => (
                           <button
@@ -546,6 +606,12 @@ export default function PartCheckoutsPage({
                   const isEditingThisItem = editingItemId === c.id;
                   const editMatches = itemEditDraft.selectedStock ? [] : stockMatchesFor(itemEditDebouncedSearch);
                   const showReconcileForm = c.status !== "reconciled" || editingReconcileId === c.id;
+                  // Grup birden fazla kişiden oluşabildiği için (bkz. yukarı)
+                  // randevu listesi HER SATIRIN kendi teknisyenine göre —
+                  // grubun ilk kişisine göre değil.
+                  const techAppointments = appointments.filter(
+                    (a) => a.assignedTechnicianId === c.technicianId && a.scheduledDate === date
+                  );
                   return (
                     <div
                       key={c.id}
@@ -774,21 +840,44 @@ export default function PartCheckoutsPage({
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Yeni Zimmet</h3>
             <form onSubmit={handleCheckout}>
-              <label>
-                Teknisyen
-                <select value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}>
-                  <option value="">Seçin</option>
-                  {/* Usta/çırak ayrımı sadece otomatik rotalama için anlamlı
-                      (bkz. masterTechnicians/apprentices tanımı) — burada
-                      parça alan herkes eşit, gruplama/etiketleme olmadan
-                      tek listede gösteriliyor. */}
-                  {technicians.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {technicianIds.map((id, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", marginTop: idx === 0 ? 0 : "0.5rem" }}>
+                  <label style={{ flex: 1, marginBottom: 0 }}>
+                    {idx === 0 ? "Teknisyen" : ""}
+                    <select value={id} onChange={(e) => updateTechnicianAt(idx, e.target.value)}>
+                      <option value="">Seçin</option>
+                      {/* Usta/çırak ayrımı sadece otomatik rotalama için anlamlı
+                          (bkz. masterTechnicians/apprentices tanımı) — burada
+                          parça alan herkes eşit, gruplama/etiketleme olmadan
+                          tek listede gösteriliyor. */}
+                      {technicians.map((t) => (
+                        <option key={t.id} value={t.id} disabled={id !== t.id && technicianIds.includes(t.id)}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-btn delete"
+                    title="Bu kişiyi kaldır"
+                    aria-label="Bu kişiyi kaldır"
+                    onClick={() => removeTechnicianAt(idx)}
+                    disabled={technicianIds.length === 1}
+                  >
+                    <Trash2 size={14} strokeWidth={1.75} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                onClick={addTechnicianSlot}
+                style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.5rem" }}
+              >
+                <Plus size={15} strokeWidth={1.75} />
+                Başka Kişi Ekle
+              </button>
 
               {productRows.map((row, idx) => {
                 const matches = row.selectedStock ? [] : stockMatchesFor(productRowDebouncedSearch[row.key] || "");

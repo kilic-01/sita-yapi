@@ -112,7 +112,7 @@ export default function FuelSyncSection({
                       </td>
                       <td>{formatTL(d.monthlyLimit)}</td>
                       <td style={{ color: nearLimit ? "var(--danger)" : "inherit", fontWeight: nearLimit ? 700 : 400 }}>
-                        {(ratio * 100).toLocaleString("tr-TR", { maximumFractionDigits: 0 })}%
+                        %{(ratio * 100).toLocaleString("tr-TR", { maximumFractionDigits: 0 })}
                         {nearLimit && " — limite yaklaşıyor"}
                       </td>
                     </tr>

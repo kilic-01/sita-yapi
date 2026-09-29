@@ -14,6 +14,7 @@ import {
 import Modal from "./Modal.jsx";
 import { TrashIcon } from "./icons.jsx";
 import { todayISO } from "../lib/format.js";
+import { CarRepairIllustration } from "./illustrations.jsx";
 
 const DUE_SOON_DAYS = 30;
 // Fatura fotoğrafları telefon kamerasından geliyor (genelde 3-10 MB) —
@@ -514,7 +515,11 @@ function VehicleDetailModal({ vehicle, isNew, onClose, onSave, onDelete, onNotif
               type="button"
               className="icon-btn"
               onClick={() => setLightboxPhoto(null)}
-              style={{ position: "absolute", top: -12, right: -12, background: "var(--card-bg)", borderRadius: "50%" }}
+              // Negatif offset dar ekranlarda (azaltılmış popup dolgusuyla) görünüm
+              // dışına taşabiliyordu — fotoğrafın üstüne bindirilmiş bir daire artık
+              // viewport dolgusundan bağımsız, her zaman görünür.
+              style={{ position: "absolute", top: 8, right: 8, background: "var(--card-bg)", borderRadius: "50%" }}
+              title="Kapat"
               aria-label="Kapat"
             >
               <X size={18} />
@@ -592,7 +597,10 @@ export default function VehiclesPage({ vehicles, currentUser, onSaved, onNotify 
       )}
 
       {vehicles.length === 0 ? (
-        <p style={{ opacity: 0.7 }}>Henüz araç eklenmemiş.</p>
+        <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+          <CarRepairIllustration />
+          <p>Henüz araç eklenmemiş.</p>
+        </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.85rem" }}>
           {vehicles.map((v) => (

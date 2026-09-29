@@ -25,10 +25,21 @@ function loadSize() {
 
 export default function WhatsAppDock() {
   const [open, setOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const dockRef = useRef(null);
   const bodyRef = useRef(null);
   const sizeRef = useRef(loadSize());
   const dragRef = useRef(null);
+
+  // Panel hiç açılmamış olsa bile (kullanıcı sadece uygulamayı kullanırken)
+  // görünüm arka planda yüklenip okunmamış sayısını takip etmeye başlasın
+  // diye bileşen mount olur olmaz tetiklenir — "giriş yapılmışsa" koşulu
+  // burada aranmıyor, oturum yoksa/QR ekranındaysa sayaç zaten 0 kalır.
+  useEffect(() => {
+    window.api.initWhatsApp?.();
+    const unsubscribe = window.api.onWhatsAppUnreadCount?.(setUnreadCount);
+    return unsubscribe;
+  }, []);
 
   function getBounds() {
     const el = bodyRef.current;
@@ -166,8 +177,19 @@ export default function WhatsAppDock() {
         }}
         style={open ? undefined : { paddingLeft: "0.85rem", paddingRight: "0.85rem" }}
       >
-        <WhatsAppIcon size={17} />
+        <span style={{ position: "relative", display: "inline-flex" }}>
+          <WhatsAppIcon size={17} />
+          {!open && unreadCount > 0 && (
+            <span
+              className="msg-unread-badge"
+              style={{ position: "absolute", top: -7, right: -9, fontSize: "0.62rem", minWidth: 16, height: 16, padding: "0 4px" }}
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </span>
         {open && <span style={{ flex: 1, textAlign: "left" }}>WhatsApp</span>}
+        {open && unreadCount > 0 && <span className="msg-unread-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>}
         {open && (
           <button
             type="button"

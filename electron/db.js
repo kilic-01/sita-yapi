@@ -534,9 +534,20 @@ export async function addPartCheckout(input) {
     qtyReturned: null,
     appointmentId: null,
     note: input.note || "",
+    // Aynı anda birden fazla kişiye zimmetlenirken (bkz. PartCheckoutsPage'te
+    // "Başka Kişi Ekle") hepsinin kaydı bu ortak kimlikle işaretlenir ki liste
+    // ekranı onları ayrı ayrı değil tek bir grup olarak gösterebilsin.
+    groupId: input.groupId || null,
     ...stampCreatedPatch(input.actingUserId),
   };
-  const { data, error } = await supabase.from("partCheckouts").insert(row).select().single();
+  let { data, error } = await supabase.from("partCheckouts").insert(row).select().single();
+  if (error && isMissingColumnError(error, "groupId")) {
+    // "groupId" sütunu henüz eklenmemiş olabilir (SQL migrasyonu
+    // çalıştırılana kadar) — o alan olmadan tekrar deneriz, zimmet kaydı
+    // yine oluşur, sadece grup başlığı altında birleştirilemez.
+    const { groupId, ...rowWithoutGroup } = row;
+    ({ data, error } = await supabase.from("partCheckouts").insert(rowWithoutGroup).select().single());
+  }
   if (error) throw new Error(error.message);
   await logActivity(
     input.actingUserId,

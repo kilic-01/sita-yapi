@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, ChevronDown, ChevronUp, ArrowLeft, Send, Check, CheckCheck } from "lucide-react";
 import { UserAvatar } from "../lib/avatars.jsx";
+import { ChattingIllustration } from "./illustrations.jsx";
 
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -154,6 +155,7 @@ export default function MessagesDock({ messages, users, currentUser, onSend, onM
                 <button
                   type="button"
                   className="icon-btn"
+                  title="Geri"
                   aria-label="Geri"
                   onClick={() => setSelectedId(null)}
                 >
@@ -174,7 +176,12 @@ export default function MessagesDock({ messages, users, currentUser, onSend, onM
                 }}
               >
                 {selected.messages.length === 0 && (
-                  <small style={{ opacity: 0.6 }}>Henüz mesaj yok — ilk mesajı siz gönderin.</small>
+                  <div style={{ textAlign: "center", padding: "1rem 0" }}>
+                    <ChattingIllustration size={90} />
+                    <small style={{ opacity: 0.6, display: "block", marginTop: "0.4rem" }}>
+                      Henüz mesaj yok — ilk mesajı siz gönderin.
+                    </small>
+                  </div>
                 )}
                 {selected.messages.map((m, i) => {
                   const mine = m.senderId === currentUser.id;

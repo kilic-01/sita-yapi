@@ -1,5 +1,19 @@
 import { useMemo, useState } from "react";
-import { TriangleAlert, Clock, MoreHorizontal, CalendarDays, FileText, Phone, MapPin, Pencil } from "lucide-react";
+import {
+  TriangleAlert,
+  Clock,
+  MoreHorizontal,
+  CalendarDays,
+  CalendarCheck,
+  CalendarClock,
+  FileText,
+  Phone,
+  MapPin,
+  Pencil,
+  Package,
+  Sunset,
+  CheckCircle2,
+} from "lucide-react";
 import { colorForTechnician } from "../lib/techColors.js";
 import { TechnicianAvatar } from "../lib/avatars.jsx";
 import { computeTotals } from "../lib/orderTotals.js";
@@ -68,8 +82,15 @@ export function TodayAppointmentsWidget({ appointments, onNavigate }) {
   ).length;
 
   return (
-    <div style={{ cursor: "pointer", height: "100%" }} onClick={() => onNavigate("appointments")}>
-      <h3>Bugünün Randevuları</h3>
+    <div
+      className="home-widget-clickable"
+      style={{ cursor: "pointer", height: "100%" }}
+      onClick={() => onNavigate("appointments")}
+    >
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <CalendarCheck size={18} strokeWidth={1.75} />
+        Bugünün Randevuları
+      </h3>
       <div style={{ fontSize: "2rem", fontWeight: 700 }}>{todaysAppointments.length}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
         <small>✔ {todayCompleted} tamamlandı</small>
@@ -95,13 +116,20 @@ export function LeaveReturnRemindersWidget({ appointments, technicians, onNaviga
 
   return (
     <div style={{ height: "100%" }}>
-      <h3>İzin Dönüşü Bekleyen Randevular</h3>
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <Clock size={18} strokeWidth={1.75} />
+        İzin Dönüşü Bekleyen Randevular
+      </h3>
       {reminders.length === 0 ? (
-        <small>Bekleyen hatırlatma yok.</small>
+        <small style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "var(--success)" }}>
+          <CheckCircle2 size={14} strokeWidth={2} />
+          Bekleyen hatırlatma yok.
+        </small>
       ) : (
         reminders.slice(0, 6).map(({ appointment, technician }) => (
           <div
             key={appointment.id}
+            className="home-widget-row"
             onClick={() => onNavigateToIssue(appointment.id)}
             style={{
               display: "flex",
@@ -136,10 +164,20 @@ export function OutstandingCheckoutsWidget({ partCheckouts, technicians, onNavig
   );
 
   return (
-    <div style={{ cursor: "pointer", height: "100%" }} onClick={() => onNavigate("partCheckouts")}>
-      <h3>Mutabakatı Bekleyen Zimmetler</h3>
+    <div
+      className="home-widget-clickable"
+      style={{ cursor: "pointer", height: "100%" }}
+      onClick={() => onNavigate("partCheckouts")}
+    >
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <TriangleAlert size={18} strokeWidth={1.75} />
+        Mutabakatı Bekleyen Zimmetler
+      </h3>
       {overdue.length === 0 ? (
-        <small>Bekleyen mutabakat yok.</small>
+        <small style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "var(--success)" }}>
+          <CheckCircle2 size={14} strokeWidth={2} />
+          Bekleyen mutabakat yok.
+        </small>
       ) : (
         overdue.slice(0, 6).map((c) => {
           const tech = technicians.find((t) => t.id === c.technicianId);
@@ -168,14 +206,21 @@ export function LowStockWidget({ stockItems, onOpenStockItem }) {
 
   return (
     <div style={{ height: "100%" }}>
-      <h3>Az Stoklu Ürünler</h3>
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <Package size={18} strokeWidth={1.75} />
+        Az Stoklu Ürünler
+      </h3>
       {lowItems.length === 0 ? (
-        <small>Az stoklu ürün yok.</small>
+        <small style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "var(--success)" }}>
+          <CheckCircle2 size={14} strokeWidth={2} />
+          Az stoklu ürün yok.
+        </small>
       ) : (
         <>
           {lowItems.slice(0, 6).map((s) => (
             <div
               key={s.id}
+              className="home-widget-row"
               onClick={() => onOpenStockItem?.(s.code)}
               style={{
                 display: "flex",
@@ -237,11 +282,15 @@ export function DayEndSummaryWidget({ appointments, pendingParts, currentUser, o
 
   return (
     <div
+      className="home-widget-clickable"
       style={{ height: "100%", cursor: "pointer" }}
       onClick={() => onNavigate?.("dayEndSummary")}
       title="Detaylar için tıklayın"
     >
-      <h3>Gün Sonu Özeti</h3>
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <Sunset size={18} strokeWidth={1.75} />
+        Gün Sonu Özeti
+      </h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem" }}>
         {items.map((it) => (
           <div key={it.label}>
@@ -263,8 +312,15 @@ export function TomorrowAppointmentsWidget({ appointments, onNavigate }) {
   const tomorrowNotRouted = tomorrowsAppointments.filter((a) => a.status === "pending").length;
 
   return (
-    <div style={{ cursor: "pointer", height: "100%" }} onClick={() => onNavigate("routes")}>
-      <h3>Yarının Randevuları</h3>
+    <div
+      className="home-widget-clickable"
+      style={{ cursor: "pointer", height: "100%" }}
+      onClick={() => onNavigate("routes")}
+    >
+      <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <CalendarClock size={18} strokeWidth={1.75} />
+        Yarının Randevuları
+      </h3>
       <div style={{ fontSize: "2rem", fontWeight: 700 }}>{tomorrowsAppointments.length}</div>
       <small>{formatDayLabel(tomorrow)}</small>
       {tomorrowNotRouted > 0 && (
@@ -376,6 +432,7 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
                   <button
                     type="button"
                     className="icon-btn"
+                    title="Diğer"
                     aria-label="Diğer"
                     onClick={(e) => {
                       e.stopPropagation();

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TrashIcon } from "./icons.jsx";
 import Modal from "./Modal.jsx";
 import ToggleSwitch from "./ToggleSwitch.jsx";
+import { VacationIllustration } from "./illustrations.jsx";
 
 function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, onNotify }) {
   const isNew = !holiday;
@@ -113,7 +114,12 @@ export default function HolidaysSection({ holidays, currentUser, onSaved, onNoti
         "Her yıl tekrarla" işaretli tatiller (ör. 23 Nisan) siz silmediğiniz sürece her yıl otomatik
         geçerli olur; işaretsiz olanları (dini bayramlar gibi) her yıl elle güncellemeniz gerekir.
       </p>
-      {sorted.length === 0 && <p>Henüz tatil eklenmedi.</p>}
+      {sorted.length === 0 && (
+        <div style={{ textAlign: "center", padding: "1rem 0" }}>
+          <VacationIllustration size={110} />
+          <p>Henüz tatil eklenmedi.</p>
+        </div>
+      )}
       {sorted.map((h) => (
         <div
           key={h.id}

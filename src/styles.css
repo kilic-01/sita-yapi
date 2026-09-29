@@ -942,8 +942,42 @@ button {
   align-items: center;
   gap: 0.65rem;
   border-bottom: 1px solid var(--border);
-  padding: 0.65rem 0;
+  padding: 0.65rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 8px;
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.schedule-row:hover {
+  background: var(--bg);
+}
+
+/* Anasayfa widget satırları (Az Stoklu Ürünler, İzin Dönüşü Bekleyen vb.) —
+   schedule-row'un tam kutu yapısını (renkli çubuk/ikon/tutar sütunları)
+   kullanmayan, daha basit satırlar için aynı hover geri bildirimi. Önceden
+   bu satırlarda cursor:pointer DIŞINDA hiçbir görsel ipucu yoktu. */
+.home-widget-row {
+  border-radius: 8px;
+  margin: 0 -0.5rem;
+  padding: 0.3rem 0.5rem;
+  transition: background 0.15s ease;
+}
+
+.home-widget-row:hover {
+  background: var(--bg);
+}
+
+/* Tüm kartı tek bir bağlantı gibi davranan widget'lar (Bugünün/Yarının
+   Randevuları, Gün Sonu Özeti, Mutabakatı Bekleyen Zimmetler) — aynı
+   sebeple hover geri bildirimi eklendi. */
+.home-widget-clickable {
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.home-widget-clickable:hover {
+  background-color: var(--bg);
 }
 
 .schedule-row:last-child {
@@ -1210,14 +1244,19 @@ td {
   font-weight: 600;
 }
 
+/* Açık pembe/yeşil arka plan + koyu metin kombinasyonu dark mode'da hem
+   düşük kontrastlı (kırmızı metin, ona yakın tonda açık pembe zemin
+   üzerinde) hem de koyu arayüzün ortasında yabancı, sabit-açık bir leke
+   gibi duruyordu. Düz doygun zemin + beyaz metne geçildi — her iki temada
+   da aynı görünüyor ve okunurluğu daha güvenilir. */
 .badge.acil {
-  background: #fde3e1;
-  color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
 }
 
 .badge.normal {
-  background: var(--green-1);
-  color: var(--navy);
+  background: var(--green-2);
+  color: #ffffff;
 }
 
 .form-row {
@@ -1564,3 +1603,4 @@ td {
 .gm-ui-hover-effect > span {
   background-color: #1a1a1a !important;
 }
+

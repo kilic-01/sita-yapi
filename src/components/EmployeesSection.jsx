@@ -5,6 +5,7 @@ import { isOnLeave, todayISO, suggestAnnualLeaveDays } from "../lib/format.js";
 import { LeaveRangesEditor, LeaveSummaryModal } from "./LeaveComponents.jsx";
 import Modal from "./Modal.jsx";
 import ToggleSwitch from "./ToggleSwitch.jsx";
+import { TeamIllustration } from "./illustrations.jsx";
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 
@@ -411,7 +412,12 @@ export default function EmployeesSection({
 
   return (
     <>
-      {employees.length === 0 && <p>Henüz çalışan eklenmedi.</p>}
+      {employees.length === 0 && (
+        <div style={{ textAlign: "center", padding: "1rem 0" }}>
+          <TeamIllustration />
+          <p>Henüz çalışan eklenmedi.</p>
+        </div>
+      )}
       {employees.map((e) => (
         <div
           key={e.id}

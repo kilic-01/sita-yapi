@@ -93,10 +93,19 @@ contextBridge.exposeInMainWorld("api", {
   searchAllSuppliers: (code) => ipcRenderer.invoke("suppliers:searchAll", { code }),
   warmSuppliers: () => ipcRenderer.invoke("suppliers:warmAll"),
 
+  initWhatsApp: () => ipcRenderer.invoke("whatsapp:init"),
   showWhatsApp: (bounds) => ipcRenderer.invoke("whatsapp:show", bounds),
   setWhatsAppBounds: (bounds) => ipcRenderer.invoke("whatsapp:setBounds", bounds),
   hideWhatsApp: () => ipcRenderer.invoke("whatsapp:hide"),
   reloadWhatsApp: () => ipcRenderer.invoke("whatsapp:reload"),
+
+  // WhatsApp Web'deki toplam okunmamış mesaj sayısı değiştiğinde çağrılır
+  // (birkaç saniyede bir taranıyor) — callback(count) alır.
+  onWhatsAppUnreadCount: (callback) => {
+    const listener = (_e, count) => callback(count);
+    ipcRenderer.on("whatsapp:unreadCount", listener);
+    return () => ipcRenderer.removeListener("whatsapp:unreadCount", listener);
+  },
 
   listQuotes: () => ipcRenderer.invoke("quotes:list"),
   addQuote: (input) => ipcRenderer.invoke("quotes:add", input),

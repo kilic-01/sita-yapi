@@ -129,28 +129,30 @@ export default function HistoryPage({ appointments, technicians, users, currentU
     <div>
       <div className="card">
         <h3>Teknisyen Bazlı İş Sayıları</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Teknisyen</th>
-              <th>Bugün</th>
-              <th>Bu Hafta</th>
-              <th>Bu Ay</th>
-              <th>Toplam</th>
-            </tr>
-          </thead>
-          <tbody>
-            {summary.map((row) => (
-              <tr key={row.technician.id}>
-                <td>{row.technician.name}</td>
-                <td>{row.daily}</td>
-                <td>{row.weekly}</td>
-                <td>{row.monthly}</td>
-                <td>{row.total}</td>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Teknisyen</th>
+                <th>Bugün</th>
+                <th>Bu Hafta</th>
+                <th>Bu Ay</th>
+                <th>Toplam</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {summary.map((row) => (
+                <tr key={row.technician.id}>
+                  <td>{row.technician.name}</td>
+                  <td>{row.daily}</td>
+                  <td>{row.weekly}</td>
+                  <td>{row.monthly}</td>
+                  <td>{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card">
@@ -254,6 +256,7 @@ export default function HistoryPage({ appointments, technicians, users, currentU
             <p>
               <strong>{search}</strong> için <strong>{filtered.length}</strong> ziyaret kaydı bulundu.
             </p>
+            <div style={{ overflowX: "auto" }}>
             <table>
             <thead>
               <tr>
@@ -360,6 +363,7 @@ export default function HistoryPage({ appointments, technicians, users, currentU
               ))}
             </tbody>
             </table>
+            </div>
           </>
         )}
       </div>

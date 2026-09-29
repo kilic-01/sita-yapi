@@ -1,12 +1,18 @@
 import { useState } from "react";
 import { UserAvatar } from "../lib/avatars.jsx";
 import { formatDateTime } from "../lib/format.js";
+import { NoDataIllustration } from "./illustrations.jsx";
 
 export default function ActivityLogSection({ activityLog = [], users = [] }) {
   const [userFilter, setUserFilter] = useState("all");
 
   if (activityLog.length === 0) {
-    return <p style={{ marginTop: 0 }}>Henüz bir aktivite kaydı yok.</p>;
+    return (
+      <div style={{ textAlign: "center", padding: "1rem 0" }}>
+        <NoDataIllustration size={110} />
+        <p>Henüz bir aktivite kaydı yok.</p>
+      </div>
+    );
   }
 
   const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name, "tr"));

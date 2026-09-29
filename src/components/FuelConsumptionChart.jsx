@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { NoDataIllustration } from "./illustrations.jsx";
 
 // Filotim'in kendi "Aylık Litre Tüketimi" grafiğiyle aynı fikir (bir zaman
 // çizgisi) ama üç ek seçenekle: periyot (haftalık/aylık/yıllık), araç
@@ -73,6 +75,7 @@ export default function FuelConsumptionChart({ fuelTransactions = [] }) {
   const [granularity, setGranularity] = useState("monthly");
   const [vehicleSelection, setVehicleSelection] = useState("compare"); // "total" | "compare" | <plaka>
   const [metric, setMetric] = useState("liter"); // "liter" | "amount"
+  const [hover, setHover] = useState(null); // { left, top, placement, label, bucketLabel, value } | null
 
   const { buckets, byPlateBucket, totalByBucket, plateTotals } = useMemo(() => {
     const bucketSet = new Set();
@@ -133,7 +136,12 @@ export default function FuelConsumptionChart({ fuelTransactions = [] }) {
   );
 
   if (buckets.length === 0) {
-    return <p>Henüz grafik için yeterli veri yok.</p>;
+    return (
+      <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+        <NoDataIllustration />
+        <p>Henüz grafik için yeterli veri yok.</p>
+      </div>
+    );
   }
 
   const series =
@@ -178,6 +186,35 @@ export default function FuelConsumptionChart({ fuelTransactions = [] }) {
   // göstermek karışıklık yaratıyor — belli bir aralıkla atlanır.
   const labelStep = Math.max(1, Math.ceil(buckets.length / 18));
   const gridLines = 4;
+
+  // Önceden çizgi üzerinde hiçbir işaretçi/etkileşim yoktu — hangi noktanın
+  // hangi tarihe/tutara denk geldiğini görmek için eksenlere bakıp tahmin
+  // etmek gerekiyordu. Her noktaya küçük bir daire + hover'da değeri
+  // gösteren bir ipucu kutusu eklendi.
+  //
+  // İpucu kutusu grafiğin kendi kutusunun (overflowX:"auto" kaydırma alanı)
+  // İÇİNDE, position:"absolute" ile konumlanıyordu — grafiğin üst/sağ/sol
+  // sınırlarına yakın noktalarda kutu o alanın dışına taşıyor, "overflow-x:
+  // auto" tek başına verildiğinde tarayıcının overflow-y'yi de otomatik
+  // "auto" yapması yüzünden (CSS'in bilinen bir davranışı) kesilip
+  // görünmez oluyordu. document.body'ye taşınan (Modal.jsx'teki portal
+  // deseniyle aynı), gerçek ekran koordinatlarını (position:"fixed")
+  // kullanan bir ipucu artık hiçbir kutunun sınırına takılmıyor; üstte yer
+  // yoksa (nokta ekranın üst kenarına yakınsa) otomatik olarak noktanın
+  // altında gösteriliyor, sol/sağ kenara taşmayı da yatayda sınırlıyoruz.
+  function handlePointHover(e, s, i) {
+    const r = e.target.getBoundingClientRect();
+    const placement = r.top > 70 ? "above" : "below";
+    const tooltipHalfWidth = 90;
+    setHover({
+      left: Math.min(Math.max(r.left + r.width / 2, tooltipHalfWidth), window.innerWidth - tooltipHalfWidth),
+      top: placement === "above" ? r.top - 8 : r.bottom + 8,
+      placement,
+      label: s.label,
+      bucketLabel: bucketLabel(buckets[i], granularity),
+      value: s.values[i],
+    });
+  }
 
   return (
     <div>
@@ -253,8 +290,53 @@ export default function FuelConsumptionChart({ fuelTransactions = [] }) {
               points={s.values.map((v, i) => `${xFor(i)},${yFor(v)}`).join(" ")}
             />
           ))}
+
+          {series.map((s) =>
+            s.values.map((v, i) => (
+              <circle
+                key={`${s.key}-${i}`}
+                cx={xFor(i)}
+                cy={yFor(v)}
+                r={4}
+                fill={s.color}
+                stroke="var(--card-bg)"
+                strokeWidth={1.5}
+                style={{ cursor: "pointer" }}
+                onMouseEnter={(e) => handlePointHover(e, s, i)}
+                onMouseLeave={() => setHover(null)}
+              />
+            ))
+          )}
         </svg>
       </div>
+
+      {hover &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              left: hover.left,
+              top: hover.top,
+              transform: hover.placement === "above" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+              background: "var(--card-bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "0.4rem 0.6rem",
+              fontSize: "0.78rem",
+              boxShadow: "var(--shadow)",
+              pointerEvents: "none",
+              whiteSpace: "nowrap",
+              zIndex: 2000,
+            }}
+          >
+            <strong>{hover.label}</strong>
+            <div style={{ opacity: 0.75 }}>{hover.bucketLabel}</div>
+            <div>
+              {Math.round(hover.value).toLocaleString("tr-TR")} {unit}
+            </div>
+          </div>,
+          document.body
+        )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem 1.2rem", marginTop: "0.5rem" }}>
         {series.map((s) => (

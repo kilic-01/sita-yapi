@@ -74,7 +74,13 @@ export function InfoBox({ title, rows, style }) {
 const cellStyle = { padding: "0.26rem 0.35rem", border: `1px solid ${BORDER}`, background: ITEM_BODY_BG };
 const noCellStyle = { ...cellStyle, background: ITEM_NO_COL_BG };
 const lastCellStyle = { ...cellStyle, background: ITEM_LAST_COL_BG };
-const headCellStyle = { ...cellStyle, whiteSpace: "nowrap", fontSize: "0.66rem" };
+// Tablo hücreleri (th/td) kendi arka planlarını üstündeki <tr>'ninkinin
+// ÜZERİNE boyar — headCellStyle burada cellStyle'ın (açık gri ITEM_BODY_BG)
+// arka planını miras alıp <thead><tr>'nin koyu (HEADER_DARKEST) arka planını
+// tamamen örtüyordu. Sonuç: beyaz başlık yazısı neredeyse-beyaz bir hücrenin
+// üzerinde kalıp yazdırıldığında/PDF'te tamamen okunmaz oluyordu. Başlık
+// hücreleri artık kendi koyu arka planını taşıyor.
+const headCellStyle = { ...cellStyle, background: HEADER_DARKEST, whiteSpace: "nowrap", fontSize: "0.66rem" };
 
 export function ItemTable({ items, startIndex }) {
   return (

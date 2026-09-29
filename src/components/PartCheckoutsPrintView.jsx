@@ -48,10 +48,14 @@ export default function PartCheckoutsPrintView({ date, groups }) {
               {groups.length === 0 ? (
                 <p>Bu tarih için zimmet yok.</p>
               ) : (
-                groups.map(({ technician, rows }) => (
-                  <div className="checkout-print-group" key={technician?.id || "unknown"}>
+                groups.map(({ groupKey, technicians, rows }) => (
+                  <div className="checkout-print-group" key={groupKey || "unknown"}>
                     <div className="checkout-print-tech">
-                      <span>{technician?.name || "Bilinmeyen teknisyen"}</span>
+                      <span>
+                        {technicians && technicians.length > 0
+                          ? technicians.map((t) => t.name).join(", ")
+                          : "Bilinmeyen teknisyen"}
+                      </span>
                       <span className="checkout-print-tech-count">{rows.length} kalem</span>
                     </div>
                     {rows.map(({ checkout, stock, appointment }) => {

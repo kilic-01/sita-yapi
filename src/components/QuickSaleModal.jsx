@@ -219,6 +219,7 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
                           type="button"
                           className="icon-btn delete"
                           onClick={() => removeItem(idx)}
+                          title="Satırı sil"
                           aria-label="Satırı sil"
                         >
                           <Trash2 size={14} strokeWidth={1.75} />
