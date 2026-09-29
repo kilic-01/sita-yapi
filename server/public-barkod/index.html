@@ -209,6 +209,51 @@
   }
   .qty-row input { text-align: center; font-size: 1.2rem; font-weight: 700; }
   small.muted { color: var(--text-muted); }
+
+  /* ---- Anasayfa: Figma kitinin renkli, ikon öne çıkan kart dili ---- */
+  .home-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  .home-card {
+    background: var(--card-bg); border: none; border-radius: 18px; padding: 1.1rem;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.55rem;
+    box-shadow: var(--shadow); text-align: left; font-family: inherit; color: var(--text);
+    transition: transform 0.12s ease;
+  }
+  .home-card:active { transform: scale(0.97); }
+  .home-card-icon {
+    width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .home-card-title { font-size: 1rem; font-weight: 700; }
+  .home-card-sub { color: var(--text-muted); font-size: 0.78rem; margin-top: -0.4rem; }
+
+  /* ---- Alt gezinme çubuğu: Apple'ın "Liquid Glass" malzemesi — yarı
+     saydam, arkasındaki içeriği bulanıklaştıran, kayan (yüzen) bir cam
+     panel. İçerik bu barın altında kalmasın diye #mainScreen .screen'e
+     ekstra alt boşluk veriliyor. */
+  #mainScreen .screen { padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)); }
+  .tab-bar {
+    position: fixed; left: 14px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: flex; z-index: 40; border-radius: 26px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.55);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 30px rgba(14, 42, 59, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+  @media (prefers-color-scheme: dark) {
+    .tab-bar {
+      background: rgba(30, 32, 35, 0.55);
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+  }
+  .tab-btn {
+    flex: 1; background: none; border: none; font-family: inherit; color: var(--text-muted);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem;
+    padding: 0.55rem 0.4rem; font-size: 0.66rem; font-weight: 600; transition: color 0.15s ease;
+  }
+  .tab-btn.active { color: var(--accent); }
+  .tab-icon { display: flex; }
 </style>
 </head>
 <body>
@@ -243,16 +288,16 @@
     <div id="hubView">
       <div class="large-title">Sita Yapı</div>
       <div class="sub" id="welcomeText" style="margin-top:-0.6rem;"></div>
-      <div class="grouped-list">
-        <button class="grouped-row" id="goAppointmentsBtn" type="button">
-          <span class="grouped-row-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg></span>
-          <span class="grouped-row-text"><strong>Randevular</strong><small>Bugünün işlerini gör, durum güncelle</small></span>
-          <span class="grouped-row-chevron">›</span>
+      <div class="home-cards">
+        <button class="home-card" id="goAppointmentsBtn" type="button">
+          <span class="home-card-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg></span>
+          <span class="home-card-title">Randevular</span>
+          <span class="home-card-sub">Bugünün işlerini gör</span>
         </button>
-        <button class="grouped-row" id="goStockBtn" type="button">
-          <span class="grouped-row-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
-          <span class="grouped-row-text"><strong>Stok</strong><small>Barkod okut, ürün ara, miktar güncelle</small></span>
-          <span class="grouped-row-chevron">›</span>
+        <button class="home-card" id="goStockBtn" type="button">
+          <span class="home-card-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
+          <span class="home-card-title">Stok</span>
+          <span class="home-card-sub">Barkod okut, ara</span>
         </button>
       </div>
       <div class="grouped-list" style="margin-top:1.5rem;">
@@ -261,7 +306,6 @@
     </div>
 
     <div id="stockView" hidden>
-      <div class="nav-bar"><button class="nav-back" id="backToHubBtn1" type="button">‹ Sita Yapı</button></div>
       <div class="large-title">Stok</div>
       <div class="search-bar">
         <span class="search-icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
@@ -285,7 +329,6 @@
     </div>
 
     <div id="appointmentsListView" hidden>
-      <div class="nav-bar"><button class="nav-back" id="backToHubBtn2" type="button">‹ Sita Yapı</button></div>
       <div class="large-title">Randevular</div>
       <label><span>Tarih</span><input id="apptDate" type="date" /></label>
       <div id="apptListBusy" class="sub">Yükleniyor…</div>
@@ -344,6 +387,20 @@
 
     <div class="error" id="mainError" hidden></div>
   </div>
+  <nav class="tab-bar" id="tabBar" hidden>
+    <button class="tab-btn active" id="tabHomeBtn" type="button">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-5h2v5h4a1 1 0 0 0 1-1v-9"/></svg></span>
+      <span>Ana Sayfa</span>
+    </button>
+    <button class="tab-btn" id="tabAppointmentsBtn" type="button">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></svg></span>
+      <span>Randevular</span>
+    </button>
+    <button class="tab-btn" id="tabStockBtn" type="button">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
+      <span>Stok</span>
+    </button>
+  </nav>
 </div>
 
 <div id="scanOverlay" hidden>
@@ -411,13 +468,25 @@ const SECTIONS = [
 // yok, o yüzden "hangi ekran hangisinin altından açıldı" ilişkisini kendimiz
 // tutuyoruz (NAV_PARENT) ve geçişi/parmak takibini elle simüle ediyoruz.
 const NAV_PARENT = {
-  stockView: "hubView",
-  appointmentsListView: "hubView",
   appointmentDetailView: "appointmentsListView",
   manualEntry: "stockView",
   foundView: "stockView",
   notFoundView: "stockView",
 };
+// Alt gezinme çubuğundaki hangi sekmenin, hangi ekranlar gösterilirken
+// "aktif" görünmesi gerektiği — bir sekmenin içine dokunulup derine
+// inildiğinde (ör. Stok > Barkod Okut) ilgili sekme yine vurgulu kalsın.
+const SECTION_TAB = {
+  hubView: "home",
+  stockView: "stock", manualEntry: "stock", foundView: "stock", notFoundView: "stock",
+  appointmentsListView: "appointments", appointmentDetailView: "appointments",
+};
+function updateTabBar(sectionId) {
+  const activeTab = SECTION_TAB[sectionId];
+  el("tabHomeBtn").classList.toggle("active", activeTab === "home");
+  el("tabAppointmentsBtn").classList.toggle("active", activeTab === "appointments");
+  el("tabStockBtn").classList.toggle("active", activeTab === "stock");
+}
 let currentSectionId = "hubView";
 
 function prefersReducedMotion() {
@@ -489,6 +558,7 @@ function showSection(id) {
   const isForward = NAV_PARENT[id] === prev;
   const isBackward = NAV_PARENT[prev] === id;
   currentSectionId = id;
+  updateTabBar(id);
   el("lookupBusy").hidden = true;
   showMainError("");
   if (!prefersReducedMotion() && (isForward || isBackward) && prevEl && !prevEl.hidden) {
@@ -555,6 +625,7 @@ function showSection(id) {
       if (commit) {
         doneFromEl.hidden = true;
         currentSectionId = doneToId;
+        updateTabBar(doneToId);
         el("lookupBusy").hidden = true;
         showMainError("");
       } else {
@@ -597,6 +668,7 @@ function goStock() {
 function renderLoggedIn() {
   el("loginScreen").hidden = true;
   el("mainScreen").hidden = false;
+  el("tabBar").hidden = false;
   el("welcomeText").textContent = "Merhaba, " + state.user.name;
   goHub();
 }
@@ -604,6 +676,7 @@ function renderLoggedIn() {
 function renderLoggedOut() {
   el("loginScreen").hidden = false;
   el("mainScreen").hidden = true;
+  el("tabBar").hidden = true;
 }
 
 // ---- Giriş ----
@@ -829,10 +902,14 @@ function stopScan() {
 el("scanBtn").addEventListener("click", startScan);
 el("scanCancel").addEventListener("click", stopScan);
 
-// ---- Ana menü gezinmesi ----
+// ---- Ana menü gezinmesi + alt gezinme çubuğu (sekmeler) ----
 el("goStockBtn").addEventListener("click", goStock);
-el("backToHubBtn1").addEventListener("click", goHub);
-el("backToHubBtn2").addEventListener("click", goHub);
+el("tabHomeBtn").addEventListener("click", goHub);
+el("tabStockBtn").addEventListener("click", goStock);
+el("tabAppointmentsBtn").addEventListener("click", () => {
+  el("apptDate").value = todayISO();
+  loadAppointments(todayISO());
+});
 
 // ---- Stok arama ----
 let stockSearchSeq = 0;
