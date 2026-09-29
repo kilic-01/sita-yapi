@@ -76,6 +76,9 @@
     border: none; border-radius: 8px; padding: 0.4rem 0.7rem; font-size: 0.8rem; font-weight: 600;
   }
   h1 { font-size: 1.3rem; margin: 0 0 0.3rem; color: var(--text); }
+  /* Masaüstü .login-screen img ile aynı ölçü (bkz. src/styles.css) — aynı
+     logoyu, aynı boyutta, tutarlı bir marka izlenimi için kullanıyoruz. */
+  .brand-logo { width: 320px; max-width: 70vw; margin-bottom: 0.5rem; }
   .sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
   label { display: block; font-size: 0.85rem; margin-bottom: 1rem; text-align: left; color: var(--text); }
   label span { display: block; margin-bottom: 0.3rem; font-weight: 600; }
@@ -97,6 +100,23 @@
     font-size: 0.95rem; font-weight: 500; margin-top: 0.6rem; transition: filter 0.12s ease;
   }
   button.secondary:active { filter: brightness(1.15); }
+  /* Ana menü kartları — ana uygulamadaki .card bileşeniyle aynı zemin/kenarlık/
+     gölge, sadece tıklanabilir bir buton olarak. */
+  .hub-card {
+    width: 100%; display: flex; align-items: center; gap: 0.9rem; text-align: left;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem; margin-top: 0.75rem; box-shadow: var(--shadow); transition: filter 0.12s ease;
+  }
+  .hub-card:active { filter: brightness(0.97); }
+  .hub-card-icon {
+    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  }
+  .hub-card-text { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
+  .hub-card-text strong { font-size: 1rem; color: var(--text); }
+  .hub-card-text small { color: var(--text-muted); font-size: 0.8rem; }
+  .hub-card-arrow { font-size: 1.4rem; color: var(--text-muted); flex-shrink: 0; }
   .error { color: var(--danger); font-size: 0.9rem; margin-top: 0.7rem; }
   .card {
     background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
@@ -145,7 +165,7 @@
 <body>
 
 <div id="loginScreen" class="screen center">
-  <h1>Sita Yapı Saha</h1>
+  <img class="brand-logo" id="loginLogo" src="logo.svg" alt="Sita Yapı" />
   <div class="sub">Randevular, stok sayımı ve barkod okuma</div>
   <form id="loginForm" style="width:100%; max-width: 320px;">
     <label><span>Ad</span><input id="loginName" autocomplete="username" required /></label>
@@ -157,14 +177,31 @@
 
 <div id="mainScreen" hidden>
   <header class="topbar">
-    <strong>Sita Yapı Saha</strong>
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+      <img id="topbarLogo" src="icon.png" alt="" style="width:24px;height:24px;border-radius:6px;" />
+      <strong>Sita Yapı Saha</strong>
+    </div>
     <button id="logoutBtn" type="button">Çıkış</button>
   </header>
   <div class="screen">
     <div id="hubView">
       <div class="sub" id="welcomeText"></div>
-      <button class="primary" id="goAppointmentsBtn" type="button">📋 Randevular</button>
-      <button class="primary" id="goBarcodeBtn" type="button" style="margin-top:0.8rem;">📷 Barkod / Stok</button>
+      <button class="hub-card" id="goAppointmentsBtn" type="button">
+        <span class="hub-card-icon">📋</span>
+        <span class="hub-card-text">
+          <strong>Randevular</strong>
+          <small>Bugünün işlerini gör, durum güncelle</small>
+        </span>
+        <span class="hub-card-arrow">›</span>
+      </button>
+      <button class="hub-card" id="goBarcodeBtn" type="button">
+        <span class="hub-card-icon">📷</span>
+        <span class="hub-card-text">
+          <strong>Barkod / Stok</strong>
+          <small>Barkod okut, stok sayımı yap</small>
+        </span>
+        <span class="hub-card-arrow">›</span>
+      </button>
     </div>
 
     <div id="idleView" hidden>
@@ -245,6 +282,15 @@
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
+
+// Masaüstündeki Splash/LoginGate ile aynı mantık — koyu modda beyaz logoya
+// geçiyoruz (koyu logo koyu zeminde neredeyse görünmez olurdu).
+function applyLogoForTheme() {
+  const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.getElementById("loginLogo").src = isDark ? "logo-white.svg" : "logo.svg";
+}
+applyLogoForTheme();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyLogoForTheme);
 
 const state = { user: null };
 try {

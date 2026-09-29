@@ -4,8 +4,8 @@
 // miktarını göstermek gerekiyor, eski/önbellek bir sayı depoda yanlış
 // sayıma yol açardı. Sadece uygulamanın kendi kabuğunu (index.html) offline
 // açılışta gösterebilmek için basit bir cache-then-network stratejisi var.
-const CACHE = "sita-barkod-shell-v1";
-const SHELL = ["./", "./index.html", "./manifest.json", "./icon.png"];
+const CACHE = "sita-barkod-shell-v2";
+const SHELL = ["./", "./index.html", "./manifest.json", "./icon.png", "./logo.svg", "./logo-white.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
