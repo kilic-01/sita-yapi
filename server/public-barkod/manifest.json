@@ -1,6 +1,6 @@
 {
-  "name": "Sita Yapı Saha",
-  "short_name": "Saha",
+  "name": "Sita Yapı",
+  "short_name": "Sita Yapı",
   "start_url": "/barkod/",
   "scope": "/barkod/",
   "display": "standalone",

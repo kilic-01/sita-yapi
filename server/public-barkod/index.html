@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Sita Yapı Saha</title>
+<title>Sita Yapı</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icon.png" />
 <link rel="apple-touch-icon" href="icon.png" />
@@ -100,23 +100,47 @@
     font-size: 0.95rem; font-weight: 500; margin-top: 0.6rem; transition: filter 0.12s ease;
   }
   button.secondary:active { filter: brightness(1.15); }
-  /* Ana menü kartları — ana uygulamadaki .card bileşeniyle aynı zemin/kenarlık/
-     gölge, sadece tıklanabilir bir buton olarak. */
-  .hub-card {
-    width: 100%; display: flex; align-items: center; gap: 0.9rem; text-align: left;
-    background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-    padding: 1rem; margin-top: 0.75rem; box-shadow: var(--shadow); transition: filter 0.12s ease;
+
+  /* ---- Apple tarzı gezinme: ince "‹ Geri" metin bağlantısı + altında
+     kalın bir "Large Title" (iOS Ayarlar/Mail vb. uygulamalardaki gibi). ---- */
+  .nav-bar { display: flex; align-items: center; margin-bottom: 0.3rem; min-height: 1.6rem; }
+  .nav-back {
+    background: none; border: none; color: var(--accent); font-size: 1.02rem;
+    padding: 0.3rem 0.1rem; font-family: inherit; display: flex; align-items: center; gap: 0.1rem;
   }
-  .hub-card:active { filter: brightness(0.97); }
-  .hub-card-icon {
-    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  .large-title { font-size: 2rem; font-weight: 700; color: var(--text); margin: 0.1rem 0 1rem; letter-spacing: -0.02em; }
+
+  /* ---- Apple Ayarlar tarzı gruplu liste: tek yuvarlatılmış kapsayıcı,
+     satırlar arasında ince ayraç, renkli ikon rozetleri. ---- */
+  .grouped-list { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  .grouped-row {
+    display: flex; align-items: center; gap: 0.8rem; width: 100%; text-align: left;
+    background: none; border: none; border-top: 1px solid var(--border);
+    padding: 0.7rem 0.9rem; font-family: inherit; color: var(--text); transition: background 0.1s ease;
   }
-  .hub-card-text { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
-  .hub-card-text strong { font-size: 1rem; color: var(--text); }
-  .hub-card-text small { color: var(--text-muted); font-size: 0.8rem; }
-  .hub-card-arrow { font-size: 1.4rem; color: var(--text-muted); flex-shrink: 0; }
+  .grouped-row:first-child { border-top: none; }
+  .grouped-row:active { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .grouped-row-icon {
+    width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 0.95rem;
+  }
+  .grouped-row-text { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .grouped-row-text strong { font-size: 0.97rem; font-weight: 400; }
+  .grouped-row-text small { color: var(--text-muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grouped-row-chevron { color: var(--border); font-size: 1.3rem; flex-shrink: 0; }
+
+  /* ---- iOS tarzı arama çubuğu ---- */
+  .search-bar {
+    display: flex; align-items: center; gap: 0.5rem;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    border-radius: 10px; padding: 0.55rem 0.8rem; margin-bottom: 1rem;
+  }
+  .search-bar input {
+    border: none; background: none; padding: 0; flex: 1; font-size: 1rem; color: var(--text);
+  }
+  .search-bar input:focus { outline: none; }
+  .search-icon { opacity: 0.5; font-size: 0.95rem; }
+
   .error { color: var(--danger); font-size: 0.9rem; margin-top: 0.7rem; }
   .card {
     background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
@@ -178,49 +202,64 @@
   <header class="topbar">
     <div style="display:flex; align-items:center; gap:0.5rem;">
       <img id="topbarLogo" src="icon.png" alt="" style="width:24px;height:24px;border-radius:6px;" />
-      <strong>Sita Yapı Saha</strong>
+      <strong>Sita Yapı</strong>
     </div>
     <button id="logoutBtn" type="button">Çıkış</button>
   </header>
   <div class="screen">
     <div id="hubView">
-      <div class="sub" id="welcomeText"></div>
-      <button class="hub-card" id="goAppointmentsBtn" type="button">
-        <span class="hub-card-icon">📋</span>
-        <span class="hub-card-text">
-          <strong>Randevular</strong>
-          <small>Bugünün işlerini gör, durum güncelle</small>
-        </span>
-        <span class="hub-card-arrow">›</span>
-      </button>
-      <button class="hub-card" id="goBarcodeBtn" type="button">
-        <span class="hub-card-icon">📷</span>
-        <span class="hub-card-text">
-          <strong>Barkod / Stok</strong>
-          <small>Barkod okut, stok sayımı yap</small>
-        </span>
-        <span class="hub-card-arrow">›</span>
-      </button>
+      <div class="large-title">Sita Yapı</div>
+      <div class="sub" id="welcomeText" style="margin-top:-0.6rem;"></div>
+      <div class="grouped-list">
+        <button class="grouped-row" id="goAppointmentsBtn" type="button">
+          <span class="grouped-row-icon" style="background:#007aff;">📋</span>
+          <span class="grouped-row-text"><strong>Randevular</strong><small>Bugünün işlerini gör, durum güncelle</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" id="goStockBtn" type="button">
+          <span class="grouped-row-icon" style="background:#ff9500;">📦</span>
+          <span class="grouped-row-text"><strong>Stok</strong><small>Barkod okut, ürün ara, miktar güncelle</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+      </div>
     </div>
 
-    <div id="idleView" hidden>
-      <button class="secondary" id="backToHubBtn1" type="button">← Ana Menü</button>
-      <div class="sub" style="margin-top:1rem;">Stok sayımı ve barkod okuma</div>
-      <button class="primary" id="scanBtn" type="button">📷 Barkod Okut</button>
-      <button class="secondary" id="manualBtn" type="button">Barkodu Elle Gir</button>
+    <div id="stockView" hidden>
+      <div class="nav-bar"><button class="nav-back" id="backToHubBtn1" type="button">‹ Sita Yapı</button></div>
+      <div class="large-title">Stok</div>
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input id="stockSearchInput" placeholder="Kod veya isimle ara" autocomplete="off" />
+      </div>
+      <div id="stockDefaultActions" class="grouped-list">
+        <button class="grouped-row" id="scanBtn" type="button">
+          <span class="grouped-row-icon" style="background:#34c759;">📷</span>
+          <span class="grouped-row-text"><strong>Barkod Okut</strong><small>Kamera ile hızlı sorgula</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" id="manualBtn" type="button">
+          <span class="grouped-row-icon" style="background:#8e8e93;">⌨️</span>
+          <span class="grouped-row-text"><strong>Barkodu Elle Gir</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+      </div>
+      <div id="stockSearchBusy" class="sub" hidden style="margin-top:1rem;">Aranıyor…</div>
+      <div id="stockSearchEmpty" class="sub" hidden style="margin-top:1rem;">Sonuç bulunamadı.</div>
+      <div id="stockSearchResultsWrap" class="grouped-list" hidden style="margin-top:1rem;"></div>
     </div>
 
     <div id="appointmentsListView" hidden>
-      <button class="secondary" id="backToHubBtn2" type="button">← Ana Menü</button>
-      <label style="margin-top:1rem;"><span>Tarih</span><input id="apptDate" type="date" /></label>
+      <div class="nav-bar"><button class="nav-back" id="backToHubBtn2" type="button">‹ Sita Yapı</button></div>
+      <div class="large-title">Randevular</div>
+      <label><span>Tarih</span><input id="apptDate" type="date" /></label>
       <div id="apptListBusy" class="sub">Yükleniyor…</div>
       <div id="apptListEmpty" class="sub" hidden>Bu tarihte randevu yok.</div>
       <div id="apptList"></div>
     </div>
 
     <div id="appointmentDetailView" hidden>
-      <button class="secondary" id="backToListBtn" type="button">← Randevular</button>
-      <div class="card">
+      <div class="nav-bar"><button class="nav-back" id="backToListBtn" type="button">‹ Randevular</button></div>
+      <div class="card" style="margin-top:0;">
         <div class="name" id="apptCustomerName"></div>
         <div class="sub" id="apptAddress" style="margin-bottom:0.6rem;"></div>
         <div class="row"><span>Telefon</span><strong><a id="apptPhoneLink" href="#" style="color:var(--accent);text-decoration:none;"></a></strong></div>
@@ -233,15 +272,17 @@
     </div>
 
     <div id="manualEntry" hidden>
+      <div class="nav-bar"><button class="nav-back" id="manualCancelBtn" type="button">‹ Stok</button></div>
+      <div class="large-title">Barkodu Elle Gir</div>
       <label><span>Barkod</span><input id="manualBarcode" inputmode="numeric" /></label>
       <button class="primary" id="manualLookupBtn" type="button">Ara</button>
-      <button class="secondary" id="manualCancelBtn" type="button">Vazgeç</button>
     </div>
 
     <div id="lookupBusy" hidden class="sub">Aranıyor…</div>
 
     <div id="foundView" hidden>
-      <div class="card">
+      <div class="nav-bar"><button class="nav-back" id="scanAgainBtn1" type="button">‹ Stok</button></div>
+      <div class="card" style="margin-top:0;">
         <div class="code" id="foundCode"></div>
         <div class="name" id="foundName"></div>
         <div class="row"><span>Fiyat (KDV hariç)</span><strong id="foundPrice"></strong></div>
@@ -253,17 +294,16 @@
         </div>
         <button class="primary" id="qtyUpdateBtn" type="button">Miktarı Güncelle</button>
       </div>
-      <button class="secondary" id="scanAgainBtn1" type="button">Yeni Tarama</button>
     </div>
 
     <div id="notFoundView" hidden>
-      <div class="card">
+      <div class="nav-bar"><button class="nav-back" id="scanAgainBtn2" type="button">‹ Stok</button></div>
+      <div class="card" style="margin-top:0;">
         <strong>Bu barkod kayıtlı değil</strong>
         <p class="sub" style="margin:0.5rem 0 0.8rem;">Barkodu (<span id="unknownBarcode"></span>) mevcut bir ürüne bağlamak için ürünü arayın.</p>
         <label><span>Ürün ara (kod veya isim)</span><input id="linkSearch" /></label>
         <div id="linkResults"></div>
       </div>
-      <button class="secondary" id="scanAgainBtn2" type="button">Yeni Tarama</button>
     </div>
 
     <div class="error" id="mainError" hidden></div>
@@ -321,7 +361,7 @@ async function api(path, opts) {
 // diğerleri her zaman gizlenir (basit bir tek-sayfa "router").
 const SECTIONS = [
   "hubView",
-  "idleView",
+  "stockView",
   "manualEntry",
   "foundView",
   "notFoundView",
@@ -341,8 +381,8 @@ function goHub() {
   showSection("hubView");
 }
 
-function goIdle() {
-  showSection("idleView");
+function goStock() {
+  showSection("stockView");
 }
 
 function renderLoggedIn() {
@@ -390,7 +430,7 @@ let lastBarcode = null;
 
 async function lookupBarcode(code) {
   lastBarcode = code;
-  el("idleView").hidden = true;
+  el("stockView").hidden = true;
   el("manualEntry").hidden = true;
   el("foundView").hidden = true;
   el("notFoundView").hidden = true;
@@ -407,7 +447,7 @@ async function lookupBarcode(code) {
   } catch (err) {
     el("lookupBusy").hidden = true;
     showMainError(err.message || "Sorgu başarısız.");
-    goIdle();
+    goStock();
   }
 }
 
@@ -419,14 +459,14 @@ function showFound(item) {
   el("foundPrice").textContent = item.price != null ? money(item.price) : "—";
   el("foundQtyLabel").textContent = (item.quantity ?? 0) + " " + (item.unit || "adet");
   el("qtyInput").value = item.quantity ?? 0;
-  el("foundView").hidden = false;
+  showSection("foundView");
 }
 
 function showNotFound(code) {
   el("unknownBarcode").textContent = code;
   el("linkSearch").value = "";
   el("linkResults").innerHTML = "";
-  el("notFoundView").hidden = false;
+  showSection("notFoundView");
 }
 
 el("qtyMinus").addEventListener("click", () => {
@@ -449,13 +489,29 @@ el("qtyUpdateBtn").addEventListener("click", async () => {
       method: "PUT",
       body: JSON.stringify({ quantity: qty, actingUserId: state.user.id }),
     });
-    goIdle();
+    invalidateStockCache(foundItem.id, { quantity: qty });
+    goStock();
   } catch (err) {
     showMainError(err.message || "Güncellenemedi.");
   } finally {
     el("qtyUpdateBtn").disabled = false;
   }
 });
+
+// ---- ~10 binlik stok listesinin tek seferlik önbelleği ----
+// Hem "Stok" aramasında hem bilinmeyen barkodu bir ürüne bağlarken aynı
+// tam listeye ihtiyaç var — her tuş vuruşunda tekrar çekmek yerine bir kez
+// çekip bellekte tutuyoruz, kendi yaptığımız güncellemeleri de buraya
+// yansıtıyoruz ki hemen sonraki bir arama eski veriyi göstermesin.
+let allStockCache = null;
+async function getAllStock() {
+  if (!allStockCache) allStockCache = await api("/stock");
+  return allStockCache;
+}
+function invalidateStockCache(id, patch) {
+  const item = allStockCache?.find((s) => s.id === id);
+  if (item) Object.assign(item, patch);
+}
 
 // ---- Bilinmeyen barkodu mevcut ürüne bağlama ----
 let linkSearchTimer = null;
@@ -468,7 +524,7 @@ el("linkSearch").addEventListener("input", () => {
   }
   linkSearchTimer = setTimeout(async () => {
     try {
-      const all = await api("/stock");
+      const all = await getAllStock();
       const matches = all
         .filter((s) => (s.code || "").toLowerCase().includes(term) || (s.name || "").toLowerCase().includes(term))
         .slice(0, 8);
@@ -488,7 +544,8 @@ el("linkSearch").addEventListener("input", () => {
               method: "PUT",
               body: JSON.stringify({ barcode: lastBarcode, actingUserId: state.user.id }),
             });
-            goIdle();
+            invalidateStockCache(item.id, { barcode: lastBarcode });
+            goStock();
           } catch (err) {
             showMainError(err.message || "Bağlanamadı.");
           }
@@ -502,19 +559,18 @@ el("linkSearch").addEventListener("input", () => {
 
 // ---- Elle barkod girişi ----
 el("manualBtn").addEventListener("click", () => {
-  el("idleView").hidden = true;
-  el("manualEntry").hidden = false;
+  showSection("manualEntry");
   el("manualBarcode").value = "";
   el("manualBarcode").focus();
 });
-el("manualCancelBtn").addEventListener("click", goIdle);
+el("manualCancelBtn").addEventListener("click", goStock);
 el("manualLookupBtn").addEventListener("click", () => {
   const code = el("manualBarcode").value.trim();
   if (code) lookupBarcode(code);
 });
 
-el("scanAgainBtn1").addEventListener("click", goIdle);
-el("scanAgainBtn2").addEventListener("click", goIdle);
+el("scanAgainBtn1").addEventListener("click", goStock);
+el("scanAgainBtn2").addEventListener("click", goStock);
 
 // ---- Kamera ile tarama (ZXing) ----
 let zxingReader = null;
@@ -553,9 +609,62 @@ el("scanBtn").addEventListener("click", startScan);
 el("scanCancel").addEventListener("click", stopScan);
 
 // ---- Ana menü gezinmesi ----
-el("goBarcodeBtn").addEventListener("click", goIdle);
+el("goStockBtn").addEventListener("click", goStock);
 el("backToHubBtn1").addEventListener("click", goHub);
 el("backToHubBtn2").addEventListener("click", goHub);
+
+// ---- Stok arama ----
+let stockSearchSeq = 0;
+let stockSearchTimer = null;
+el("stockSearchInput").addEventListener("input", () => {
+  const term = el("stockSearchInput").value.trim().toLowerCase();
+  const seq = ++stockSearchSeq;
+  clearTimeout(stockSearchTimer);
+  if (term.length < 2) {
+    el("stockDefaultActions").hidden = false;
+    el("stockSearchResultsWrap").hidden = true;
+    el("stockSearchEmpty").hidden = true;
+    el("stockSearchBusy").hidden = true;
+    return;
+  }
+  el("stockDefaultActions").hidden = true;
+  el("stockSearchBusy").hidden = false;
+  el("stockSearchResultsWrap").hidden = true;
+  el("stockSearchEmpty").hidden = true;
+  stockSearchTimer = setTimeout(async () => {
+    try {
+      const all = await getAllStock();
+      if (seq !== stockSearchSeq) return;
+      const matches = all
+        .filter((s) => (s.code || "").toLowerCase().includes(term) || (s.name || "").toLowerCase().includes(term))
+        .slice(0, 20);
+      el("stockSearchBusy").hidden = true;
+      if (matches.length === 0) {
+        el("stockSearchEmpty").hidden = false;
+        return;
+      }
+      el("stockSearchResultsWrap").hidden = false;
+      el("stockSearchResultsWrap").innerHTML = matches
+        .map(
+          (s, i) => `<button class="grouped-row" type="button" data-idx="${i}">
+            <span class="grouped-row-icon" style="background:#8e8e93;">📦</span>
+            <span class="grouped-row-text"><strong>${s.name || s.code || "(isimsiz)"}</strong><small>${s.code || ""} · ${s.quantity ?? 0} ${s.unit || "adet"}</small></span>
+            <span class="grouped-row-chevron">›</span>
+          </button>`
+        )
+        .join("");
+      el("stockSearchResultsWrap").querySelectorAll("[data-idx]").forEach((row) => {
+        row.addEventListener("click", () => {
+          showFound(matches[Number(row.dataset.idx)]);
+        });
+      });
+    } catch (err) {
+      if (seq !== stockSearchSeq) return;
+      el("stockSearchBusy").hidden = true;
+      showMainError(err.message || "Arama başarısız.");
+    }
+  }, 250);
+});
 
 // ---- Randevular ----
 const STATUS_LABELS = { pending: "Bekliyor", routed: "Rotalandı", completed: "Tamamlandı", cancelled: "İptal Edildi" };
