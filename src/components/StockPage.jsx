@@ -1,13 +1,30 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PencilIcon, TrashIcon } from "./icons.jsx";
 import { Search, Plus, QrCode } from "lucide-react";
 import { EmptyStateIllustration } from "./illustrations.jsx";
 import Modal from "./Modal.jsx";
-import { isLowStock } from "../lib/format.js";
+import { isLowStock, DEFAULT_LOW_STOCK_THRESHOLD } from "../lib/format.js";
 
 const NO_CATEGORY = "(kategorisiz)";
 
 const SEARCH_RESULT_LIMIT = 100;
+// "Az stoklu" varsayılan eşiği (2) o kadar düşük ki PROD'daki ~10.400
+// stok kaleminin neredeyse tamamı bu listeye giriyor — filtre uygulanmadan
+// açılan Stok sayfası bu yüzden binlerce satırı (her biri resim/miktar
+// kutusu/düzenle-sil butonlarıyla) tek seferde DOM'a basıyor ve sayfa açılışı
+// saniyelerce sürüyordu. Arama sonuçlarındaki SEARCH_RESULT_LIMIT ile aynı
+// mantık burada da uygulanıyor — en kritik (stoğu en çok eksi olan) ürünler
+// öne sıralanıp sadece ilk N'i gösteriliyor.
+const LOW_STOCK_DISPLAY_LIMIT = 100;
+// Arama kutusuna her tuş vuruşunda ~10.400 satırlık listeyi 3 alanda
+// (kod/isim/barkod) baştan taramak (bkz. filteredResults) özellikle harfle
+// başlayan sorgularda (Türkçe ürün adlarında çok daha fazla eşleşme/karşılaştırma
+// içerdiğinden rakamla başlayanlara göre daha pahalı) fark edilir bir
+// kasılmaya yol açıyordu. Filtreleme, kullanıcı yazmayı bıraktıktan kısa bir
+// süre sonra çalışacak şekilde geciktiriliyor (debounce) — arama kutusunun
+// kendisi (searchInput) her tuşta anında güncellenir, sadece asıl filtreleme
+// gecikir.
+const SEARCH_DEBOUNCE_MS = 200;
 
 // Bir "datalist" ile serbest metin alanı, seçimden sonra bazen değiştirmeye
 // izin vermiyormuş gibi davranabiliyordu — bunun yerine her zaman güvenilir
@@ -66,6 +83,11 @@ function CategoryPicker({ value, onChange, categories, style }) {
 
 export default function StockPage({ stockItems, onSaved, depots = [], initialSearch = "", currentUser }) {
   const [search, setSearch] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
@@ -177,9 +199,21 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
     });
   }
 
-  const term = search.trim().toLowerCase();
+  const term = debouncedSearch.trim().toLowerCase();
   const isFiltering = Boolean(term || categoryFilter);
-  const lowStock = useMemo(() => stockItems.filter(isLowStock), [stockItems]);
+  const lowStock = useMemo(() => {
+    // Kritiklik sırasına göre (eksiye en çok düşen önce) sıralanmadan
+    // ilk LOW_STOCK_DISPLAY_LIMIT'e kesilirse, hangi ürünlerin gösterileceği
+    // sadece stockItems dizisindeki (rastgele/ekleniş) sırasına bağlı kalırdı
+    // — asıl kritik olanlar listenin başında görünmeyebilirdi.
+    return stockItems
+      .filter(isLowStock)
+      .sort((a, b) => {
+        const aOver = Number(a.quantity) - (a.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD);
+        const bOver = Number(b.quantity) - (b.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD);
+        return aOver - bOver;
+      });
+  }, [stockItems]);
   const filteredResults = useMemo(() => {
     if (!isFiltering) return [];
     return stockItems.filter((s) => {
@@ -197,7 +231,9 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
       return true;
     });
   }, [stockItems, isFiltering, categoryFilter, term]);
-  const displayList = isFiltering ? filteredResults.slice(0, SEARCH_RESULT_LIMIT) : lowStock;
+  const displayList = isFiltering
+    ? filteredResults.slice(0, SEARCH_RESULT_LIMIT)
+    : lowStock.slice(0, LOW_STOCK_DISPLAY_LIMIT);
 
   function renderRow(item) {
     return (
@@ -495,6 +531,12 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
           {isFiltering && filteredResults.length > SEARCH_RESULT_LIMIT && (
             <small style={{ opacity: 0.7 }}>
               +{filteredResults.length - SEARCH_RESULT_LIMIT} sonuç daha var — aramayı daraltın.
+            </small>
+          )}
+          {!isFiltering && lowStock.length > LOW_STOCK_DISPLAY_LIMIT && (
+            <small style={{ opacity: 0.7 }}>
+              En kritik {LOW_STOCK_DISPLAY_LIMIT} ürün gösteriliyor, +{lowStock.length - LOW_STOCK_DISPLAY_LIMIT}{" "}
+              ürün daha var — belirli bir ürünü bulmak için arayın.
             </small>
           )}
         </>

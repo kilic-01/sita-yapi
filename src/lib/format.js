@@ -178,3 +178,20 @@ export function daysSince(dateStr) {
   if (Number.isNaN(then)) return 0;
   return Math.max(0, Math.floor((Date.now() - then) / 86400000));
 }
+
+// "YYYY-MM-DD" -> "GG/AA/YYYY" — sadece görüntüleme içindir, veri/filtreleme
+// tarafı hâlâ ISO tarihi kullanır.
+export function formatDateTR(iso) {
+  const [y, m, d] = (iso || "").split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso || "-";
+}
+
+// İki tarih arasındaki tam gün sayısı — bekleyen parça geçmişinde "kaç gün
+// bekledi" (sipariş tarihi -> geldiği tarih) göstermek için kullanılır.
+export function daysBetween(fromStr, toStr) {
+  if (!fromStr || !toStr) return null;
+  const from = new Date(fromStr).getTime();
+  const to = new Date(toStr).getTime();
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.max(0, Math.floor((to - from) / 86400000));
+}

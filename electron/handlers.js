@@ -36,19 +36,49 @@ function checkGeocodeQuality(result, addressDetail) {
   // kendi standart formatında birebir tekrar edemediğinde de bu bayrağı
   // koyuyor, konumun kendisi ROOFTOP (bina bazında tam isabet) olsa bile.
   // Bu yüzden partial_match'i sadece hassasiyet DÜŞÜKSE (bina/adres aralığı
-  // net değilse) gerçek bir uyarı sayıyoruz.
-  const highPrecision = result.locationType === "ROOFTOP" || result.locationType === "RANGE_INTERPOLATED";
+  // net değilse) gerçek bir uyarı sayıyoruz. GEOMETRIC_CENTER (sokak
+  // seviyesinde doğru, sadece bina numarası net değil) de yeterince
+  // güvenilir kabul ediliyor — teknisyen zaten doğru sokakta olur, bina
+  // numarasını sahada bulur; bunu APPROXIMATE (mahalle/ilçe merkezi) ile
+  // aynı kefeye koymak gereksiz yanlış alarma yol açıyordu.
+  const highPrecision =
+    result.locationType === "ROOFTOP" ||
+    result.locationType === "RANGE_INTERPOLATED" ||
+    result.locationType === "GEOMETRIC_CENTER";
   if (result.partialMatch && !highPrecision) {
     return `Google adresi eksik/kısmi eşleştirdi (bulduğu: "${result.formattedAddress}") — konum yanlış olabilir. Adresi kontrol edin.`;
   }
   const expectedIlce = addressDetail?.ilce;
-  if (
-    expectedIlce &&
-    !result.formattedAddress.toLocaleUpperCase("tr").includes(expectedIlce.toLocaleUpperCase("tr"))
-  ) {
+  if (expectedIlce && !resultMatchesIlce(result, expectedIlce, addressDetail?.mahalle)) {
     return `Google bu adresi "${expectedIlce}" ilçesinde bulamadı, bunun yerine "${result.formattedAddress}" konumunu buldu — aynı isimli sokak başka bir ilçede olabilir. Lütfen adresi kontrol edin.`;
   }
   return null;
+}
+
+// Google'ın "ilçe" için hangi address_component TÜRÜNÜ kullanacağı tutarlı
+// değil (bkz. geocodeQuery.js'teki aynı not: bazen administrative_area_level_2,
+// bazen sublocality) — ve tanınmış semtlerde (ör. Etiler → Beşiktaş) Google
+// ilçeyi HEM formatted_address'e HEM address_components'a HİÇ EKLEMEYEBİLİYOR,
+// doğrudan mahalleden ile'ye atlıyor. Önceki sürüm sadece formatted_address'te
+// düz metin arıyordu — bu durumda ilçe hiç geçmediği için doğru bulunmuş bir
+// adres bile "yanlış ilçe" sanılıyordu ve dispatcher adresi ne kadar
+// düzeltirse düzeltsin uyarı hiç kaybolmuyordu. Şimdi: (1) ilçe adı formatted
+// address'te YA DA herhangi bir address_component'ta geçiyorsa doğru say;
+// (2) ilçe hiç geçmiyorsa ama beklenen MAHALLE adı geçiyorsa yine doğru say
+// (Google'ın doğru mahalleyi bulmuş olması, ilçe ayrıca teyit edilemese bile
+// güçlü bir kanıt) — sadece Google GERÇEKTEN BAŞKA bir ilçe belirtirse uyar.
+function resultMatchesIlce(result, expectedIlce, expectedMahalle) {
+  const haystacks = [result.formattedAddress, ...(result.addressComponents || []).map((c) => c.long_name)]
+    .filter(Boolean)
+    .map((s) => s.toLocaleUpperCase("tr"));
+
+  const targetIlce = expectedIlce.toLocaleUpperCase("tr");
+  if (haystacks.some((s) => s.includes(targetIlce))) return true;
+
+  const targetMahalle = expectedMahalle?.trim().toLocaleUpperCase("tr");
+  if (targetMahalle && haystacks.some((s) => s.includes(targetMahalle))) return true;
+
+  return false;
 }
 
 // buildRoutes'ta konumu belirsiz/hiç bulunamamış (geocodeProblem) bir randevuyu
@@ -158,9 +188,10 @@ export async function addAppointment(input) {
     const technicians = await db.getTechnicians();
     const technician = technicians.find((t) => t.id === input.assignedTechnicianId);
     if (!technician) throw new Error("Teknisyen bulunamadı");
-    if (technician.assignable === false) {
-      throw new Error(`${technician.name} adlı çalışana iş atanamaz ("İş Atanabilir" işaretli değil).`);
-    }
+    // "İş Atanabilir" (assignable) SADECE otomatik rota oluşturma (buildRoutes)
+    // havuzunu belirler — çıraklara iş öğretmek için dispatcher'ın ara sıra
+    // elle tek bir randevu vermesi engellenmemeli, bu yüzden burada
+    // assignable === false için bir blok YOK.
     if (isOnLeave(technician, input.scheduledDate)) {
       throw new Error(`${technician.name}, ${input.scheduledDate} tarihinde izinli — randevu atanamaz.`);
     }
@@ -234,9 +265,8 @@ export async function updateAppointment(id, patch) {
       const technicians = await db.getTechnicians();
       const technician = technicians.find((t) => t.id === patch.assignedTechnicianId);
       if (!technician) throw new Error("Teknisyen bulunamadı");
-      if (technician.assignable === false) {
-        throw new Error(`${technician.name} adlı çalışana iş atanamaz ("İş Atanabilir" işaretli değil).`);
-      }
+      // addAppointment'taki ile aynı gerekçe: assignable sadece otomatik
+      // rotalama havuzunu belirler, elle atamayı engellemez.
       const targetDate = finalPatch.scheduledDate || existing?.scheduledDate;
       if (isOnLeave(technician, targetDate)) {
         throw new Error(`${technician.name}, ${targetDate} tarihinde izinli — randevu atanamaz.`);
@@ -347,16 +377,15 @@ export async function reassignAppointment(id, technicianId, actingUserId) {
   const appointment = await db.getAppointmentById(id);
   if (!appointment) throw new Error("Randevu bulunamadı");
 
-  // Arayüzdeki dropdown zaten izinli/atanamaz teknisyenleri gizliyor, ama
-  // bu kontrol SADECE orada olursa başka bir yoldan (ör. eski/stale bir
-  // ekran durumu) bu kısıtlama atlanabilir — o yüzden asıl garanti burada,
-  // sunucu tarafında olmalı.
+  // Arayüzdeki dropdown zaten izinli teknisyenleri gizliyor, ama bu kontrol
+  // SADECE orada olursa başka bir yoldan (ör. eski/stale bir ekran durumu)
+  // bu kısıtlama atlanabilir — o yüzden asıl garanti burada, sunucu
+  // tarafında olmalı. (assignable === false için bir blok YOK — bkz.
+  // addAppointment'taki not: çıraklara ara sıra elle iş verilebilmeli,
+  // sadece otomatik rotalama havuzunun dışında tutuluyorlar.)
   const technicians = await db.getTechnicians();
   const technician = technicians.find((t) => t.id === technicianId);
   if (!technician) throw new Error("Teknisyen bulunamadı");
-  if (technician.assignable === false) {
-    throw new Error(`${technician.name} adlı çalışana iş atanamaz ("İş Atanabilir" işaretli değil).`);
-  }
   if (isOnLeave(technician, appointment.scheduledDate)) {
     throw new Error(`${technician.name}, ${appointment.scheduledDate} tarihinde izinli — randevu atanamaz.`);
   }
@@ -404,8 +433,8 @@ export function setTechnicians(list, actingUserId) {
   return db.setTechnicians(list, actingUserId);
 }
 
-export function exportAllTables() {
-  return db.exportAllTables();
+export function exportAllTables(actingUserId) {
+  return db.exportAllTables(actingUserId);
 }
 
 export function getScreensaverImage() {
@@ -462,7 +491,11 @@ export async function buildRoutes(scheduledDate, actingUserId) {
   const technicians = allTechnicians.filter((t) => !isOnLeave(t, scheduledDate) && t.assignable !== false);
   const shopCoord = SHOP_LOCATION;
 
-  const allAppointments = await db.getAppointments();
+  // getAppointments() TÜM ~20 bin+ satırlık tabloyu (sayfalayarak) çekerdi —
+  // aşağıdaki iki kullanım da zaten "scheduledDate === scheduledDate" ile
+  // filtrelendiğinden, sunucu tarafında doğrudan o güne filtrelenmiş çok
+  // daha küçük bir sonuç yeterli (bkz. db.js'teki getAppointmentsByDate notu).
+  const allAppointments = await db.getAppointmentsByDate(scheduledDate);
 
   // Tamamlanmamış (pending + routed) tüm işleri baştan dengeli dağıtmak için
   // havuza alıyoruz; "completed" ve "cancelled" işaretli işler dokunulmadan
@@ -557,7 +590,17 @@ export async function buildRoutes(scheduledDate, actingUserId) {
       });
     }
 
-    const stops = ordered.map((s, idx) => ({ ...s, stopOrder: completedCount + idx }));
+    // DB'ye yazılan status/assignedTechnicianId burada da (stopOrder gibi)
+    // yerel kopyaya işlenmezse, dönen `results` içindeki duraklar hâlâ ESKİ
+    // (ör. "pending") durumu taşır — App.jsx artık bu dönüş değerini
+    // (onRouted() ile tam tabloyu yeniden çekmek yerine) doğrudan yerel
+    // state'e işlediği için bu alanların doğru olması gerekiyor.
+    const stops = ordered.map((s, idx) => ({
+      ...s,
+      status: "routed",
+      assignedTechnicianId: technician.id,
+      stopOrder: completedCount + idx,
+    }));
     results.push({ technician, stops });
     nextStopOrder.set(technician.id, completedCount + stops.length);
     for (const s of stops) {

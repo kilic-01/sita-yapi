@@ -468,13 +468,14 @@ export default function AppointmentForm({
             Teknisyen (opsiyonel)
             <select value={form.technicianId} onChange={(e) => setField("technicianId", e.target.value)}>
               <option value="">Otomatik rota</option>
-              {technicians
-                .filter((t) => t.assignable !== false)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
+              {/* "assignable" sadece otomatik rota oluşturma havuzunu belirler
+                  (buildRoutes) — elle atamada tüm teknisyenler eşit şekilde,
+                  tek bir listede, ayrım yapılmadan gösteriliyor. */}
+              {technicians.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
             {form.technicianId ? (
               <small style={{ opacity: 0.7 }}>
@@ -787,6 +788,7 @@ function PendingPartTab({
       description: "",
       status: "bekleniyor",
       orderedAt: toLocalISODate(new Date()),
+      vitraReceiptNo: "",
       reminderIntervalDays: "3",
       reminderUserIds: [],
       reminderNote: "",
@@ -799,6 +801,7 @@ function PendingPartTab({
       description: p.description,
       status: p.status,
       orderedAt: p.orderedAt || toLocalISODate(new Date()),
+      vitraReceiptNo: p.vitraReceiptNo || "",
       reminderIntervalDays: p.reminderIntervalDays != null ? String(p.reminderIntervalDays) : "3",
       reminderUserIds: p.reminderUserIds || [],
       reminderNote: p.reminderNote || "",
@@ -829,6 +832,7 @@ function PendingPartTab({
         description: partForm.description.trim(),
         status: partForm.status,
         orderedAt: partForm.orderedAt,
+        vitraReceiptNo: partForm.vitraReceiptNo.trim() || null,
         reminderIntervalDays: partForm.reminderIntervalDays !== "" ? Number(partForm.reminderIntervalDays) : null,
         reminderUserIds: partForm.reminderUserIds,
         reminderNote: partForm.reminderNote,
@@ -897,6 +901,9 @@ function PendingPartTab({
             </button>
           </div>
           {p.orderedAt && <small style={{ opacity: 0.7 }}>Sipariş: {p.orderedAt}</small>}
+          {p.vitraReceiptNo && (
+            <small style={{ opacity: 0.7, display: "block" }}>Vitra Fiş No: {p.vitraReceiptNo}</small>
+          )}
           {p.reminderIntervalDays && (
             <small style={{ opacity: 0.7, display: "block" }}>Her {p.reminderIntervalDays} günde bir hatırlatılıyor</small>
           )}
@@ -988,6 +995,14 @@ function PendingPartTab({
                 value={partForm.reminderIntervalDays}
                 onChange={(e) => setPartForm((f) => ({ ...f, reminderIntervalDays: e.target.value }))}
                 placeholder="Örn. 3"
+              />
+            </label>
+            <label>
+              Vitra Fiş No (opsiyonel)
+              <input
+                value={partForm.vitraReceiptNo}
+                onChange={(e) => setPartForm((f) => ({ ...f, vitraReceiptNo: e.target.value }))}
+                placeholder="Örn. 123456"
               />
             </label>
           </div>

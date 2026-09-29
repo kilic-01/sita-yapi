@@ -142,6 +142,13 @@
             generateQuotePdf: () => Promise.resolve(null),
             openQuoteMailClient: () => Promise.resolve(),
             openQuoteWhatsapp: () => Promise.resolve(),
+            openMapLocation: (placeId, lat, lng) => {
+              const url = placeId
+                ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`
+                : `https://www.google.com/maps?q=${lat},${lng}`;
+              window.open(url, "_blank");
+              return Promise.resolve();
+            },
             // Depo kameraları (ffmpeg/RTSP) sadece masaüstü uygulamasında
             // çalışır — tarayıcı test köprüsünde devre dışı.
             getCameraSettings: () => Promise.resolve([]),

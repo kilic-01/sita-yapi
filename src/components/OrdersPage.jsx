@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Search, ArrowLeft, Package, QrCode } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Search, ArrowLeft, Package, QrCode, Loader2 } from "lucide-react";
 import { EmptyStateIllustration } from "./illustrations.jsx";
 
 // Koyu modda SVG logolar CSS ile tamamen ters çevriliyor (bkz. .supplier-logo-svg).
@@ -47,13 +47,21 @@ export default function OrdersPage({
   depots = [],
   navStyle = "top",
   sidebarCollapsed = false,
+  // Arama durumu App.jsx'te tutuluyor (bkz. oradaki not) — bu sekmeden
+  // ayrılıp geri dönüldüğünde arama/açık tedarikçi sekmesi kaybolmasın diye.
+  query,
+  setQuery,
+  activeOffer, // { label, url, supplierId }
+  setActiveOffer,
+  autoResults, // [{ supplierId, supplierName, url, found, title, price }]
+  setAutoResults,
+  autoSearchedCode,
+  setAutoSearchedCode,
+  autofillFailed, // null | "nofield" | "undecryptable"
+  setAutofillFailed,
+  autoSearching,
+  setAutoSearching,
 }) {
-  const [query, setQuery] = useState("");
-  const [activeOffer, setActiveOffer] = useState(null); // { label, url, supplierId }
-  const [autoResults, setAutoResults] = useState(null); // [{ supplierId, supplierName, url, found, title, price }]
-  const [autoSearching, setAutoSearching] = useState(false);
-  const [autoSearchedCode, setAutoSearchedCode] = useState(null);
-  const [autofillFailed, setAutofillFailed] = useState(null); // null | "nofield" | "undecryptable"
   const containerRef = useRef(null);
 
   const validSuppliers = suppliers.filter((s) => s.name && s.url);
@@ -77,15 +85,24 @@ export default function OrdersPage({
 
   function searchOnSupplier(supplier) {
     const c = query.trim();
-    if (supplier.searchUrlTemplate) {
-      setActiveOffer({
-        label: `${supplier.name} — "${c}" araması`,
-        url: buildUrl(supplier.searchUrlTemplate, c),
-        supplierId: supplier.id,
-      });
-    } else {
-      setActiveOffer({ label: supplier.name, url: buildUrl(supplier.url, c), supplierId: supplier.id });
-    }
+    const template = supplier.searchUrlTemplate || supplier.url;
+    // Bazı tedarikçilerin (ör. ELZ Dizayn) arama adresinde {kod} yer tutucusu
+    // hiç yok, bazılarının (ör. Güneyliler) arama adresi hiç tanımlı değil —
+    // bu durumda URL'e kod hiç gömülemiyor, sitenin arama sayfası tamamen
+    // kendi JS'iyle çalışıyor demektir. Böyle tedarikçiler için `code`'u da
+    // gönderiyoruz ki ana süreç, otomatik girişle AYNI teknikle (sayfaya JS
+    // enjekte edip arama kutusunu bulup doldurma) aramayı kendi denesin —
+    // bkz. main.js attemptAutoSearchFor. URL zaten kodu taşıyorsa (Evdema,
+    // Olcay Yapı, Vitra gibi) buna hiç gerek yok, hatta zaten çalışan bir
+    // aramayı bir de enjeksiyonla tekrarlamak gereksiz ikinci bir aramaya
+    // yol açardı — o yüzden SADECE gerçekten gerekince gönderiliyor.
+    const needsInjectedSearch = !template.includes("{kod}");
+    setActiveOffer({
+      label: `${supplier.name} — "${c}" araması`,
+      url: buildUrl(template, c),
+      supplierId: supplier.id,
+      code: needsInjectedSearch ? c : undefined,
+    });
   }
 
   function openSupplierHome(supplier) {
@@ -133,7 +150,7 @@ export default function OrdersPage({
     if (!activeOffer) return;
     setAutofillFailed(null);
     const bounds = getBounds();
-    if (bounds) window.api.showSupplier(activeOffer.url, bounds, activeOffer.supplierId);
+    if (bounds) window.api.showSupplier(activeOffer.url, bounds, activeOffer.supplierId, activeOffer.code);
   }, [activeOffer]);
 
   // Otomatik giriş, sitede kullanıcı adı/şifre alanı bulamazsa (site
@@ -271,7 +288,7 @@ export default function OrdersPage({
   return (
     <div>
       <div className="card">
-        <h3>Sipariş</h3>
+        <h3>Tedarikçiden Sipariş</h3>
         <p>
           Ürün kodunu yazın, arama adresi tanımlı olan tedarikçilerde bu kod otomatik aranır —
           her birine tıkladığınızda o tedarikçinin arama sonucu bu uygulama içinde açılır.
@@ -363,7 +380,12 @@ export default function OrdersPage({
           </div>
         )}
 
-        {autoSearching && <p>Tedarikçiler kontrol ediliyor, birkaç saniye sürebilir…</p>}
+        {autoSearching && (
+          <p style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Loader2 size={16} strokeWidth={2} style={{ animation: "spin 1.1s linear infinite" }} />
+            Tedarikçiler kontrol ediliyor, birkaç saniye sürebilir…
+          </p>
+        )}
 
         {!autoSearching && autoResults && autoSearchedCode === code && (
           <div style={{ marginBottom: "1rem" }}>

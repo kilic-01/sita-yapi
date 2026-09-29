@@ -114,9 +114,10 @@ function EditEmployeeModal({
           onOfficeStaffSaved(savedOfficeStaff);
         }
       } else {
+        const officePatch = { ...common, vehicleId: vehicleId || null };
         const nextOfficeStaff = employee && !kindChanged
-          ? officeStaff.map((s) => (s.id === id ? { ...s, ...common } : s))
-          : [...officeStaff, common];
+          ? officeStaff.map((s) => (s.id === id ? { ...s, ...officePatch } : s))
+          : [...officeStaff, officePatch];
         savedOfficeStaff = await window.api.setOfficeStaff(nextOfficeStaff, currentUser?.id);
         onOfficeStaffSaved(savedOfficeStaff);
         if (kindChanged) {
@@ -196,7 +197,7 @@ function EditEmployeeModal({
             </label>
           </div>
 
-          {kind === "technician" && (
+          {(kind === "technician" || kind === "office") && (
             <div className="form-row" style={{ marginTop: "0.75rem", alignItems: "flex-end" }}>
               <label>
                 Araç
@@ -209,10 +210,12 @@ function EditEmployeeModal({
                   ))}
                 </select>
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexDirection: "row" }}>
-                <ToggleSwitch checked={assignable} onChange={(e) => setAssignable(e.target.checked)} />
-                İş Atanabilir
-              </label>
+              {kind === "technician" && (
+                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexDirection: "row" }}>
+                  <ToggleSwitch checked={assignable} onChange={(e) => setAssignable(e.target.checked)} />
+                  İş Atanabilir
+                </label>
+              )}
             </div>
           )}
 

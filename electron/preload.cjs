@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   isDevDb: () => ipcRenderer.invoke("env:isDevDb"),
+  getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
   getSystemIdleSeconds: () => ipcRenderer.invoke("system:idleSeconds"),
   getScreensaverImage: () => ipcRenderer.invoke("screensaver:image"),
 
@@ -84,8 +85,8 @@ contextBridge.exposeInMainWorld("api", {
 
   listSuppliers: () => ipcRenderer.invoke("suppliers:list"),
   setSuppliers: (list, actingUserId) => ipcRenderer.invoke("suppliers:set", { list, actingUserId }),
-  showSupplier: (url, bounds, supplierId) =>
-    ipcRenderer.invoke("suppliers:show", { url, bounds, supplierId }),
+  showSupplier: (url, bounds, supplierId, searchCode) =>
+    ipcRenderer.invoke("suppliers:show", { url, bounds, supplierId, searchCode }),
   setSupplierBounds: (bounds) => ipcRenderer.invoke("suppliers:setBounds", bounds),
   hideSupplier: () => ipcRenderer.invoke("suppliers:hide"),
   reloadSupplierView: () => ipcRenderer.invoke("suppliers:reload"),
@@ -106,6 +107,7 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("quotes:openMailClient", { email, subject, body, pdfPath }),
   openQuoteWhatsapp: (phone, text, pdfPath) =>
     ipcRenderer.invoke("quotes:openWhatsapp", { phone, text, pdfPath }),
+  openMapLocation: (placeId, lat, lng) => ipcRenderer.invoke("maps:openLocation", { placeId, lat, lng }),
 
   listIncomingOrders: () => ipcRenderer.invoke("incomingOrders:list"),
   addIncomingOrder: (input) => ipcRenderer.invoke("incomingOrders:add", input),

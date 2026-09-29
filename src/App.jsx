@@ -18,6 +18,7 @@ import MapPage from "./components/MapPage.jsx";
 import OrdersPage from "./components/OrdersPage.jsx";
 import StockPage from "./components/StockPage.jsx";
 import PartCheckoutsPage from "./components/PartCheckoutsPage.jsx";
+import PendingPartsPage from "./components/PendingPartsPage.jsx";
 import CalendarPage from "./components/CalendarPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import OtherPage from "./components/OtherPage.jsx";
@@ -50,6 +51,11 @@ export default function App() {
   const [activityLog, setActivityLog] = useState([]);
   const [settings, setSettings] = useState(null);
   const [idleLockConfig, setIdleLockConfig] = useState(null);
+  // Başka bir bilgisayardan gelen realtime değişiklikler ekranı sessizce
+  // güncelliyordu — kullanıcı verinin neden aniden değiştiğini anlamıyordu.
+  // Bu sayaç, o an kaç tablo çekiliyor olduğunu tutar (0 = boşta); Header/
+  // Sidebar bunu >0 iken küçük bir "Senkronize ediliyor…" göstergesine çevirir.
+  const [syncingCount, setSyncingCount] = useState(0);
   const [cameras, setCameras] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [shopLocation, setShopLocation] = useState(null);
@@ -58,6 +64,19 @@ export default function App() {
   const [prefillCustomer, setPrefillCustomer] = useState(null);
   const [showAppointmentsCalendar, setShowAppointmentsCalendar] = useState(false);
   const [pendingStockSearch, setPendingStockSearch] = useState("");
+  // Sipariş sekmesindeki arama durumu (OrdersPage.jsx) bilerek BURADA
+  // tutuluyor, o sayfanın kendi local state'i olarak DEĞİL — sekme
+  // değiştirilince (activeTab başka bir şeye dönünce) OrdersPage tamamen
+  // unmount oluyor, kendi içindeki her state sıfırlanıyordu. Dispatcher bir
+  // ürün arayıp fiyat teklifi yazmak için Fiyat Teklifi sekmesine geçtiğinde,
+  // geri döndüğünde arattığı ürünü ve açık tuttuğu tedarikçi sekmesini
+  // kaybedip aynı aramayı tekrar yapmak zorunda kalıyordu.
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderActiveOffer, setOrderActiveOffer] = useState(null);
+  const [orderAutoResults, setOrderAutoResults] = useState(null);
+  const [orderAutoSearchedCode, setOrderAutoSearchedCode] = useState(null);
+  const [orderAutofillFailed, setOrderAutofillFailed] = useState(null);
+  const [orderAutoSearching, setOrderAutoSearching] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme"));
   // Kullanıcının kendi cihazında seçtiği gezinme düzeni — theme gibi sadece
   // localStorage'da, Supabase'e senkronize edilmiyor (kişisel bir tercih,
@@ -85,6 +104,20 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 1400);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Güncelleme sonrası ilk açılışta "sürüme güncellendi" bildirimi — ilk
+  // kurulumda (kayıtlı önceki sürüm yoksa) sessizce sadece kaydeder.
+  useEffect(() => {
+    if (!window.api?.getAppVersion) return;
+    window.api.getAppVersion().then((version) => {
+      if (!version) return;
+      const lastSeen = localStorage.getItem("lastSeenAppVersion");
+      if (lastSeen && lastSeen !== version) {
+        showToast("success", `Sita Yapı v${version} sürümüne güncellendi.`);
+      }
+      localStorage.setItem("lastSeenAppVersion", version);
+    });
   }, []);
 
   useEffect(() => {
@@ -170,8 +203,38 @@ export default function App() {
   // Başka bir bilgisayarda veri değiştiğinde (Supabase Realtime), sadece
   // etkilenen koleksiyonu yeniden çekip ekranı güncel tutar.
   useEffect(() => {
+    // "appointments" tablosu 20 binin üzerinde satıra ulaştı — başka bir
+    // tabloda olduğu gibi her değişiklikte TÜM tabloyu yeniden çekmek (bkz.
+    // db.js'teki selectAll'un neden sayfalama yaptığını açıklayan not),
+    // örneğin Rota Oluştur'da tek bir randevunun teknisyenini değiştirmeyi
+    // saniyelerce sürdürüyordu — hem RouteBuilder'ın kendi onRouted()
+    // çağrısı hem de BU realtime bildirimi (kendi yazdığımız değişiklik de
+    // bize geri yansıyor) art arda iki tam tablo taramasına yol açıyordu.
+    // main.js artık değişen satırın kendisini de (eventType/new/old)
+    // gönderiyor — burada tam tabloyu tekrar çekmek yerine sadece o tek
+    // satırı yerel diziye işliyoruz. Payload eksik/beklenmedikse (örn. eski
+    // bir sürümle karışık çalışma ihtimaline karşı) güvenli tarafta kalıp
+    // tam listeyi çekiyoruz.
+    function refreshAppointmentsFromRealtime(payload) {
+      if (!currentUser) return;
+      if (payload?.eventType === "INSERT" && payload.new) {
+        setAppointments((prev) =>
+          prev.some((a) => a.id === payload.new.id) ? prev : [...prev, payload.new]
+        );
+        return;
+      }
+      if (payload?.eventType === "UPDATE" && payload.new) {
+        setAppointments((prev) => prev.map((a) => (a.id === payload.new.id ? payload.new : a)));
+        return;
+      }
+      if (payload?.eventType === "DELETE" && payload.old?.id) {
+        setAppointments((prev) => prev.filter((a) => a.id !== payload.old.id));
+        return;
+      }
+      return window.api.listAppointments().then(setAppointments);
+    }
     const refreshByTable = {
-      appointments: () => currentUser && window.api.listAppointments().then(setAppointments),
+      appointments: refreshAppointmentsFromRealtime,
       technicians: () => window.api.listTechnicians().then(setTechnicians),
       officeStaff: () => window.api.listOfficeStaff().then(setOfficeStaff),
       holidays: () => window.api.listHolidays().then(setHolidays),
@@ -205,8 +268,11 @@ export default function App() {
         if (currentUser?.role === "admin") window.api.listActivityLog(undefined, currentUser.id).then(setActivityLog);
       },
     };
-    const unsubscribe = window.api.onDataChanged(({ table }) => {
-      refreshByTable[table]?.();
+    const unsubscribe = window.api.onDataChanged((payload) => {
+      const refresh = refreshByTable[payload.table];
+      if (!refresh) return;
+      setSyncingCount((n) => n + 1);
+      Promise.resolve(refresh(payload)).finally(() => setSyncingCount((n) => Math.max(0, n - 1)));
     });
     return unsubscribe;
   }, [currentUser]);
@@ -390,8 +456,19 @@ export default function App() {
     }
   }, [users, currentUser]);
 
-  function refreshAppointments() {
-    window.api.listAppointments().then(setAppointments);
+  // reassignAppointment/setAppointmentStatus zaten değişen randevunun TAM
+  // halini geri döndürüyor (bkz. handlers.js) — Rota Oluştur'da teknisyen
+  // değiştirmek gibi sık tekrarlanan tekil işlemlerde tüm tabloyu yeniden
+  // çekmek yerine bu satırı doğrudan yerel
+  // state'e işleyip anında tepki veriyoruz. Realtime bildirimi de az sonra
+  // aynı satırı getirir ama artık o da ucuz (bkz. refreshAppointmentsFromRealtime).
+  function patchAppointment(updated) {
+    if (!updated?.id) return;
+    setAppointments((prev) =>
+      prev.some((a) => a.id === updated.id)
+        ? prev.map((a) => (a.id === updated.id ? updated : a))
+        : [...prev, updated]
+    );
   }
 
   // Bekleyen parça geldiğinde, düzenleme modalındaki "Bu Müşteri İçin Yeni
@@ -481,16 +558,16 @@ export default function App() {
 
   async function handleDelete(id) {
     await window.api.deleteAppointment(id, currentUser.id);
-    refreshAppointments();
+    setAppointments((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function handleStatusChange(id, status) {
-    await window.api.setAppointmentStatus(id, status, currentUser.id);
-    refreshAppointments();
+    const updated = await window.api.setAppointmentStatus(id, status, currentUser.id);
+    patchAppointment(updated);
   }
 
-  function handleSaved(_appointment, hasIssue) {
-    refreshAppointments();
+  function handleSaved(appointment, hasIssue) {
+    patchAppointment(appointment);
     if (!hasIssue) {
       showToast("success", editingAppointment ? "Randevu güncellendi." : "Randevu kaydedildi.");
       setEditingAppointment(null);
@@ -673,6 +750,7 @@ export default function App() {
           collapsed={sidebarCollapsed}
           onToggleCollapsed={toggleSidebarCollapsed}
           onNavStyleChange={setNavStyle}
+          syncingCount={syncingCount}
         />
       ) : (
         <Header
@@ -693,6 +771,7 @@ export default function App() {
           onDismissCheckoutReminder={handleDismissCheckoutReminder}
           technicians={technicians}
           onNavStyleChange={setNavStyle}
+          syncingCount={syncingCount}
         />
       )}
       <div
@@ -785,8 +864,8 @@ export default function App() {
               <>
                 <AppointmentForm
                   editingAppointment={null}
-                  onSaved={(_appointment, hasIssue) => {
-                    refreshAppointments();
+                  onSaved={(appointment, hasIssue) => {
+                    patchAppointment(appointment);
                     setPrefillCustomer(null);
                     if (!hasIssue) showToast("success", "Randevu kaydedildi.");
                   }}
@@ -819,7 +898,7 @@ export default function App() {
             appointments={appointments}
             technicians={technicians}
             holidays={holidays}
-            onRouted={refreshAppointments}
+            onAppointmentPatch={patchAppointment}
             actingUserId={currentUser.id}
           />
         )}
@@ -838,6 +917,18 @@ export default function App() {
             depots={depots}
             navStyle={navStyle}
             sidebarCollapsed={sidebarCollapsed}
+            query={orderQuery}
+            setQuery={setOrderQuery}
+            activeOffer={orderActiveOffer}
+            setActiveOffer={setOrderActiveOffer}
+            autoResults={orderAutoResults}
+            setAutoResults={setOrderAutoResults}
+            autoSearchedCode={orderAutoSearchedCode}
+            setAutoSearchedCode={setOrderAutoSearchedCode}
+            autofillFailed={orderAutofillFailed}
+            setAutofillFailed={setOrderAutofillFailed}
+            autoSearching={orderAutoSearching}
+            setAutoSearching={setOrderAutoSearching}
           />
         )}
         {activeTab === "incomingOrders" && (
@@ -870,6 +961,14 @@ export default function App() {
               window.api.listPartCheckouts().then(setPartCheckouts);
               window.api.listStockItems().then(setStockItems);
             }}
+          />
+        )}
+        {activeTab === "pendingParts" && (
+          <PendingPartsPage
+            pendingParts={pendingParts}
+            stockItems={stockItems}
+            currentUser={currentUser}
+            onChanged={() => window.api.listPendingParts().then(setPendingParts)}
           />
         )}
         {activeTab === "quotes" && (
@@ -905,6 +1004,8 @@ export default function App() {
             currentUser={currentUser}
             onFuelSynced={setFuelTransactions}
             onFuelDevicesSynced={setFuelDevices}
+            onSaved={setVehicles}
+            onNotify={showToast}
           />
         )}
         {activeTab === "settings" && (
@@ -925,7 +1026,6 @@ export default function App() {
             onTechniciansSaved={setTechnicians}
             onOfficeStaffSaved={setOfficeStaff}
             onHolidaysSaved={setHolidays}
-            onVehiclesSaved={setVehicles}
             onUsersSaved={refreshUsers}
             onCurrentUserUpdated={setCurrentUser}
             onSuppliersSaved={setSuppliers}

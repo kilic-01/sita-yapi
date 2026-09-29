@@ -33,6 +33,61 @@ export function TurkishLiraFileIcon({ size = 18, strokeWidth = 1.75, ...props })
   );
 }
 
+// "Tedarikçiden Sipariş" sekmesi için — kullanıcının verdiği özel SVG'den
+// (kutu + büyüteç, aynı desen: lucide'ın stroke/currentColor kuralına
+// uyarlanmış).
+export function BoxSearchIcon({ size = 18, strokeWidth = 1.75, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M21,12v-4c0-.71-.38-1.37-1-1.73l-7-4c-.62-.36-1.38-.36-2,0l-7,4c-.62.36-1,1.02-1,1.73v8c0,.71.38,1.37,1,1.73l7,4c.62.36,1.38.36,2,0l1.38-.79" />
+      <path d="M3.3,7l8.7,5,8.7-5" />
+      <path d="M12,22v-10" />
+      <g>
+        <path d="M22.01,20.5l-1.88-1.88" />
+        <circle cx="18.01" cy="16.5" r="3" />
+      </g>
+    </svg>
+  );
+}
+
+// "Bekleyen Parçalar" sekmesi için — kullanıcının verdiği özel SVG'den (kutu
+// + kum saati, aynı desen: lucide'ın stroke/currentColor kuralına uyarlanmış).
+export function PendingPartsBoxIcon({ size = 18, strokeWidth = 1.75, ...props }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M19.92,9.16v-1.16c0-.71-.38-1.37-1-1.73l-7-4c-.62-.36-1.38-.36-2,0L2.92,6.27c-.62.36-1,1.02-1,1.73v8c0,.71.38,1.37,1,1.73l7,4c.62.36,1.38.36,2,0l1.56-.9" />
+      <path d="M2.22,7l8.7,5,8.7-5" />
+      <path d="M10.92,22v-10" />
+      <g>
+        <path d="M15.57,21.65h6.5" />
+        <path d="M15.57,12.35h6.5" />
+        <path d="M21.15,21.65v-1.94c0-.25-.1-.48-.27-.66l-2.05-2.05-2.05,2.05c-.17.17-.27.41-.27.66v1.94" />
+        <path d="M16.5,12.35v1.94c0,.25.1.48.27.66l2.05,2.05,2.05-2.05c.17-.17.27-.41.27-.66v-1.94" />
+      </g>
+    </svg>
+  );
+}
+
 // lucide-react'te marka ikonları yok (jenerik ikon seti) — WhatsApp'ın
 // tanınabilir logosunu doğrudan SVG olarak çiziyoruz.
 export function WhatsAppIcon({ size = 15 }) {

@@ -1,6 +1,5 @@
 import {
   Users,
-  Car,
   UserCog,
   CalendarDays,
   Store,
@@ -14,7 +13,6 @@ import {
   PanelTop,
 } from "lucide-react";
 import CollapsibleCard from "./CollapsibleCard.jsx";
-import VehiclesSection from "./VehiclesSection.jsx";
 import EmployeesSection from "./EmployeesSection.jsx";
 import HolidaysSection from "./HolidaysSection.jsx";
 import UsersSection from "./UsersSection.jsx";
@@ -32,12 +30,13 @@ import { UserCircle } from "lucide-react";
 // ciddiyette değil: Kullanıcılar/Çalışanlar/Tatiller/Tedarikçiler/API
 // Anahtarları/Güvenlik/Aktivite Kaydı HER ZAMAN sadece admin'e özel — bu 7
 // bölümün arkasındaki backend işlemleri de gerçek admin kontrolü yapıyor
-// (bkz. electron/db.js requireAdmin), sadece burada gizlenmiyorlar. Araçlar/
-// Depolar/Stok CSV ise admin'in her personel için ayrı ayrı açıp
-// kapatabildiği (settingsSections) bölümler — bunların backend'i kontrol
-// etmiyor, uygulamanın geri kalanıyla aynı (düşük) risk seviyesinde. Anahtar
-// isimleri ("vehicles"/"depots"/"stockCsv") UsersSection.jsx'teki
-// GRANTABLE_SECTIONS checkbox listesindeki `key`lerle birebir eşleşmeli.
+// (bkz. electron/db.js requireAdmin), sadece burada gizlenmiyorlar. Depolar/
+// Stok CSV ise admin'in her personel için ayrı ayrı açıp kapatabildiği
+// (settingsSections) bölümler — bunların backend'i kontrol etmiyor,
+// uygulamanın geri kalanıyla aynı (düşük) risk seviyesinde. Anahtar isimleri
+// ("depots"/"stockCsv") UsersSection.jsx'teki GRANTABLE_SECTIONS checkbox
+// listesindeki `key`lerle birebir eşleşmeli. (Araçlar artık burada değil,
+// "Diğer" sekmesinin altında, herkese açık — bkz. OtherPage.jsx/VehiclesPage.jsx.)
 
 function canSeeSection(currentUser, key) {
   if (currentUser?.role === "admin") return true;
@@ -61,7 +60,6 @@ export default function SettingsPage({
   onTechniciansSaved,
   onOfficeStaffSaved,
   onHolidaysSaved,
-  onVehiclesSaved,
   onUsersSaved,
   onCurrentUserUpdated,
   onSuppliersSaved,
@@ -115,11 +113,6 @@ export default function SettingsPage({
       {currentUser?.role === "admin" && (
         <CollapsibleCard title="Kullanıcılar" icon={<Users size={18} strokeWidth={1.75} />}>
           <UsersSection users={users} currentUser={currentUser} onSaved={onUsersSaved} onNotify={onNotify} />
-        </CollapsibleCard>
-      )}
-      {canSeeSection(currentUser, "vehicles") && (
-        <CollapsibleCard title="Araçlar" icon={<Car size={18} strokeWidth={1.75} />}>
-          <VehiclesSection vehicles={vehicles} currentUser={currentUser} onSaved={onVehiclesSaved} onNotify={onNotify} />
         </CollapsibleCard>
       )}
       {currentUser?.role === "admin" && (

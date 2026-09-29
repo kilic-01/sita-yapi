@@ -51,30 +51,39 @@ export default function LoginGate({ hasUsers, onLogin, onCreateFirstUser, isDark
 
   return (
     <div className="login-screen">
+      {syncInfo.isProblem && (
+        // Formun İÇİNDE, normal akışta yer kaplayan bir uyarı kullanıcı adı/
+        // şifre kutularını aşağı itip görünümü kaydırıyordu (bağlantı durumu
+        // her değiştiğinde form zıplıyordu) — sabit konumlu, köşede duran bir
+        // rozet olarak taşındı, form akışını hiç etkilemiyor.
+        <div
+          style={{
+            position: "fixed",
+            top: "1rem",
+            right: "1rem",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            color: "var(--danger)",
+            fontSize: "0.82rem",
+            background: "color-mix(in srgb, var(--danger) 12%, var(--card-bg))",
+            border: "1px solid var(--danger)",
+            borderRadius: 8,
+            padding: "0.5rem 0.7rem",
+            boxShadow: "var(--shadow)",
+            maxWidth: 260,
+          }}
+        >
+          <WifiOff size={16} strokeWidth={1.75} style={{ flexShrink: 0 }} />
+          <span>İnternet bağlantısında sorun var — giriş yapmakta zorluk yaşayabilirsiniz.</span>
+        </div>
+      )}
       <img src={isDark ? "./logo-white.svg" : "./logo.svg"} alt="Sita Yapı" />
       {notice && (
         <p style={{ maxWidth: 320, textAlign: "center", opacity: 0.8, fontSize: "0.85rem" }}>{notice}</p>
       )}
       <form onSubmit={handleSubmit}>
-        {syncInfo.isProblem && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              color: "var(--danger)",
-              fontSize: "0.82rem",
-              background: "color-mix(in srgb, var(--danger) 12%, transparent)",
-              border: "1px solid var(--danger)",
-              borderRadius: 8,
-              padding: "0.5rem 0.7rem",
-              marginBottom: "0.9rem",
-            }}
-          >
-            <WifiOff size={16} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            <span>İnternet bağlantısında sorun var — giriş yapmakta zorluk yaşayabilirsiniz.</span>
-          </div>
-        )}
         <label>
           {hasUsers ? "Kullanıcı Adı" : "İlk kullanıcı adınızı belirleyin"}
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />

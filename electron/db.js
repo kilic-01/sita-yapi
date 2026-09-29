@@ -76,8 +76,8 @@ function subscribeToRealtime() {
   }
   const channel = supabase.channel("db-changes");
   for (const table of REALTIME_TABLES) {
-    channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
-      onChangeCallback?.(table);
+    channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+      onChangeCallback?.(table, payload);
     });
   }
   channel.subscribe((status) => {
@@ -274,6 +274,19 @@ export async function getRoutedStopOrders(technicianId, scheduledDate) {
   return data || [];
 }
 
+// buildRoutes (Rota Oluştur) SADECE ilgili günün randevularıyla ilgileniyor
+// (bkz. handlers.js — allAppointments her zaman ".filter(a => a.scheduledDate
+// === scheduledDate)" ile kullanılıyor) ama eskiden getAppointments() ile
+// TÜM ~20 bin+ satırlık tabloyu (sayfalayarak) çekiyordu — "Rota Oluştur"a
+// her basışta saniyeler süren gereksiz bir tam tablo taraması demekti.
+// Sunucu tarafında zaten sadece o güne filtrelenmiş, çok daha küçük bir
+// sonuç istiyoruz.
+export async function getAppointmentsByDate(scheduledDate) {
+  const { data, error } = await supabase.from("appointments").select("*").eq("scheduledDate", scheduledDate);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 export async function addAppointment(input) {
   const appointment = {
     id: uuid(),
@@ -348,6 +361,7 @@ export async function addPendingPart(input) {
     description: input.description,
     status: input.status || "bekleniyor",
     orderedAt: input.orderedAt || null,
+    vitraReceiptNo: input.vitraReceiptNo || null,
     reminderIntervalDays:
       input.reminderIntervalDays != null && input.reminderIntervalDays !== ""
         ? Number(input.reminderIntervalDays)
@@ -357,7 +371,13 @@ export async function addPendingPart(input) {
     reminderLastSentAt: {},
     ...stampCreatedPatch(input.actingUserId),
   };
-  const { data, error } = await supabase.from("pendingParts").insert(row).select().single();
+  let { data, error } = await supabase.from("pendingParts").insert(row).select().single();
+  if (error && isMissingColumnError(error, "vitraReceiptNo")) {
+    // "vitraReceiptNo" (Vitra fiş numarası) sütunu henüz eklenmemiş olabilir
+    // — SQL migrasyonu çalıştırılana kadar o alan olmadan tekrar deneriz.
+    delete row.vitraReceiptNo;
+    ({ data, error } = await supabase.from("pendingParts").insert(row).select().single());
+  }
   if (error) throw new Error(error.message);
   await logActivity(input.actingUserId, "pendingPart", `bekleyen parça ekledi: ${data.description} (${data.customerName})`);
   return data;
@@ -366,12 +386,32 @@ export async function addPendingPart(input) {
 export async function updatePendingPart(id, patch) {
   const { actingUserId, ...rest } = patch;
   const finalPatch = { ...rest, ...stampUpdatedPatch(actingUserId) };
-  const { data, error } = await supabase
+  // Durum "geldi"ye çevrildiğinde (ve çağıran zaten açıkça bir arrivedAt
+  // vermediyse) ne zaman geldiğini otomatik damgalıyoruz — "Geçmiş"
+  // görünümünde ne kadar beklendiğini hesaplayabilmek için. Tekrar
+  // "bekleniyor"ya alınırsa temizlenir.
+  if (finalPatch.status === "geldi" && finalPatch.arrivedAt === undefined) {
+    finalPatch.arrivedAt = new Date().toISOString().slice(0, 10);
+  } else if (finalPatch.status === "bekleniyor" && finalPatch.arrivedAt === undefined) {
+    finalPatch.arrivedAt = null;
+  }
+  let { data, error } = await supabase
     .from("pendingParts")
     .update(finalPatch)
     .eq("id", id)
     .select()
     .single();
+  if (error && (isMissingColumnError(error, "vitraReceiptNo") || isMissingColumnError(error, "arrivedAt"))) {
+    const retryPatch = { ...finalPatch };
+    delete retryPatch.vitraReceiptNo;
+    delete retryPatch.arrivedAt;
+    ({ data, error } = await supabase
+      .from("pendingParts")
+      .update(retryPatch)
+      .eq("id", id)
+      .select()
+      .single());
+  }
   if (error) throw new Error("Bekleyen parça kaydı bulunamadı");
   await logActivity(actingUserId, "pendingPart", `bekleyen parçayı güncelledi: ${data.description} (${data.customerName})`);
   return data;
@@ -427,13 +467,42 @@ export function getPartCheckouts() {
 // eski (artık geçersiz) kullanılan/iade bölünmesi yanlışlıkla kalmasın.
 export async function updatePartCheckout(id, patch) {
   const { actingUserId, ...rest } = patch;
+
+  // Ürün/miktar değişiyorsa (PartCheckoutsPage.jsx'teki "saveEditItem" —
+  // tek çağıran yer) stoktaki karşılığı da düzeltmemiz gerekiyor: eski kayıt
+  // hâlâ "outstanding" ise o kadarı depodan hâlâ çıkmış sayılıyordu, önce
+  // eski ürüne geri eklenir, sonra yeni ürün/miktar düşülür. "reconciled" bir
+  // kayıt zaten tamamen hesaplaşmış (kullanılan kalıcı, iade zaten geri
+  // eklenmiş) — o durumda eski taraf için stoğa dokunulmaz.
+  if (rest.stockItemId !== undefined && rest.qtyTaken !== undefined) {
+    const { data: existing } = await supabase.from("partCheckouts").select("*").eq("id", id).maybeSingle();
+    if (existing?.status === "outstanding") {
+      const oldItem = await getStockItemById(existing.stockItemId);
+      if (oldItem) {
+        await updateStockItem(
+          existing.stockItemId,
+          { quantity: Number(oldItem.quantity) + Number(existing.qtyTaken) },
+          actingUserId
+        );
+      }
+    }
+    const newQty = Number(rest.qtyTaken) || 0;
+    const newItem = await getStockItemById(rest.stockItemId);
+    if (newItem) {
+      await updateStockItem(
+        rest.stockItemId,
+        { quantity: Math.max(0, Number(newItem.quantity) - newQty) },
+        actingUserId
+      );
+    }
+  }
+
   const finalPatch = { ...rest, ...stampUpdatedPatch(actingUserId) };
-  const { data, error } = await supabase
-    .from("partCheckouts")
-    .update(finalPatch)
-    .eq("id", id)
-    .select()
-    .single();
+  let { data, error } = await supabase.from("partCheckouts").update(finalPatch).eq("id", id).select().single();
+  if (error && isMissingColumnError(error, "qtyStoredInVehicle")) {
+    delete finalPatch.qtyStoredInVehicle;
+    ({ data, error } = await supabase.from("partCheckouts").update(finalPatch).eq("id", id).select().single());
+  }
   if (error) throw new Error(error.message || "Zimmet kaydı bulunamadı");
   await logActivity(actingUserId, "partCheckout", "zimmet kaydını düzenledi");
   return data;
@@ -444,6 +513,15 @@ export async function addPartCheckout(input) {
   if (!item) throw new Error("Stok kalemi bulunamadı");
   const qty = Number(input.qtyTaken) || 0;
   if (qty <= 0) throw new Error("Miktar 0'dan büyük olmalı");
+
+  // Parça fiziksel olarak depodan çıkıyor — addSale'deki aynı oku-hesapla-yaz
+  // deseniyle stoktan hemen düşülür. Mutabakat yapılınca (reconcilePartCheckout)
+  // sadece GERÇEKTEN kullanılmayıp iade edilen kısım geri eklenir.
+  await updateStockItem(
+    input.stockItemId,
+    { quantity: Math.max(0, Number(item.quantity) - qty) },
+    input.actingUserId
+  );
 
   const row = {
     id: uuid(),
@@ -479,32 +557,72 @@ export async function reconcilePartCheckout(id, patch) {
 
   const qtyUsed = Number(patch.qtyUsed) || 0;
   const qtyReturned = Number(patch.qtyReturned) || 0;
-  if (qtyUsed + qtyReturned !== existing.qtyTaken) {
-    throw new Error("Kullanılan + iade edilen miktar, alınan miktara eşit olmalı");
+  // Bazı teknisyenler gün içinde kullanmadıkları parçayı depoya iade etmek
+  // yerine kendi aracında saklıyor — bu üçüncü kova, "kullanılan/iade"
+  // ikilisine zorlanmadan bu durumu kayıt altına almak için eklendi.
+  const qtyStoredInVehicle = Number(patch.qtyStoredInVehicle) || 0;
+  if (qtyUsed + qtyReturned + qtyStoredInVehicle !== existing.qtyTaken) {
+    throw new Error("Kullanılan + iade edilen + arabada depolanan miktar, alınan miktara eşit olmalı");
   }
 
-  const { data, error } = await supabase
-    .from("partCheckouts")
-    .update({
-      status: "reconciled",
-      qtyUsed,
-      qtyReturned,
-      appointmentId: patch.appointmentId || null,
-      ...stampUpdatedPatch(patch.actingUserId),
-    })
-    .eq("id", id)
-    .select()
-    .single();
+  // Kullanılan ve arabada depolanan kısım zaten zimmetlenirken stoktan
+  // düşülmüştü, dokunulmaz (ikisi de fiziksel olarak depoda değil) —
+  // sadece GERÇEKTEN iade edilen kısım depoya geri eklenir.
+  if (qtyReturned > 0) {
+    const item = await getStockItemById(existing.stockItemId);
+    if (item) {
+      await updateStockItem(
+        existing.stockItemId,
+        { quantity: Number(item.quantity) + qtyReturned },
+        patch.actingUserId
+      );
+    }
+  }
+
+  const finalPatch = {
+    status: "reconciled",
+    qtyUsed,
+    qtyReturned,
+    qtyStoredInVehicle,
+    appointmentId: patch.appointmentId || null,
+    ...stampUpdatedPatch(patch.actingUserId),
+  };
+  let { data, error } = await supabase.from("partCheckouts").update(finalPatch).eq("id", id).select().single();
+  if (error && isMissingColumnError(error, "qtyStoredInVehicle")) {
+    // "qtyStoredInVehicle" sütunu henüz eklenmemiş olabilir (SQL migrasyonu
+    // bekleniyor) — o alan olmadan tekrar deneriz ki mutabakat tamamen
+    // bloke olmasın; migrasyon çalıştırılana kadar bu bilgi sadece
+    // kaydedilmez.
+    delete finalPatch.qtyStoredInVehicle;
+    ({ data, error } = await supabase.from("partCheckouts").update(finalPatch).eq("id", id).select().single());
+  }
   if (error) throw new Error(error.message);
   await logActivity(
     patch.actingUserId,
     "partCheckout",
-    `zimmet mutabakatı yaptı (kullanılan: ${qtyUsed}, iade: ${qtyReturned})`
+    `zimmet mutabakatı yaptı (kullanılan: ${qtyUsed}, iade: ${qtyReturned}${
+      qtyStoredInVehicle > 0 ? `, arabada depolanan: ${qtyStoredInVehicle}` : ""
+    })`
   );
   return data;
 }
 
 export async function deletePartCheckout(id, actingUserId) {
+  const { data: existing } = await supabase.from("partCheckouts").select("*").eq("id", id).maybeSingle();
+  // Sadece "outstanding" (henüz mutabakatı yapılmamış) bir zimmet silinirse
+  // stoğa telafi gerekir — o kadarı hâlâ depodan çıkmış sayılıyor. "reconciled"
+  // bir kayıt zaten tamamen hesaplaşmış durumda (kullanılan kalıcı, iade edilen
+  // zaten geri eklenmiş), silinmesi stoğa yeniden dokunmamalı.
+  if (existing?.status === "outstanding") {
+    const item = await getStockItemById(existing.stockItemId);
+    if (item) {
+      await updateStockItem(
+        existing.stockItemId,
+        { quantity: Number(item.quantity) + Number(existing.qtyTaken) },
+        actingUserId
+      );
+    }
+  }
   const { error } = await supabase.from("partCheckouts").delete().eq("id", id);
   if (error) throw new Error(error.message);
   await logActivity(actingUserId, "partCheckout", "yedek parça zimmet kaydını sildi");
@@ -534,7 +652,19 @@ export function getOfficeStaff() {
 
 export async function setOfficeStaff(list, actingUserId) {
   await requireAdmin(actingUserId, "Çalışan listesini güncelleme");
-  const result = await replaceTable("officeStaff", list);
+  let result;
+  try {
+    result = await replaceTable("officeStaff", list);
+  } catch (error) {
+    if (!isMissingColumnError(error, "vehicleId")) throw error;
+    // "vehicleId" sütunu (ofis çalışanlarına da araç atanabilmesi için)
+    // henüz eklenmemiş olabilir — SQL migrasyonu çalıştırılana kadar o alan
+    // olmadan tekrar deneriz ki kaydetme tamamen bloke olmasın.
+    result = await replaceTable(
+      "officeStaff",
+      list.map(({ vehicleId, ...rest }) => rest)
+    );
+  }
   await logActivity(actingUserId, "officeStaff", "ofis çalışanı listesini güncelledi");
   return result;
 }
@@ -559,8 +689,41 @@ export function getVehicles() {
   return selectAll("vehicles");
 }
 
+// Servis/muayene takibi için sonradan eklenen sütunlar — Supabase'de bu
+// sütunlar henüz oluşturulmamışsa ("schema cache" hatası) o alan(lar)
+// olmadan sessizce tekrar denenir (bkz. isMissingColumnError üstteki not,
+// aynı desen pendingParts.vitraReceiptNo için de kullanılıyor). Böylece
+// panelden sütunlar Supabase'e eklenene kadar araç kaydı tamamen
+// engellenmez, sadece yeni alanlar geçici olarak kaydedilmez.
+const VEHICLE_OPTIONAL_FIELDS = ["inspectionDueDate", "inspectionKm", "serviceDueDate", "serviceKm", "history"];
+
+async function upsertVehiclesWithFallback(list) {
+  let attempt = list;
+  while (true) {
+    const { error } = await supabase.from("vehicles").upsert(attempt, { onConflict: "id" });
+    if (!error) return;
+    const missingField = VEHICLE_OPTIONAL_FIELDS.find((f) => isMissingColumnError(error, f));
+    if (!missingField) throw new Error(error.message);
+    attempt = attempt.map(({ [missingField]: _drop, ...rest }) => rest);
+  }
+}
+
 export async function setVehicles(list, actingUserId) {
-  const saved = await replaceTable("vehicles", list);
+  // replaceTable() burada bilerek KULLANILMIYOR — yukarıdaki eksik sütun
+  // toleransı, upsert'in tam olarak hangi satır kümesiyle tekrar deneneceğini
+  // bilmesini gerektiriyor.
+  const existing = await selectAll("vehicles");
+  const existingIds = new Set(existing.map((r) => r.id));
+  const newIds = new Set(list.map((r) => r.id));
+  const toDelete = [...existingIds].filter((id) => !newIds.has(id));
+  if (toDelete.length) {
+    const { error } = await supabase.from("vehicles").delete().in("id", toDelete);
+    if (error) throw new Error(error.message);
+  }
+  if (list.length) {
+    await upsertVehiclesWithFallback(list);
+  }
+  const saved = await selectAll("vehicles");
   const validIds = new Set(saved.map((v) => v.id));
   const technicians = await selectAll("technicians");
   for (const tech of technicians) {
@@ -910,7 +1073,11 @@ export async function addUser({ name, password, role, hiddenTabs, settingsSectio
     name,
     passwordHash: hashPassword(password),
     role: role === "admin" ? "admin" : "staff",
-    hiddenTabs: hiddenTabs || [],
+    // Kameralar sekmesi sadece "Emre" hesabında görünsün diye (bkz.
+    // UsersSection.jsx'teki PERMISSION_TABS notu) her yeni kullanıcı
+    // varsayılan olarak hiddenTabs'ında "cameras" ile oluşturulur — admin
+    // ekleme formundan farklı bir hiddenTabs seçilse bile üzerine eklenir.
+    hiddenTabs: name === "Emre" ? hiddenTabs || [] : [...new Set([...(hiddenTabs || []), "cameras"])],
     settingsSections: settingsSections || [],
     photo: photo || "",
     photoPosition: photoPosition || { x: 50, y: 50 },

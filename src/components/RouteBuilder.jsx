@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import PrintView from "./PrintView.jsx";
+import GeocodeIssueNotice from "./GeocodeIssueNotice.jsx";
 import { STATUS_LABELS, toLocalISODate, isOnLeave, holidayOnDate } from "../lib/format.js";
 
 function tomorrowISO() {
@@ -8,7 +9,7 @@ function tomorrowISO() {
   return toLocalISODate(d);
 }
 
-export default function RouteBuilder({ appointments, technicians, holidays, onRouted, actingUserId }) {
+export default function RouteBuilder({ appointments, technicians, holidays, onAppointmentPatch, actingUserId }) {
   const [scheduledDate, setScheduledDate] = useState(tomorrowISO());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,7 +22,15 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
   const routes = useMemo(
     () =>
       technicians
-        .filter((technician) => technician.assignable !== false)
+        // Çıraklar otomatik rota oluşturmada rota alamaz, bu yüzden normalde
+        // burada gösterilmezler — ama dispatcher onlara elle tek bir randevu
+        // verdiyse (bkz. AppointmentForm/handleReassign) o gün için bir rota
+        // kartı yine de görünmeli, yoksa atanan iş "kaybolmuş" gibi durur.
+        .filter(
+          (technician) =>
+            technician.assignable !== false ||
+            dayAppointments.some((a) => a.assignedTechnicianId === technician.id)
+        )
         .map((technician) => ({
           technician,
           stops: dayAppointments
@@ -67,8 +76,22 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
     setLoading(true);
     setError("");
     try {
-      await window.api.buildRoutes(scheduledDate, actingUserId);
-      onRouted();
+      // buildRoutes artık sadece o günün randevularını çekiyor (bkz.
+      // db.js'teki getAppointmentsByDate) ama dönüşte tüm ~20 bin+ satırlık
+      // tabloyu yeniden çekmek (onRouted()) hâlâ eskisi kadar yavaştı —
+      // handlers.js zaten güncellenen her durağı (status/assignedTechnicianId/
+      // stopOrder ile) `routes` içinde tam olarak döndürüyor, o yüzden burada
+      // doğrudan bu durakları yerel state'e işliyoruz. Konum-güncellemesi
+      // sırasında atanamayan (stillUnassigned) nadir durum gibi buradan
+      // yakalanmayan değişiklikler, artık ucuz olan realtime yamalamayla
+      // (bkz. App.jsx refreshAppointmentsFromRealtime) kısa süre içinde
+      // kendiliğinden gelir.
+      const result = await window.api.buildRoutes(scheduledDate, actingUserId);
+      for (const { stops } of result.routes) {
+        for (const stop of stops) {
+          onAppointmentPatch?.(stop);
+        }
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,13 +100,16 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
   }
 
   async function handleReassign(appointmentId, technicianId) {
-    await window.api.reassignAppointment(appointmentId, technicianId, actingUserId);
-    onRouted();
+    const updated = await window.api.reassignAppointment(appointmentId, technicianId, actingUserId);
+    // Tüm ~20 bin+ satırlık randevu tablosunu yeniden çekmek (onRouted())
+    // yerine — geri dönen tek satırı doğrudan yerel state'e işliyoruz, ki
+    // teknisyen değiştirmek anında yansısın.
+    onAppointmentPatch?.(updated);
   }
 
   async function handleStatusChange(appointmentId, status) {
-    await window.api.setAppointmentStatus(appointmentId, status, actingUserId);
-    onRouted();
+    const updated = await window.api.setAppointmentStatus(appointmentId, status, actingUserId);
+    onAppointmentPatch?.(updated);
   }
 
   function handlePrint() {
@@ -172,11 +198,7 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
                         {s.status === "completed" ? " ✔" : ""}
                       </strong>
                       <div>{s.address}</div>
-                      {s.geocodeIssue && (
-                        <div style={{ color: "var(--danger)", fontSize: "0.85em", marginTop: "0.2rem" }}>
-                          ⚠ En yakın adrese bağdaştırıldı, konum kesin değil: {s.geocodeIssue}
-                        </div>
-                      )}
+                      <GeocodeIssueNotice appointment={s} actingUserId={actingUserId} compact />
                       {s.complaint && <div>Şikayet: {s.complaint}</div>}
                       {s.estimatedDurationMinutes && (
                         <div>Tahmini süre: {s.estimatedDurationMinutes} dk</div>
@@ -184,19 +206,22 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
                       <span className={`badge ${s.urgency}`}>
                         {s.urgency === "acil" ? "Acil" : "Normal"}
                       </span>
-                      <div style={{ marginTop: "0.4rem", display: "flex", gap: "0.75rem" }}>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-                          Teknisyen:
+                      {/* Dar rota kolonlarında ("route-columns" min-width:260px)
+                          iki select'i yan yana koymak (eski tasarım) uzun
+                          teknisyen adlarıyla kolonun dışına taşıyordu — alt
+                          alta, tam genişlikte istiflendi. */}
+                      <div style={{ marginTop: "0.4rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        <label style={{ margin: 0 }}>
+                          Teknisyen
                           <select
                             value={r.technician.id}
                             onChange={(e) => handleReassign(s.id, e.target.value)}
                           >
+                            {/* "assignable" sadece otomatik rota oluşturma
+                                havuzunu belirler — elle devirde tüm
+                                teknisyenler ayrım yapılmadan tek listede. */}
                             {technicians
-                              .filter(
-                                (t) =>
-                                  t.id === r.technician.id ||
-                                  (!isOnLeave(t, scheduledDate) && t.assignable !== false)
-                              )
+                              .filter((t) => t.id === r.technician.id || !isOnLeave(t, scheduledDate))
                               .map((t) => (
                                 <option key={t.id} value={t.id}>
                                   {t.name}
@@ -205,8 +230,8 @@ export default function RouteBuilder({ appointments, technicians, holidays, onRo
                               ))}
                           </select>
                         </label>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-                          Durum:
+                        <label style={{ margin: 0 }}>
+                          Durum
                           <select
                             value={s.status}
                             onChange={(e) => handleStatusChange(s.id, e.target.value)}

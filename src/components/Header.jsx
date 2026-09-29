@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, PanelLeft, Wifi, WifiOff } from "lucide-react";
+import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, PanelLeft, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { TABS } from "./navTabs.jsx";
 import { useSyncStatus, useHeaderAlerts } from "../lib/useHeaderAlerts.js";
 import MarqueeText from "./MarqueeText.jsx";
+import GeocodeIssueNotice from "./GeocodeIssueNotice.jsx";
 
 export { TABS };
 
@@ -74,6 +75,7 @@ export default function Header({
   onDismissCheckoutReminder,
   technicians,
   onNavStyleChange,
+  syncingCount = 0,
 }) {
   // Supabase Realtime bağlantı durumu — header'da küçük bir noktayla
   // gösterilir, kullanıcı veri güncel mi/senkronize mi diye anlayabilsin.
@@ -114,6 +116,30 @@ export default function Header({
         onClick={() => onTabChange("home")}
         style={{ cursor: "pointer" }}
       />
+      {/* Dock, CSS'te margin-left:auto ile sağa doğru itiliyor — bu yüzden
+          logo ile Dock arasındaki boşluğa eklenen bir eleman Dock'un (ve
+          ondan sonraki her şeyin) konumunu ETKİLEMİYOR (auto margin
+          otomatik daralıp bu genişliği yutuyor). "Senkronize ediliyor"
+          yazısı önceden Dock'un SAĞINDA (kullanıcı adı bloğunun içinde)
+          duruyordu — o blok büyüyünce Dock'un auto margin'i küçülüp
+          sekme ikonlarını sola kaydırıyordu. Buraya taşımak bu kaymayı
+          tamamen ortadan kaldırıyor. */}
+      {syncingCount > 0 && !syncInfo.isProblem && (
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            marginLeft: "1rem",
+            opacity: 0.6,
+            fontSize: "0.8rem",
+            flexShrink: 0,
+          }}
+        >
+          <Loader2 size={14} strokeWidth={2} style={{ animation: "spin 1.1s linear infinite" }} />
+          Senkronize ediliyor…
+        </span>
+      )}
       <Dock tabs={visibleTabs} activeTab={activeTab} onTabChange={onTabChange} />
 
       {issues.length > 0 && (
@@ -150,9 +176,6 @@ export default function Header({
                 <div
                   key={a.id}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
                     borderBottom: "1px solid var(--border)",
                     padding: "0.6rem 0.8rem",
                   }}
@@ -164,8 +187,8 @@ export default function Header({
                       onNavigateToIssue(a.id);
                     }}
                     style={{
-                      flex: 1,
-                      minWidth: 0,
+                      display: "block",
+                      width: "100%",
                       textAlign: "left",
                       background: "none",
                       border: "none",
@@ -176,17 +199,8 @@ export default function Header({
                     }}
                   >
                     <strong>{a.customerName}</strong>
-                    <div style={{ opacity: 0.8 }}>{a.geocodeIssue}</div>
                   </button>
-                  <button
-                    type="button"
-                    className="icon-btn delete"
-                    title="Uyarıyı kapat"
-                    aria-label="Uyarıyı kapat"
-                    onClick={() => onDismissIssue?.(a.id)}
-                  >
-                    <Trash2 size={14} strokeWidth={1.75} />
-                  </button>
+                  <GeocodeIssueNotice appointment={a} actingUserId={currentUser?.id} compact />
                 </div>
               ))}
             </div>
@@ -369,8 +383,10 @@ export default function Header({
           >
             {syncInfo.isProblem ? (
               <WifiOff size={15} strokeWidth={2} color="var(--danger)" />
+            ) : syncingCount > 0 ? (
+              <Loader2 size={15} strokeWidth={2} style={{ animation: "spin 1.1s linear infinite", opacity: 0.75 }} />
             ) : (
-              <Wifi size={15} strokeWidth={1.75} style={{ opacity: 0.6 }} />
+              <Wifi size={15} strokeWidth={2} color={syncInfo.color} />
             )}
             {showSyncTooltip && (
               <span
@@ -391,7 +407,7 @@ export default function Header({
                   zIndex: 1000,
                 }}
               >
-                {syncInfo.label}
+                {syncInfo.isProblem ? syncInfo.label : syncingCount > 0 ? "Senkronize ediliyor…" : syncInfo.label}
               </span>
             )}
           </span>

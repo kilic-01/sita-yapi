@@ -345,13 +345,24 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
             const tech = technicians.find((t) => t.id === a.assignedTechnicianId);
             const barColor = tech ? colorForTechnician(tech.id, technicians) : "var(--border)";
             return (
-              <div key={a.id} className="schedule-row" onClick={() => setInfoAppointment(a)}>
+              <div
+                key={a.id}
+                className="schedule-row"
+                onClick={() => setInfoAppointment(a)}
+                // RouteBuilder'daki tamamlanmış durak stiliyle aynı (opacity
+                // 0.55 + ✔) — tamamlanmış bir iş burada da listeden
+                // kaybolmuyor, sadece soluklaşıyor.
+                style={a.status === "completed" ? { opacity: 0.55 } : undefined}
+              >
                 <span className="schedule-row-bar" style={{ background: barColor }} />
                 <span className="schedule-row-icon">
                   <Clock size={16} strokeWidth={1.75} />
                 </span>
                 <div className="schedule-row-main">
-                  <strong>{a.customerName}</strong>
+                  <strong>
+                    {a.customerName}
+                    {a.status === "completed" ? " ✔" : ""}
+                  </strong>
                   <div className="schedule-row-sub">
                     <small>{a.complaint ? a.complaint.slice(0, 70) : formatDayLabel(a.scheduledDate)}</small>
                   </div>

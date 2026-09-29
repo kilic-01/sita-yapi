@@ -119,9 +119,9 @@ export default function HomePage({
     return appointments
       .filter(
         (a) =>
-          a.customerName.toLowerCase().includes(term) ||
+          (a.customerName || "").toLowerCase().includes(term) ||
           (a.contactName || "").toLowerCase().includes(term) ||
-          a.address.toLowerCase().includes(term) ||
+          (a.address || "").toLowerCase().includes(term) ||
           (phoneTerm.length > 0 && (a.customerPhone || "").replace(/\D/g, "").includes(phoneTerm))
       )
       .slice(0, SEARCH_RESULT_LIMIT);

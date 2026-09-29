@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, Menu, PanelTop, Wifi, WifiOff } from "lucide-react";
+import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, Menu, PanelTop, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { TAB_GROUPS } from "./navTabs.jsx";
 import { useSyncStatus, useHeaderAlerts } from "../lib/useHeaderAlerts.js";
 import MarqueeText from "./MarqueeText.jsx";
+import GeocodeIssueNotice from "./GeocodeIssueNotice.jsx";
 
 // İkinci düzen seçeneği — dribbble.com/shots/23885524 ("Fieldwise") referans
 // alınarak uyarlandı: sol kenar çubuğu, daraltılabilir (sadece ikon) /
@@ -30,6 +31,7 @@ export default function Sidebar({
   collapsed,
   onToggleCollapsed,
   onNavStyleChange,
+  syncingCount = 0,
 }) {
   const syncInfo = useSyncStatus();
   const [showIssues, setShowIssues] = useState(false);
@@ -131,7 +133,7 @@ export default function Sidebar({
             {showIssues && (
               <div className="sidebar-flyout">
                 {issues.map((a) => (
-                  <div key={a.id} className="sidebar-flyout-row">
+                  <div key={a.id} className="sidebar-flyout-row" style={{ display: "block" }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -139,19 +141,11 @@ export default function Sidebar({
                         onNavigateToIssue(a.id);
                       }}
                       className="sidebar-flyout-main"
+                      style={{ display: "block", width: "100%" }}
                     >
                       <strong>{a.customerName}</strong>
-                      <div style={{ opacity: 0.8 }}>{a.geocodeIssue}</div>
                     </button>
-                    <button
-                      type="button"
-                      className="icon-btn delete"
-                      title="Uyarıyı kapat"
-                      aria-label="Uyarıyı kapat"
-                      onClick={() => onDismissIssue?.(a.id)}
-                    >
-                      <Trash2 size={14} strokeWidth={1.75} />
-                    </button>
+                    <GeocodeIssueNotice appointment={a} actingUserId={currentUser?.id} compact />
                   </div>
                 ))}
               </div>
@@ -280,11 +274,16 @@ export default function Sidebar({
         {currentUser && (
           <div className="sidebar-user">
             <div className="sidebar-user-info">
-              <span title={syncInfo.label} style={{ display: "inline-flex", flexShrink: 0 }}>
+              <span
+                title={syncInfo.isProblem ? syncInfo.label : syncingCount > 0 ? "Senkronize ediliyor…" : syncInfo.label}
+                style={{ display: "inline-flex", flexShrink: 0 }}
+              >
                 {syncInfo.isProblem ? (
                   <WifiOff size={14} strokeWidth={2} color="var(--danger)" />
+                ) : syncingCount > 0 ? (
+                  <Loader2 size={14} strokeWidth={2} style={{ animation: "spin 1.1s linear infinite", opacity: 0.75 }} />
                 ) : (
-                  <Wifi size={14} strokeWidth={1.75} style={{ opacity: 0.6 }} />
+                  <Wifi size={14} strokeWidth={2} color={syncInfo.color} />
                 )}
               </span>
               {!collapsed && (

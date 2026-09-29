@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, ChevronRight, ChevronDown, Pencil, QrCode } from "lucide-react";
 import { todayISO } from "../lib/format.js";
 import Modal from "./Modal.jsx";
@@ -7,9 +7,14 @@ import SuggestionDropdown from "./SuggestionDropdown.jsx";
 
 const STOCK_RESULT_LIMIT = 8;
 const VAT_RATE = 1.2;
+// Binlerce stok kaleminde her tuş vuruşunda tam liste taranıyordu (kod/isim/
+// barkod x ~10.400 ürün) — arama kutusu bu yüzden kasıyordu. StockPage.jsx'te
+// kullanılan aynı debounce deseni burada da uygulanıyor: kutu anında yazıyı
+// gösterir, asıl arama yazma bittikten kısa süre sonra çalışır.
+const SEARCH_DEBOUNCE_MS = 200;
 
 function emptyDraft() {
-  return { qtyUsed: "", qtyReturned: "", appointmentId: "" };
+  return { qtyUsed: "", qtyReturned: "", qtyStoredInVehicle: "", appointmentId: "" };
 }
 
 // Fiyatlar her yerde KDV DAHİL gösterilir — sadece bilgi amaçlı, stok
@@ -42,9 +47,33 @@ export default function PartCheckoutsPage({
   const [expandedTechIds, setExpandedTechIds] = useState(new Set());
   const [editingReconcileId, setEditingReconcileId] = useState(null);
   const [editingItemId, setEditingItemId] = useState(null);
+  // Bir ustanın grup başlığındaki "+" butonuna basılınca hangi ustanın
+  // yanında çırak seçme açılır menüsü gösterildiğini tutar (bkz.
+  // startCheckoutForApprentice) — çıraklar her gün farklı bir ustayla
+  // gittiği için dispatcher o günkü ustanın yanından hızlıca ilgili çırağı
+  // seçip ona da zimmet açabilsin diye.
+  const [apprenticePickerForTech, setApprenticePickerForTech] = useState(null);
   const [itemEditDraft, setItemEditDraft] = useState({ search: "", selectedStock: null, qty: "1" });
+  const [itemEditDebouncedSearch, setItemEditDebouncedSearch] = useState("");
   const itemEditInputRef = useRef(null);
   const productRowInputRefs = useRef({});
+  // Her satırın arama kutusu için ayrı bir debounce zamanlayıcısı — satır
+  // sayısı dinamik olduğu için bunu bir alt bileşene taşımak yerine
+  // parent'ta anahtar (row.key) bazlı bir map olarak tutuyoruz.
+  const [productRowDebouncedSearch, setProductRowDebouncedSearch] = useState({});
+  const productRowSearchTimers = useRef({});
+
+  useEffect(() => {
+    const timer = setTimeout(() => setItemEditDebouncedSearch(itemEditDraft.search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [itemEditDraft.search]);
+
+  function scheduleProductRowSearch(key, value) {
+    clearTimeout(productRowSearchTimers.current[key]);
+    productRowSearchTimers.current[key] = setTimeout(() => {
+      setProductRowDebouncedSearch((prev) => ({ ...prev, [key]: value }));
+    }, SEARCH_DEBOUNCE_MS);
+  }
 
   function toggleTechExpanded(techId) {
     setExpandedTechIds((prev) => {
@@ -55,7 +84,13 @@ export default function PartCheckoutsPage({
     });
   }
 
-  const assignableTechnicians = technicians.filter((t) => t.assignable !== false);
+  // "İş Atanabilir" işareti kaldırılmış (assignable:false) teknisyenler bu
+  // şirkette çıraklar — kendi rotaları olmuyor (buildRoutes'ta zaten
+  // dışlanıyorlar), her gün farklı bir ustayla randevulara gidiyorlar. Ama
+  // parça alabiliyorlar, bu yüzden zimmet ekranında da seçilebilir olmaları
+  // gerekiyor — sadece rota/otomatik iş ataması dışında tutuluyorlar.
+  const masterTechnicians = technicians.filter((t) => t.assignable !== false);
+  const apprentices = technicians.filter((t) => t.assignable === false);
 
   function stockMatchesFor(term) {
     const t = term.trim().toLowerCase();
@@ -70,16 +105,108 @@ export default function PartCheckoutsPage({
       .slice(0, STOCK_RESULT_LIMIT);
   }
 
+  // Barkod okuyucu, taratılan kodu klavye girişi gibi hızlıca yazar — bir
+  // insanın barkod uzunluğunda bir metni bu kadar hızlı, Enter'a basmadan
+  // yazması gerçekçi değil, bu yüzden "tam eşleşme" tek başına barkod
+  // taraması saymaya yetiyor (bkz. handleProductRowSearchChange). Kod
+  // araması ayrı tutuluyor (Enter'la elle tam kod yazma senaryosu için).
+  function findExactBarcodeMatch(term) {
+    const t = term.trim().toLowerCase();
+    if (!t) return null;
+    return stockItems.find((s) => s.barcode && s.barcode.toLowerCase() === t) || null;
+  }
+
+  function findExactCodeMatch(term) {
+    const t = term.trim().toLowerCase();
+    if (!t) return null;
+    return stockItems.find((s) => (s.code || "").toLowerCase() === t) || null;
+  }
+
   function updateProductRow(key, patch) {
     setProductRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
   function addProductRow() {
-    setProductRows((prev) => [...prev, emptyProductRow()]);
+    const row = emptyProductRow();
+    setProductRows((prev) => [...prev, row]);
+    return row;
+  }
+
+  // Kısa bir "bip" — barkod tarandığında/eşleştiğinde sessizce ekranda bir
+  // şey değişmesi yeterli geri bildirim değil (dispatcher ekrana değil
+  // ürüne/teknisyene bakıyor olabilir); gerçek barkod okuyucuların kendi
+  // bip sesine benzer, kısa ve net bir onay sesi. Dosya yönetmemek için
+  // Web Audio API ile anlık üretiliyor.
+  function playBarcodeBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Çift bip — gerçek barkod okuyucuların çoğunun kullandığı desen.
+      const beep = (startOffset) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 1318.5; // E6
+        const start = ctx.currentTime + startOffset;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.16, start + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.06);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.08);
+      };
+      beep(0);
+      beep(0.09);
+      setTimeout(() => ctx.close(), 400);
+    } catch {
+      // Ses üretimi (nadiren) desteklenmiyor/izin yoksa zimmetleme akışını
+      // bozmasın diye sessizce yutuluyor — ses bir onay sinyali, kritik değil.
+    }
+  }
+
+  // Bir satıra ürün seçildiğinde (barkod eşleşmesi, listeden tıklama ya da
+  // Enter'la tam kod eşleşmesi) hemen altına yeni bir boş satır açar ve
+  // odağı oraya taşır — dispatcher eli klavyeden/fareden hiç çekmeden art
+  // arda birçok ürünü taratıp/seçip zimmetleyebilsin diye (gerçek kullanım
+  // senaryosu: bir teknisyene aldığı tüm parçaları tek tek taratmak).
+  function selectStockForRow(row, stock) {
+    clearTimeout(productRowSearchTimers.current[row.key]);
+    updateProductRow(row.key, { selectedStock: stock, search: "" });
+    const newRow = addProductRow();
+    setTimeout(() => productRowInputRefs.current[newRow.key]?.focus(), 0);
+  }
+
+  // Arama kutusuna her yazıldığında (elle ya da barkod okuyucudan) çağrılır —
+  // yazılan metin tam bir barkoda eşleşiyorsa Enter beklemeden anında seçip
+  // ilerler ve bip sesi çalar.
+  function handleProductRowSearchChange(row, value) {
+    updateProductRow(row.key, { selectedStock: null, search: value });
+    scheduleProductRowSearch(row.key, value);
+    const barcodeMatch = findExactBarcodeMatch(value);
+    if (barcodeMatch) {
+      playBarcodeBeep();
+      selectStockForRow(row, barcodeMatch);
+    }
+  }
+
+  function handleProductRowKeyDown(e, row) {
+    if (e.key !== "Enter") return;
+    e.preventDefault(); // formun kendisini (Zimmetle) tetiklemesin
+    if (row.selectedStock) return;
+    const match = findExactCodeMatch(row.search);
+    if (!match) return;
+    selectStockForRow(row, match);
   }
 
   function removeProductRow(key) {
     setProductRows((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== key) : prev));
+    clearTimeout(productRowSearchTimers.current[key]);
+    delete productRowSearchTimers.current[key];
+    setProductRowDebouncedSearch((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   const dayCheckouts = useMemo(() => partCheckouts.filter((c) => c.date === date), [partCheckouts, date]);
@@ -105,8 +232,9 @@ export default function PartCheckoutsPage({
     });
   }, [byTechnician, technicians]);
 
-  // Yazdırma çıktısı için aynı (alfabetik sıralı) gruplamayı stok kalemi
-  // bilgisiyle zenginleştirir — ekranda görülen sırayla aynı çıksın diye.
+  // Yazdırma çıktısı için aynı (alfabetik sıralı) gruplamayı stok kalemi ve
+  // (varsa) hangi müşteriye kullanıldığı bilgisiyle zenginleştirir — ekranda
+  // görülen sırayla aynı çıksın diye.
   const printGroups = useMemo(
     () =>
       sortedTechnicianEntries.map(([techId, rows]) => ({
@@ -114,9 +242,10 @@ export default function PartCheckoutsPage({
         rows: rows.map((checkout) => ({
           checkout,
           stock: stockItems.find((s) => s.id === checkout.stockItemId),
+          appointment: checkout.appointmentId ? appointments.find((a) => a.id === checkout.appointmentId) : null,
         })),
       })),
-    [sortedTechnicianEntries, technicians, stockItems]
+    [sortedTechnicianEntries, technicians, stockItems, appointments]
   );
 
   function draftFor(checkoutId) {
@@ -135,6 +264,19 @@ export default function PartCheckoutsPage({
     setTechnicianId("");
     setProductRows([emptyProductRow()]);
     setError("");
+    Object.values(productRowSearchTimers.current).forEach(clearTimeout);
+    productRowSearchTimers.current = {};
+    setProductRowDebouncedSearch({});
+  }
+
+  // Bir ustanın grup başlığındaki "+" butonundan bir çırak seçildiğinde —
+  // "Yeni Zimmet" formunu o çırak seçili olarak açar, dispatcher o günkü
+  // usta-çırak eşleşmesini hatırlamak zorunda kalmadan hızlıca zimmetleyebilsin.
+  function startCheckoutForApprentice(apprenticeId) {
+    setApprenticePickerForTech(null);
+    resetCheckoutForm();
+    setTechnicianId(apprenticeId);
+    setShowCheckoutModal(true);
   }
 
   async function handleCheckout(e) {
@@ -187,14 +329,18 @@ export default function PartCheckoutsPage({
     const draft = draftFor(checkout.id);
     const qtyUsed = Number(draft.qtyUsed) || 0;
     const qtyReturned = Number(draft.qtyReturned) || 0;
-    if (qtyUsed + qtyReturned !== checkout.qtyTaken) {
-      window.alert(`Kullanılan + iade edilen, alınan miktara (${checkout.qtyTaken}) eşit olmalı.`);
+    const qtyStoredInVehicle = Number(draft.qtyStoredInVehicle) || 0;
+    if (qtyUsed + qtyReturned + qtyStoredInVehicle !== checkout.qtyTaken) {
+      window.alert(
+        `Kullanılan + iade edilen + arabada depolanan, alınan miktara (${checkout.qtyTaken}) eşit olmalı.`
+      );
       return;
     }
     try {
       await window.api.reconcilePartCheckout(checkout.id, {
         qtyUsed,
         qtyReturned,
+        qtyStoredInVehicle,
         appointmentId: draft.appointmentId || null,
         actingUserId: currentUser?.id,
       });
@@ -218,6 +364,7 @@ export default function PartCheckoutsPage({
       [checkout.id]: {
         qtyUsed: checkout.qtyUsed != null ? String(checkout.qtyUsed) : "",
         qtyReturned: checkout.qtyReturned != null ? String(checkout.qtyReturned) : "",
+        qtyStoredInVehicle: checkout.qtyStoredInVehicle != null ? String(checkout.qtyStoredInVehicle) : "",
         appointmentId: checkout.appointmentId || "",
       },
     }));
@@ -253,6 +400,7 @@ export default function PartCheckoutsPage({
         status: "outstanding",
         qtyUsed: null,
         qtyReturned: null,
+        qtyStoredInVehicle: null,
         appointmentId: null,
         actingUserId: currentUser?.id,
       });
@@ -276,7 +424,9 @@ export default function PartCheckoutsPage({
   }
 
   function handlePrint() {
-    window.api.printCurrent();
+    // Liste birden fazla sayfaya taşabiliyor — alt ortada "X / Y" sayfa
+    // numarası göstersin diye (bkz. electron/main.js'teki print:current).
+    window.api.printCurrent({ showPageNumber: true });
   }
 
   return (
@@ -317,36 +467,84 @@ export default function PartCheckoutsPage({
           );
           return (
             <div key={techId} style={{ marginBottom: "0.75rem" }}>
-              <button
-                type="button"
-                onClick={() => toggleTechExpanded(techId)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                  width: "100%",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: "0.4rem 0",
-                  textAlign: "left",
-                  color: "inherit",
-                  font: "inherit",
-                }}
-              >
-                {isExpanded ? (
-                  <ChevronDown size={16} strokeWidth={1.75} />
-                ) : (
-                  <ChevronRight size={16} strokeWidth={1.75} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
+                <button
+                  type="button"
+                  onClick={() => toggleTechExpanded(techId)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    flex: 1,
+                    minWidth: 0,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "0.4rem 0",
+                    textAlign: "left",
+                    color: "inherit",
+                    font: "inherit",
+                  }}
+                >
+                  {isExpanded ? (
+                    <ChevronDown size={16} strokeWidth={1.75} />
+                  ) : (
+                    <ChevronRight size={16} strokeWidth={1.75} />
+                  )}
+                  <h4 style={{ margin: 0 }}>{tech?.name || "Bilinmeyen teknisyen"}</h4>
+                  <small style={{ opacity: 0.6 }}>({rows.length} kalem)</small>
+                </button>
+                {apprentices.length > 0 && (
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Bugün bu ustayla giden bir çırağa zimmetle"
+                      aria-label="Çırağa zimmetle"
+                      onClick={() =>
+                        setApprenticePickerForTech((prev) => (prev === techId ? null : techId))
+                      }
+                    >
+                      <Plus size={14} strokeWidth={1.75} />
+                    </button>
+                    {apprenticePickerForTech === techId && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 4px)",
+                          right: 0,
+                          background: "var(--card-bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 10,
+                          boxShadow: "var(--shadow)",
+                          minWidth: 180,
+                          zIndex: 20,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div style={{ padding: "0.4rem 0.6rem", opacity: 0.6, fontSize: "0.75rem" }}>
+                          Bugün {tech?.name || "bu usta"} ile giden çırak
+                        </div>
+                        {apprentices.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            className="dropdown-item"
+                            onClick={() => startCheckoutForApprentice(a.id)}
+                          >
+                            {a.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
-                <h4 style={{ margin: 0 }}>{tech?.name || "Bilinmeyen teknisyen"}</h4>
-                <small style={{ opacity: 0.6 }}>({rows.length} kalem)</small>
-              </button>
+              </div>
               {isExpanded &&
                 rows.map((c) => {
                   const stock = stockOf(c.stockItemId);
                   const isEditingThisItem = editingItemId === c.id;
-                  const editMatches = itemEditDraft.selectedStock ? [] : stockMatchesFor(itemEditDraft.search);
+                  const editMatches = itemEditDraft.selectedStock ? [] : stockMatchesFor(itemEditDebouncedSearch);
                   const showReconcileForm = c.status !== "reconciled" || editingReconcileId === c.id;
                   return (
                     <div
@@ -478,7 +676,7 @@ export default function PartCheckoutsPage({
                               flexWrap: "wrap",
                             }}
                           >
-                            <label style={{ maxWidth: 90 }}>
+                            <label style={{ maxWidth: 90, marginBottom: 0 }}>
                               Kullanılan
                               <input
                                 type="number"
@@ -488,7 +686,7 @@ export default function PartCheckoutsPage({
                                 onChange={(e) => updateDraft(c.id, { qtyUsed: e.target.value })}
                               />
                             </label>
-                            <label style={{ maxWidth: 90 }}>
+                            <label style={{ maxWidth: 90, marginBottom: 0 }}>
                               İade
                               <input
                                 type="number"
@@ -498,7 +696,20 @@ export default function PartCheckoutsPage({
                                 onChange={(e) => updateDraft(c.id, { qtyReturned: e.target.value })}
                               />
                             </label>
-                            <label style={{ minWidth: 180 }}>
+                            <label
+                              style={{ maxWidth: 110, marginBottom: 0 }}
+                              title="Kullanılmadı ama depoya iade edilmedi, teknisyen kendi aracında saklıyor"
+                            >
+                              Arabada
+                              <input
+                                type="number"
+                                min="0"
+                                max={c.qtyTaken}
+                                value={draftFor(c.id).qtyStoredInVehicle}
+                                onChange={(e) => updateDraft(c.id, { qtyStoredInVehicle: e.target.value })}
+                              />
+                            </label>
+                            <label style={{ minWidth: 180, marginBottom: 0 }}>
                               Randevu (opsiyonel)
                               <select
                                 value={draftFor(c.id).appointmentId}
@@ -532,6 +743,7 @@ export default function PartCheckoutsPage({
                           >
                             <small style={{ opacity: 0.8 }}>
                               Kullanılan: {c.qtyUsed} · İade: {c.qtyReturned}
+                              {c.qtyStoredInVehicle > 0 && <> · Arabada: {c.qtyStoredInVehicle}</>}
                             </small>
                             <button
                               type="button"
@@ -566,7 +778,11 @@ export default function PartCheckoutsPage({
                 Teknisyen
                 <select value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}>
                   <option value="">Seçin</option>
-                  {assignableTechnicians.map((t) => (
+                  {/* Usta/çırak ayrımı sadece otomatik rotalama için anlamlı
+                      (bkz. masterTechnicians/apprentices tanımı) — burada
+                      parça alan herkes eşit, gruplama/etiketleme olmadan
+                      tek listede gösteriliyor. */}
+                  {technicians.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
@@ -575,7 +791,7 @@ export default function PartCheckoutsPage({
               </label>
 
               {productRows.map((row, idx) => {
-                const matches = row.selectedStock ? [] : stockMatchesFor(row.search);
+                const matches = row.selectedStock ? [] : stockMatchesFor(productRowDebouncedSearch[row.key] || "");
                 return (
                   <div
                     key={row.key}
@@ -586,8 +802,9 @@ export default function PartCheckoutsPage({
                       <input
                         ref={(el) => (productRowInputRefs.current[row.key] = el)}
                         value={row.selectedStock ? `${row.selectedStock.code} — ${row.selectedStock.name}` : row.search}
-                        onChange={(e) => updateProductRow(row.key, { selectedStock: null, search: e.target.value })}
-                        placeholder="Kod veya isimle ara"
+                        onChange={(e) => handleProductRowSearchChange(row, e.target.value)}
+                        onKeyDown={(e) => handleProductRowKeyDown(e, row)}
+                        placeholder="Kod, barkod veya isimle ara — barkod taratılabilir"
                         autoFocus={idx === 0}
                       />
                       {matches.length > 0 && (
@@ -595,7 +812,7 @@ export default function PartCheckoutsPage({
                           {matches.map((s) => (
                             <div
                               key={s.id}
-                              onClick={() => updateProductRow(row.key, { selectedStock: s, search: "" })}
+                              onClick={() => selectStockForRow(row, s)}
                               style={{
                                 padding: "0.4rem 0.6rem",
                                 cursor: "pointer",

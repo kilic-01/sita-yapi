@@ -29,6 +29,12 @@ async function geocodeOnce({ address, components }, apiKey) {
       lat,
       lng,
       formattedAddress: result.formatted_address,
+      // İlçe doğrulaması (bkz. handlers.js checkGeocodeQuality) için —
+      // formatted_address İNSAN OKUSUN diye yazılmış, tutarlı bir yapı
+      // garanti etmiyor: özellikle tanınmış/lüks semtlerde (ör. Etiler)
+      // Google formatted_address'e ilçeyi HİÇ eklemeyebiliyor. Yapılandırılmış
+      // address_components daha güvenilir bir kaynak.
+      addressComponents: result.address_components || [],
       placeId: result.place_id || null,
       // Google'ın kendi hassasiyet sınıflandırması: ROOFTOP (tam bina),
       // RANGE_INTERPOLATED (bina numarası aralığa göre tahmin),

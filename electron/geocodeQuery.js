@@ -50,23 +50,29 @@ export function buildGeocodeAttempts({ street, buildingName, mahalle, ilce, il }
   const expandedStreet = expandAbbreviations(street);
   const mahalleLine = mahalle ? `${mahalle} Mahallesi` : "";
   const components = componentsFor(il);
+  // İl'i SADECE "components" ile (sunucu tarafı filtre) değil, sorgu
+  // METNİNE de "İlçe/İl" biçiminde ekliyoruz — tam olarak bir kullanıcının
+  // Google Maps'in arama kutusuna yazdığı gibi ("Kadıköy/İstanbul"). Google'ın
+  // serbest metin ayrıştırıcısı bunu bazen sadece components filtresinden
+  // daha güvenilir buluyor, özellikle daha az bilinen ilçe adlarında.
+  const cityLine = [ilce, il].filter(Boolean).join("/");
 
   const attempts = [];
 
-  // 1) En spesifik: sokak + bina adı + mahalle + ilçe
-  const full = [expandedStreet, buildingName, mahalleLine, ilce].filter(Boolean).join(", ");
+  // 1) En spesifik: sokak + bina adı + mahalle + ilçe/il
+  const full = [expandedStreet, buildingName, mahalleLine, cityLine].filter(Boolean).join(", ");
   if (full) attempts.push({ address: full, components, stage: "full" });
 
-  // 2) Bina adı olmadan: sokak + mahalle + ilçe
-  const withoutBuilding = [expandedStreet, mahalleLine, ilce].filter(Boolean).join(", ");
+  // 2) Bina adı olmadan: sokak + mahalle + ilçe/il
+  const withoutBuilding = [expandedStreet, mahalleLine, cityLine].filter(Boolean).join(", ");
   if (withoutBuilding && withoutBuilding !== full) {
     attempts.push({ address: withoutBuilding, components, stage: "withoutBuilding" });
   }
 
-  // 3) En sade: sadece mahalle + ilçe (sokak bulunamadıysa en azından
+  // 3) En sade: sadece mahalle + ilçe/il (sokak bulunamadıysa en azından
   // mahalle merkezine yakın bir tahmin — checkGeocodeQuality zaten bunu
   // "approximate" olarak işaretleyip kullanıcıyı uyarıyor).
-  const neighborhoodOnly = [mahalleLine, ilce].filter(Boolean).join(", ");
+  const neighborhoodOnly = [mahalleLine, cityLine].filter(Boolean).join(", ");
   if (neighborhoodOnly && neighborhoodOnly !== withoutBuilding && neighborhoodOnly !== full) {
     attempts.push({ address: neighborhoodOnly, components, stage: "neighborhoodOnly" });
   }

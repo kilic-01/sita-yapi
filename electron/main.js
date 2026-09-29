@@ -2,6 +2,7 @@ import { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, powerMonit
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import * as db from "./db.js";
@@ -14,6 +15,43 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow;
+
+// Windows'ta bazı kullanıcılardan gelen "program aniden kapanıyor" şikayeti
+// için — bu ana süreçte (main process) hiçbir global hata yakalayıcı yoktu,
+// yani gerçekten beklenmedik bir çökme olursa hiçbir iz bırakmadan kaybolup
+// gidiyordu. Artık böyle bir durum olursa (varsa) crash.log dosyasına
+// yazılıyor — bir dahaki sefere gerçek sebebi görebilelim diye. Not: hızlı
+// bir testte (bkz. sohbet geçmişi) yakalanmamış bir promise reddinin TEK
+// BAŞINA bu Electron sürümünde uygulamayı kapatmadığı doğrulandı — asıl
+// şüpheli, JS hatalarından TAMAMEN AYRI bir kategori olan render/GPU süreç
+// çökmeleri (ör. Windows'ta eski/uyumsuz ekran kartı sürücüleri) — bunlar
+// için de ayrıca "render-process-gone"/"child-process-gone" dinleyicileri
+// eklendi (aşağıda, app.whenReady içinde).
+const APP_START_TIME = Date.now();
+
+function logCrash(label, details) {
+  const detailText =
+    details && typeof details === "object" && !(details instanceof Error)
+      ? JSON.stringify(details)
+      : details?.stack || String(details);
+  const line =
+    `[${new Date().toISOString()}] ${label}\n` +
+    `  detay: ${detailText}\n` +
+    `  uygulama sürümü: ${app.getVersion()} (${isDev ? "dev" : "prod"})\n` +
+    `  platform: ${process.platform} ${process.arch} (Electron ${process.versions.electron}, Chrome ${process.versions.chrome}, Node ${process.versions.node})\n` +
+    `  ne kadar süredir açıktı: ${Math.round((Date.now() - APP_START_TIME) / 1000)} sn\n` +
+    `  bellek kullanımı (RSS): ${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB\n` +
+    `  pencere sayısı: ${BrowserWindow.getAllWindows().length}\n\n`;
+  console.error(line);
+  try {
+    fs.appendFileSync(path.join(app.getPath("userData"), "crash.log"), line);
+  } catch {
+    // Günlük dosyasına yazılamaması (ör. userData henüz hazır değilse)
+    // uygulamanın kendisini etkilemesin — sadece konsola düşer.
+  }
+}
+process.on("uncaughtException", (err) => logCrash("uncaughtException", err));
+process.on("unhandledRejection", (reason) => logCrash("unhandledRejection", reason));
 
 // Electron varsayılan olarak metin seçimi için native bir sağ-tık menüsü
 // SAĞLAMAZ — Kopyala/Yapıştır/Kes/Tümünü Seç kendimiz eklemezsek sağ tık
@@ -90,10 +128,20 @@ app.whenReady().then(async () => {
   await db.initDb(app.getPath("userData"));
 
   // Başka bir bilgisayardan (veya aynı bilgisayardaki başka bir örnekten)
-  // veri değiştiğinde, hangi tablonun değiştiğini renderer'a iletiyoruz —
-  // App.jsx bu tabloyu yeniden çekip ekranı güncel tutuyor.
-  db.onChange((table) => {
-    mainWindow?.webContents.send("data:changed", { table });
+  // veri değiştiğinde, hangi tablonun değiştiğini (ve değişen satırın
+  // kendisini) renderer'a iletiyoruz. "appointments" gibi 20 binin üzerinde
+  // satırlı tablolarda App.jsx artık tabloyu YENİDEN ÇEKMEK yerine sadece bu
+  // tek satırı yerel state'e işliyor (bkz. App.jsx'teki refreshByTable) —
+  // eskiden her tek satır değişikliği (ör. bir randevunun teknisyenini
+  // değiştirmek) bile tüm tabloyu sayfalayarak yeniden çekip render'ı
+  // saniyelerce kilitliyordu.
+  db.onChange((table, payload) => {
+    mainWindow?.webContents.send("data:changed", {
+      table,
+      eventType: payload?.eventType,
+      new: payload?.new,
+      old: payload?.old,
+    });
   });
 
   // Header'daki bağlantı göstergesi için — Supabase Realtime kanalının
@@ -133,7 +181,16 @@ app.whenReady().then(async () => {
     autoUpdater.on("update-downloaded", (info) =>
       console.log("Güncelleme indirildi, yeniden başlatılınca kurulacak:", info.version)
     );
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => console.error("Güncelleme kontrolü başarısız:", err.message));
+    // checkForUpdatesAndNotify'a özel bir bildirim şablonu VERİLMEZSE
+    // electron-updater kendi sabit İNGİLİZCE metnini (native OS bildirimi)
+    // kullanır — hem Mac hem Windows'ta böyle görünüyordu. {appName}/{version}
+    // yer tutucuları kütüphane tarafından otomatik dolduruluyor.
+    autoUpdater
+      .checkForUpdatesAndNotify({
+        title: "Güncelleme hazır",
+        body: "{appName} sürüm {version} indirildi — program kapatılıp açıldığında otomatik olarak kurulacak.",
+      })
+      .catch((err) => console.error("Güncelleme kontrolü başarısız:", err.message));
   }
 });
 
@@ -146,9 +203,22 @@ app.on("before-quit", () => {
   camera.stopAll();
 });
 
+// "Otomatik kapanma" şikayetinin asıl şüphelisi bu ikisi olabilir — JS
+// hatalarından TAMAMEN AYRI, alt seviye süreç çökmeleri (ör. Windows'ta
+// uyumsuz/eski ekran kartı sürücüsü render/GPU sürecini öldürebiliyor).
+// "crashed"/"oom"/"killed" gibi bir "reason" ile geliyor — logCrash'in
+// yakaladığı uncaughtException/unhandledRejection bunları HİÇ görmezdi.
+app.on("render-process-gone", (_e, contents, details) => {
+  logCrash("render-process-gone", { reason: details.reason, exitCode: details.exitCode, url: contents.getURL() });
+});
+app.on("child-process-gone", (_e, details) => {
+  logCrash("child-process-gone", details);
+});
+
 // ---- IPC handlers (mantık electron/handlers.js'te) ----
 
 ipcMain.handle("env:isDevDb", () => IS_DEV_DB);
+ipcMain.handle("app:getVersion", () => app.getVersion());
 
 // Hareketsizlikte ekran koruyucu/otomatik kilit için — bkz. src/App.jsx.
 // getSystemIdleTime() TÜM sistemdeki (sadece bu pencere değil) son fare/
@@ -246,12 +316,31 @@ ipcMain.handle("print:current", async (_e, opts) => {
   // marjini belirliyor (~15mm ≈ 0.6in), her fiziksel sayfada tutarlı kalsın
   // diye. Diğer (dikey, tek sayfalık) çıktılar hâlâ marginType:"none" +
   // kendi CSS padding'ini kullanıyor — bkz. quotes:generatePdf'teki not.
+  // Zimmet çıktısı (opts.showPageNumber) da birden fazla sayfaya taşabilen
+  // TEK, doğal akışta uzayan bir kutu (bkz. styles.css'teki .print-page.paginated
+  // notu) — aynı sebeple ÜST kenar boşluğu da (rota çıktısındaki gibi)
+  // Chromium'un native marjinine bırakılıyor, yoksa aradaki sayfalarda içerik
+  // sayfanın en tepesine yapışık çıkıyordu. Alt kenar ayrıca "X / Y" sayfa
+  // numarası footer'ı için biraz daha geniş tutuluyor. Diğer (dikey, tek
+  // sayfalık) çıktılar hâlâ marginType:"none" + kendi CSS padding'ini
+  // kullanıyor — bkz. quotes:generatePdf'teki not.
   const buffer = await mainWindow.webContents.printToPDF({
     pageSize: "A4",
     landscape: Boolean(opts?.landscape),
+    // Rota tablosu tek sayfaya sığdırmak için optimize edildiği için (bkz.
+    // styles.css .print-route-table notu) kenar boşluğu da bilerek dar
+    // tutuluyor — gerçek verilerle test edilirken 0.6in kenar boşluğu tam
+    // sınırda 1-2 satırı ikinci sayfaya itiyordu.
     margins: opts?.landscape
-      ? { marginType: "custom", top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 }
-      : { marginType: "none" },
+      ? { marginType: "custom", top: 0.12, bottom: 0.12, left: 0.2, right: 0.2 }
+      : opts?.showPageNumber
+        ? { marginType: "custom", top: 0.6, bottom: 0.35, left: 0.6, right: 0.6 }
+        : { marginType: "none" },
+    displayHeaderFooter: Boolean(opts?.showPageNumber),
+    headerTemplate: "<span></span>",
+    footerTemplate:
+      '<div style="width:100%; text-align:center; font-size:8px; color:#888; font-family:Arial, sans-serif;">' +
+      '<span class="pageNumber"></span> / <span class="totalPages"></span></div>',
     printBackground: true,
   });
   const fs = await import("node:fs/promises");
@@ -353,6 +442,19 @@ ipcMain.handle("quotes:openWhatsapp", (_e, { phone, text, pdfPath }) => {
   const withCountryCode = digits.startsWith("90") ? digits : `90${digits.replace(/^0/, "")}`;
   shell.openExternal(`https://wa.me/${withCountryCode}?text=${encodeURIComponent(text || "")}`);
   if (pdfPath) shell.showItemInFolder(pdfPath);
+});
+
+// Adres geocode uyarısı gösterilen bir randevu için, Google'ın bulduğu tam
+// konumu sistem tarayıcısında açar — dispatcher pin'i, RouteBuilder/Header'daki
+// uyarı yazısından ekran değiştirmeden doğrulayabilsin diye (bkz.
+// GeocodeIssueNotice.jsx). placeId varsa (kesin, Google'ın kendi kimliği)
+// onu kullanır; yoksa (eski kayıtlarda placeId hiç yazılmamış olabilir)
+// düz koordinata düşer.
+ipcMain.handle("maps:openLocation", (_e, { placeId, lat, lng }) => {
+  const url = placeId
+    ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`
+    : `https://www.google.com/maps?q=${lat},${lng}`;
+  return shell.openExternal(url);
 });
 
 // ---------- Kameralar (birden çok DVR/konum) ----------
@@ -594,6 +696,119 @@ function buildAutofillScript(username, password) {
   })();`;
 }
 
+// Bazı tedarikçi sitelerinin (ör. ELZ Dizayn, Güneyliler) arama sayfası
+// tamamen kendi JS'iyle çalışıyor — arama kutusuna kod yazılıp "Ara"ya
+// basılıyor ama URL hiç değişmiyor, o yüzden bizim URL şablonlu
+// (searchUrlTemplate + {kod}) yöntemimizin işi yok. Otomatik giriş
+// script'iyle AYNI teknik: sayfaya JS enjekte edip arama kutusunu sezgisel
+// kalıplarla bulup kodu yazıyor, sonra "Ara" butonuna tıklıyor ya da
+// Enter'a basıyor — bir kullanıcının elle yapacağının aynısı. Sadece
+// searchOnSupplier'ın URL'ye kodu GÖMEMEDİĞİ (searchUrlTemplate'te {kod}
+// olmayan) tedarikçiler için çağrılıyor — aksi halde URL zaten doğru
+// sonucu getirmişken bir de burada tekrar aratmak (özellikle Evdema gibi
+// zaten çalışan bir sitede) gereksiz/yanlış bir ikinci aramaya yol açardı.
+function buildAutoSearchScript(code) {
+  return `(function(){
+    try {
+      var CODE = ${JSON.stringify(code)};
+      // Otomatik girişteki "bir kere çalıştım, bir daha dokunma" bayrağının
+      // AYNISI burada yanlış olurdu: bu tedarikçilerin arama adresi hep AYNI
+      // URL olduğu için (kod hiç URL'e gömülemiyor), sayfa YENİDEN
+      // YÜKLENMEDEN ikinci bir ürün aranabiliyor — bayrak "true" olarak
+      // kalıcı kalsaydı ikinci arama sessizce hiç çalışmaz, site eski
+      // sonucu göstermeye devam ederdi (gerçekte yaşanan hata buydu). Bunun
+      // yerine EN SON hangi kodun arandığını tutuyoruz — sadece AYNI kod
+      // için tekrar tekrar (immediate + 800ms sonraki ikinci deneme)
+      // gereksiz çalışmayı engelliyor, YENİ bir kod her zaman çalışır.
+      if (window.__sitaAutoSearchLastCode === CODE) return;
+      window.__sitaAutoSearchLastCode = CODE;
+
+      function setValue(el, value) {
+        var proto = Object.getPrototypeOf(el);
+        var setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+        setter.call(el, value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      function findSearchField() {
+        return document.querySelector(
+          'input[type="search"], ' +
+          'input[name*="ara" i], input[name*="search" i], input[name*="query" i], input[name*="urun" i], ' +
+          'input[id*="ara" i], input[id*="search" i], input[id*="query" i], input[id*="urun" i], ' +
+          'input[placeholder*="ara" i], input[placeholder*="search" i], input[placeholder*="\\u00fcr\\u00fcn" i], input[placeholder*="urun" i]'
+        );
+      }
+
+      function findSubmit(scope) {
+        var btn = scope.querySelector('button[type="submit"], input[type="submit"]');
+        if (btn) return btn;
+        var candidates = scope.querySelectorAll('button, [role="button"], a.btn, input[type="button"]');
+        for (var i = 0; i < candidates.length; i++) {
+          var text = (candidates[i].textContent || candidates[i].value || "").trim().toLowerCase();
+          if (/^ara$|arama|search|^bul$|^git$/.test(text)) return candidates[i];
+        }
+        return null;
+      }
+
+      function attempt() {
+        var field = findSearchField();
+        if (!field) return false;
+        // Zaten aynı kod yazılıysa (sayfa bir şekilde önceden doldurulmuşsa)
+        // tekrar aratmaya gerek yok.
+        if (field.value && field.value.trim() === CODE.trim()) return true;
+        setValue(field, CODE);
+        var form = field.closest("form");
+        setTimeout(function () {
+          var submitBtn = findSubmit(form || document);
+          if (submitBtn) submitBtn.click();
+          else if (form) form.requestSubmit ? form.requestSubmit() : form.submit();
+          else {
+            field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            field.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+          }
+        }, 300);
+        return true;
+      }
+
+      if (attempt()) {
+        console.log("SITA_AUTOSEARCH_OK");
+        return;
+      }
+
+      // Arama kutusu sayfa yüklendiğinde henüz DOM'da olmayabilir (SPA
+      // sitede JS ile sonradan render edilir) — otomatik giriş script'iyle
+      // aynı mantık: DOM değişikliklerini izleyip alan belirdiği an dener.
+      var done = false;
+      var observer = new MutationObserver(function () {
+        if (done) return;
+        if (attempt()) {
+          done = true;
+          observer.disconnect();
+          console.log("SITA_AUTOSEARCH_OK");
+        }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      setTimeout(function () {
+        if (done) return;
+        observer.disconnect();
+        console.log("SITA_AUTOSEARCH_NOFIELD");
+      }, 6000);
+    } catch (e) {
+      console.log("SITA_AUTOSEARCH_ERROR " + (e && e.message));
+    }
+  })();`;
+}
+
+function attemptAutoSearchFor(supplierId, code) {
+  const view = supplierViews.get(supplierId);
+  if (!view || !code) return;
+  const script = buildAutoSearchScript(code);
+  const run = () => view.webContents.executeJavaScript(script).catch(() => {});
+  run();
+  setTimeout(run, 800);
+}
+
 // Bir "webContents"in gerçekten başka bir sayfaya geçmesini (örn. giriş
 // formu gönderildikten sonra oturum açılmış sayfaya yönlenme) ya da en
 // fazla `timeoutMs` süre geçmesini bekler — hangisi önce olursa. Sabit,
@@ -660,7 +875,7 @@ setInterval(() => {
   }
 }, SUPPLIER_KEEPALIVE_INTERVAL_MS);
 
-ipcMain.handle("suppliers:show", async (_e, { url, bounds, supplierId }) => {
+ipcMain.handle("suppliers:show", async (_e, { url, bounds, supplierId, searchCode }) => {
   if (!/^https?:\/\//i.test(url)) throw new Error("Geçersiz adres");
   const myGeneration = ++supplierShowGeneration;
   activeSupplierId = supplierId;
@@ -686,6 +901,7 @@ ipcMain.handle("suppliers:show", async (_e, { url, bounds, supplierId }) => {
 
   if (view.webContents.getURL() === url) {
     attemptAutofillFor(supplierId);
+    if (searchCode) attemptAutoSearchFor(supplierId, searchCode);
     return;
   }
 
@@ -706,6 +922,8 @@ ipcMain.handle("suppliers:show", async (_e, { url, bounds, supplierId }) => {
       view.webContents.loadURL(url).catch(() => {});
     }
   }
+
+  if (searchCode) attemptAutoSearchFor(supplierId, searchCode);
 });
 
 ipcMain.handle("suppliers:setBounds", (_e, bounds) => {

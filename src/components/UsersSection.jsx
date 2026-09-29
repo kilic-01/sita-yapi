@@ -19,7 +19,6 @@ const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 // başına açılıp kapatılabiliyor; anahtarlar (`key`) SettingsPage.jsx'teki
 // canSeeSection() çağrılarıyla birebir eşleşmeli.
 export const GRANTABLE_SECTIONS = [
-  { key: "vehicles", label: "Araçlar" },
   { key: "depots", label: "Depolar" },
   { key: "stockCsv", label: "Stok CSV İçe/Dışa Aktar" },
 ];
