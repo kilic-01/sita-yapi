@@ -10,7 +10,6 @@
 <meta name="theme-color" content="#3eaca7" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   /* Aynı renk/tipografi dili ana uygulamanın src/styles.css'i ile — barkod
      aracı ayrı bir sayfa olsa da "Sita Yapı"nın bir parçası gibi hissettirsin
@@ -126,7 +125,7 @@
   /* Geçiş animasyonu sırasında iki ekran geçici olarak üst üste bindiğinde
      (bkz. animateNav/edge-swipe) alttaki görünmesin diye her ekranın kendi
      zemini olsun. */
-  #hubView, #stockView, #manualEntry, #foundView, #notFoundView,
+  #hubView, #stockView, #foundView,
   #appointmentsListView, #appointmentDetailView { background: var(--bg); }
 
   /* ---- Apple Ayarlar tarzı gruplu liste: tek yuvarlatılmış kapsayıcı,
@@ -175,33 +174,6 @@
   .card .name { font-size: 1.15rem; font-weight: 700; margin: 0.2rem 0 0.6rem; }
   .card .row { display: flex; justify-content: space-between; padding: 0.4rem 0; border-top: 1px solid var(--border); font-size: 0.95rem; }
   .card .row:first-of-type { border-top: none; }
-  #scanOverlay {
-    position: fixed; inset: 0; background: #000; z-index: 50;
-    display: flex; flex-direction: column;
-  }
-  #scanVideo { flex: 1; width: 100%; object-fit: cover; }
-  .scan-frame {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 78%; max-width: 340px; aspect-ratio: 1.6; border: 3px solid var(--accent);
-    border-radius: 16px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
-  }
-  #scanCancel {
-    position: absolute; top: calc(1rem + env(safe-area-inset-top, 0px)); right: 1rem;
-    background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 999px;
-    width: 40px; height: 40px; font-size: 1.2rem;
-  }
-  .scan-hint {
-    position: absolute; bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); left: 0; right: 0;
-    text-align: center; color: #fff; font-size: 0.9rem; opacity: 0.85;
-  }
-  .search-result {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 0.7rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
-  }
-  .search-result button {
-    background: var(--accent); color: var(--accent-text); border: none; border-radius: 8px;
-    padding: 0.4rem 0.7rem; font-size: 0.8rem; font-weight: 600;
-  }
   .qty-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.8rem; }
   .qty-row button {
     width: 48px; height: 48px; border-radius: 10px; border: 1px solid var(--border);
@@ -297,7 +269,7 @@
         <button class="home-card" id="goStockBtn" type="button">
           <span class="home-card-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
           <span class="home-card-title">Stok</span>
-          <span class="home-card-sub">Barkod okut, ara</span>
+          <span class="home-card-sub">Ürün ara, miktar güncelle</span>
         </button>
       </div>
       <div class="grouped-list" style="margin-top:1.5rem;">
@@ -311,18 +283,9 @@
         <span class="search-icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
         <input id="stockSearchInput" placeholder="Kod veya isimle ara" autocomplete="off" />
       </div>
-      <div id="stockDefaultActions" class="grouped-list">
-        <button class="grouped-row" id="scanBtn" type="button">
-          <span class="grouped-row-icon" style="background:#34c759;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
-          <span class="grouped-row-text"><strong>Barkod Okut</strong><small>Kamera ile hızlı sorgula</small></span>
-          <span class="grouped-row-chevron">›</span>
-        </button>
-        <button class="grouped-row" id="manualBtn" type="button">
-          <span class="grouped-row-icon" style="background:#8e8e93;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></span>
-          <span class="grouped-row-text"><strong>Barkodu Elle Gir</strong></span>
-          <span class="grouped-row-chevron">›</span>
-        </button>
-      </div>
+      <!-- Barkod okutma özelliği ileride eklenecek (kaldırıldı) — Stok
+           şimdilik yalnızca kod/isimle arama üzerinden çalışıyor. -->
+      <div id="stockSearchHint" class="sub" style="margin-top:1rem;">Ürün aramak için kod veya isim yazın.</div>
       <div id="stockSearchBusy" class="sub" hidden style="margin-top:1rem;">Aranıyor…</div>
       <div id="stockSearchEmpty" class="sub" hidden style="margin-top:1rem;">Sonuç bulunamadı.</div>
       <div id="stockSearchResultsWrap" class="grouped-list" hidden style="margin-top:1rem;"></div>
@@ -350,17 +313,10 @@
       <button class="secondary" id="apptMarkPendingBtn" type="button">Bekliyor olarak işaretle</button>
     </div>
 
-    <div id="manualEntry" hidden>
-      <div class="nav-bar"><button class="nav-back" id="manualCancelBtn" type="button">‹ Stok</button></div>
-      <div class="large-title">Barkodu Elle Gir</div>
-      <label><span>Barkod</span><input id="manualBarcode" inputmode="numeric" /></label>
-      <button class="primary" id="manualLookupBtn" type="button">Ara</button>
-    </div>
-
     <div id="lookupBusy" hidden class="sub">Aranıyor…</div>
 
     <div id="foundView" hidden>
-      <div class="nav-bar"><button class="nav-back" id="scanAgainBtn1" type="button">‹ Stok</button></div>
+      <div class="nav-bar"><button class="nav-back" id="backFromFoundBtn" type="button">‹ Stok</button></div>
       <div class="card" style="margin-top:0;">
         <div class="code" id="foundCode"></div>
         <div class="name" id="foundName"></div>
@@ -372,16 +328,6 @@
           <button type="button" id="qtyPlus">+</button>
         </div>
         <button class="primary" id="qtyUpdateBtn" type="button">Miktarı Güncelle</button>
-      </div>
-    </div>
-
-    <div id="notFoundView" hidden>
-      <div class="nav-bar"><button class="nav-back" id="scanAgainBtn2" type="button">‹ Stok</button></div>
-      <div class="card" style="margin-top:0;">
-        <strong>Bu barkod kayıtlı değil</strong>
-        <p class="sub" style="margin:0.5rem 0 0.8rem;">Barkodu (<span id="unknownBarcode"></span>) mevcut bir ürüne bağlamak için ürünü arayın.</p>
-        <label><span>Ürün ara (kod veya isim)</span><input id="linkSearch" /></label>
-        <div id="linkResults"></div>
       </div>
     </div>
 
@@ -401,13 +347,6 @@
       <span>Stok</span>
     </button>
   </nav>
-</div>
-
-<div id="scanOverlay" hidden>
-  <button id="scanCancel" type="button">✕</button>
-  <video id="scanVideo" muted playsinline></video>
-  <div class="scan-frame"></div>
-  <div class="scan-hint">Barkodu çerçeve içine getirin</div>
 </div>
 
 <script>
@@ -455,9 +394,7 @@ async function api(path, opts) {
 const SECTIONS = [
   "hubView",
   "stockView",
-  "manualEntry",
   "foundView",
-  "notFoundView",
   "appointmentsListView",
   "appointmentDetailView",
 ];
@@ -469,16 +406,14 @@ const SECTIONS = [
 // tutuyoruz (NAV_PARENT) ve geçişi/parmak takibini elle simüle ediyoruz.
 const NAV_PARENT = {
   appointmentDetailView: "appointmentsListView",
-  manualEntry: "stockView",
   foundView: "stockView",
-  notFoundView: "stockView",
 };
 // Alt gezinme çubuğundaki hangi sekmenin, hangi ekranlar gösterilirken
 // "aktif" görünmesi gerektiği — bir sekmenin içine dokunulup derine
-// inildiğinde (ör. Stok > Barkod Okut) ilgili sekme yine vurgulu kalsın.
+// inildiğinde (ör. Stok > ürün detayı) ilgili sekme yine vurgulu kalsın.
 const SECTION_TAB = {
   hubView: "home",
-  stockView: "stock", manualEntry: "stock", foundView: "stock", notFoundView: "stock",
+  stockView: "stock", foundView: "stock",
   appointmentsListView: "appointments", appointmentDetailView: "appointments",
 };
 function updateTabBar(sectionId) {
@@ -719,32 +654,6 @@ el("logoutBtn").addEventListener("click", () => {
   renderLoggedOut();
 });
 
-// ---- Barkod arama ----
-let lastBarcode = null;
-
-async function lookupBarcode(code) {
-  lastBarcode = code;
-  el("stockView").hidden = true;
-  el("manualEntry").hidden = true;
-  el("foundView").hidden = true;
-  el("notFoundView").hidden = true;
-  el("lookupBusy").hidden = false;
-  showMainError("");
-  try {
-    const item = await api("/stock/by-barcode/" + encodeURIComponent(code));
-    el("lookupBusy").hidden = true;
-    if (item) {
-      showFound(item);
-    } else {
-      showNotFound(code);
-    }
-  } catch (err) {
-    el("lookupBusy").hidden = true;
-    showMainError(err.message || "Sorgu başarısız.");
-    goStock();
-  }
-}
-
 let foundItem = null;
 function showFound(item) {
   foundItem = item;
@@ -754,13 +663,6 @@ function showFound(item) {
   el("foundQtyLabel").textContent = (item.quantity ?? 0) + " " + (item.unit || "adet");
   el("qtyInput").value = item.quantity ?? 0;
   showSection("foundView");
-}
-
-function showNotFound(code) {
-  el("unknownBarcode").textContent = code;
-  el("linkSearch").value = "";
-  el("linkResults").innerHTML = "";
-  showSection("notFoundView");
 }
 
 el("qtyMinus").addEventListener("click", () => {
@@ -793,10 +695,10 @@ el("qtyUpdateBtn").addEventListener("click", async () => {
 });
 
 // ---- ~10 binlik stok listesinin tek seferlik önbelleği ----
-// Hem "Stok" aramasında hem bilinmeyen barkodu bir ürüne bağlarken aynı
-// tam listeye ihtiyaç var — her tuş vuruşunda tekrar çekmek yerine bir kez
-// çekip bellekte tutuyoruz, kendi yaptığımız güncellemeleri de buraya
-// yansıtıyoruz ki hemen sonraki bir arama eski veriyi göstermesin.
+// "Stok" araması aynı tam listeye ihtiyaç duyuyor — her tuş vuruşunda
+// tekrar çekmek yerine bir kez çekip bellekte tutuyoruz, kendi yaptığımız
+// güncellemeleri de buraya yansıtıyoruz ki hemen sonraki bir arama eski
+// veriyi göstermesin.
 let allStockCache = null;
 async function getAllStock() {
   if (!allStockCache) allStockCache = await api("/stock");
@@ -807,100 +709,7 @@ function invalidateStockCache(id, patch) {
   if (item) Object.assign(item, patch);
 }
 
-// ---- Bilinmeyen barkodu mevcut ürüne bağlama ----
-let linkSearchTimer = null;
-el("linkSearch").addEventListener("input", () => {
-  clearTimeout(linkSearchTimer);
-  const term = el("linkSearch").value.trim().toLowerCase();
-  if (term.length < 2) {
-    el("linkResults").innerHTML = "";
-    return;
-  }
-  linkSearchTimer = setTimeout(async () => {
-    try {
-      const all = await getAllStock();
-      const matches = all
-        .filter((s) => (s.code || "").toLowerCase().includes(term) || (s.name || "").toLowerCase().includes(term))
-        .slice(0, 8);
-      el("linkResults").innerHTML = matches
-        .map(
-          (s, i) =>
-            `<div class="search-result"><span>${s.code || ""} — ${s.name || ""}</span><button type="button" data-idx="${i}">Bağla</button></div>`
-        )
-        .join("");
-      el("linkResults").querySelectorAll("button[data-idx]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const item = matches[Number(btn.dataset.idx)];
-          btn.disabled = true;
-          btn.textContent = "…";
-          try {
-            await api("/stock/" + item.id, {
-              method: "PUT",
-              body: JSON.stringify({ barcode: lastBarcode, actingUserId: state.user.id }),
-            });
-            invalidateStockCache(item.id, { barcode: lastBarcode });
-            goStock();
-          } catch (err) {
-            showMainError(err.message || "Bağlanamadı.");
-          }
-        });
-      });
-    } catch (err) {
-      showMainError(err.message || "Arama başarısız.");
-    }
-  }, 300);
-});
-
-// ---- Elle barkod girişi ----
-el("manualBtn").addEventListener("click", () => {
-  showSection("manualEntry");
-  el("manualBarcode").value = "";
-  el("manualBarcode").focus();
-});
-el("manualCancelBtn").addEventListener("click", goStock);
-el("manualLookupBtn").addEventListener("click", () => {
-  const code = el("manualBarcode").value.trim();
-  if (code) lookupBarcode(code);
-});
-
-el("scanAgainBtn1").addEventListener("click", goStock);
-el("scanAgainBtn2").addEventListener("click", goStock);
-
-// ---- Kamera ile tarama (ZXing) ----
-let zxingReader = null;
-let activeStream = null;
-
-async function startScan() {
-  showMainError("");
-  el("scanOverlay").hidden = false;
-  try {
-    zxingReader = new ZXing.BrowserMultiFormatReader();
-    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-    // Arka kamerayı tercih et (telefonlarda genelde son cihaz arka kameradır,
-    // "back"/"rear" etiketi taşıyan varsa onu seçiyoruz).
-    const backCam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
-    await zxingReader.decodeFromVideoDevice(backCam?.deviceId, "scanVideo", (result, err) => {
-      if (result) {
-        stopScan();
-        lookupBarcode(result.getText());
-      }
-    });
-  } catch (err) {
-    stopScan();
-    showMainError("Kameraya erişilemedi: " + (err.message || err));
-  }
-}
-
-function stopScan() {
-  el("scanOverlay").hidden = true;
-  try {
-    zxingReader?.reset();
-  } catch {}
-  zxingReader = null;
-}
-
-el("scanBtn").addEventListener("click", startScan);
-el("scanCancel").addEventListener("click", stopScan);
+el("backFromFoundBtn").addEventListener("click", goStock);
 
 // ---- Ana menü gezinmesi + alt gezinme çubuğu (sekmeler) ----
 el("goStockBtn").addEventListener("click", goStock);
@@ -919,13 +728,13 @@ el("stockSearchInput").addEventListener("input", () => {
   const seq = ++stockSearchSeq;
   clearTimeout(stockSearchTimer);
   if (term.length < 2) {
-    el("stockDefaultActions").hidden = false;
+    el("stockSearchHint").hidden = false;
     el("stockSearchResultsWrap").hidden = true;
     el("stockSearchEmpty").hidden = true;
     el("stockSearchBusy").hidden = true;
     return;
   }
-  el("stockDefaultActions").hidden = true;
+  el("stockSearchHint").hidden = true;
   el("stockSearchBusy").hidden = false;
   el("stockSearchResultsWrap").hidden = true;
   el("stockSearchEmpty").hidden = true;
