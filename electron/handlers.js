@@ -166,6 +166,10 @@ export function listAppointments() {
   return db.getAppointments();
 }
 
+export function listAppointmentsByDate(date) {
+  return db.getAppointmentsByDate(date);
+}
+
 export async function addAppointment(input) {
   const { googleMapsApiKey, geminiApiKey } = await currentApiKeys();
 
@@ -785,6 +789,10 @@ export function setDepots(list, actingUserId) {
 
 export function listStockItems() {
   return db.getStockItems();
+}
+
+export function getStockItemByBarcode(barcode) {
+  return db.getStockItemByBarcode(barcode);
 }
 
 export function setStockItems(list, actingUserId) {

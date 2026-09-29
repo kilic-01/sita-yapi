@@ -26,6 +26,14 @@ app.get("/api/appointments", async (req, res, next) => {
     next(err);
   }
 });
+// Mobil Randevular ekranı için — tüm tabloyu değil, tek bir günü çeker.
+app.get("/api/appointments/by-date/:date", async (req, res, next) => {
+  try {
+    res.json(await handlers.listAppointmentsByDate(req.params.date));
+  } catch (err) {
+    next(err);
+  }
+});
 app.post("/api/appointments", async (req, res, next) => {
   try {
     res.json(await handlers.addAppointment(req.body));
@@ -235,6 +243,14 @@ app.get("/api/stock", async (req, res, next) => {
     next(err);
   }
 });
+// Barkod aracı için — ~10 binlik listeyi telefona çekmeden tek kalemi bulur.
+app.get("/api/stock/by-barcode/:barcode", async (req, res, next) => {
+  try {
+    res.json(await handlers.getStockItemByBarcode(req.params.barcode));
+  } catch (err) {
+    next(err);
+  }
+});
 app.put("/api/stock", async (req, res, next) => {
   try {
     res.json(await handlers.setStockItems(req.body));
@@ -251,7 +267,11 @@ app.post("/api/stock", async (req, res, next) => {
 });
 app.put("/api/stock/:id", async (req, res, next) => {
   try {
-    res.json(await handlers.updateStockItem(req.params.id, req.body));
+    // İstek gövdesinde "actingUserId" varsa (bkz. barkod aracı) aktivite
+    // kaydına doğru kullanıcı yazılsın diye ayrıştırılıp ayrı geçiriliyor —
+    // önceden burada hiç geçirilmiyordu, güncellemeler kimliksiz görünüyordu.
+    const { actingUserId, ...patch } = req.body;
+    res.json(await handlers.updateStockItem(req.params.id, patch, actingUserId));
   } catch (err) {
     next(err);
   }
@@ -525,6 +545,11 @@ app.use((err, req, res, _next) => {
   console.error(err);
   res.status(400).json({ message: err.message || "Bilinmeyen hata" });
 });
+
+// Barkod okuma PWA'sı — ana React uygulamasından bağımsız, tek başına
+// yüklenebilen küçük bir araç (bkz. server/public-barkod/index.html).
+// Aynı /api/* uçlarını kullanır, ayrı bir backend gerektirmez.
+app.use("/barkod", express.static(path.join(__dirname, "public-barkod")));
 
 app.use(express.static(path.join(__dirname, "..", "dist")));
 

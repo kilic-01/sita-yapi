@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sita Yapı Saha</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.png" />
+<link rel="apple-touch-icon" href="icon.png" />
+<meta name="theme-color" content="#3eaca7" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  /* Aynı renk/tipografi dili ana uygulamanın src/styles.css'i ile — barkod
+     aracı ayrı bir sayfa olsa da "Sita Yapı"nın bir parçası gibi hissettirsin
+     diye. Ana uygulamadaki gibi açık/koyu tema otomatik (prefers-color-scheme),
+     birincil buton rengi teal DEĞİL sistem mavisi (--accent) — teal sadece
+     illüstrasyon/marka vurgusu için kullanılıyor, etkileşimli öğelerde değil. */
+  :root {
+    --bg: #f4f8f7;
+    --card-bg: #ffffff;
+    --border: #dbe7e4;
+    --text: #0e2a3b;
+    --text-muted: #5b6b70;
+    --danger: #ff3b30;
+    --success: #34c759;
+    --accent: #007aff;
+    --accent-text: #ffffff;
+    --btn-secondary-text: #007aff;
+    --header-bg: #f5f5f7;
+    --header-text: #1d1d1f;
+    --header-border: rgba(0, 0, 0, 0.08);
+    --shadow: 0 1px 3px rgba(14, 42, 59, 0.06);
+    color-scheme: light;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d10;
+      --card-bg: #17191c;
+      --border: rgba(255, 255, 255, 0.09);
+      --text: #edeef0;
+      --text-muted: #8b8e94;
+      --danger: #ff453a;
+      --success: #30d158;
+      --accent: #0a84ff;
+      --btn-secondary-text: #ffffff;
+      --header-bg: #1c1c1e;
+      --header-text: #f5f5f7;
+      --header-border: rgba(255, 255, 255, 0.08);
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  .screen { min-height: 100vh; display: flex; flex-direction: column; padding: 1.25rem 1rem 2rem; }
+  .center { align-items: center; justify-content: center; text-align: center; }
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.85rem 1rem; background: var(--header-bg); color: var(--header-text);
+    border-bottom: 1px solid var(--header-border);
+    padding-top: calc(0.85rem + env(safe-area-inset-top, 0px));
+  }
+  header.topbar strong { font-size: 1rem; }
+  header.topbar button {
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+    border: none; border-radius: 8px; padding: 0.4rem 0.7rem; font-size: 0.8rem; font-weight: 600;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 0.3rem; color: var(--text); }
+  .sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+  label { display: block; font-size: 0.85rem; margin-bottom: 1rem; text-align: left; color: var(--text); }
+  label span { display: block; margin-bottom: 0.3rem; font-weight: 600; }
+  input {
+    width: 100%; padding: 0.7rem 0.9rem; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 1rem; background: var(--card-bg); color: var(--text); font-family: inherit;
+  }
+  button { font-family: inherit; }
+  button.primary {
+    width: 100%; padding: 0.8rem 1.2rem; border-radius: 12px; border: none; background: var(--accent);
+    color: var(--accent-text); font-size: 1.05rem; font-weight: 600; margin-top: 0.5rem;
+    transition: filter 0.12s ease;
+  }
+  button.primary:active { filter: brightness(0.9); }
+  button.primary:disabled { opacity: 0.45; }
+  button.secondary {
+    width: 100%; padding: 0.75rem 1.1rem; border-radius: 12px; border: none;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--btn-secondary-text);
+    font-size: 0.95rem; font-weight: 500; margin-top: 0.6rem; transition: filter 0.12s ease;
+  }
+  button.secondary:active { filter: brightness(1.15); }
+  .error { color: var(--danger); font-size: 0.9rem; margin-top: 0.7rem; }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem; margin-top: 1rem; text-align: left; box-shadow: var(--shadow);
+  }
+  .card .code { font-size: 0.8rem; color: var(--text-muted); }
+  .card .name { font-size: 1.15rem; font-weight: 700; margin: 0.2rem 0 0.6rem; }
+  .card .row { display: flex; justify-content: space-between; padding: 0.4rem 0; border-top: 1px solid var(--border); font-size: 0.95rem; }
+  .card .row:first-of-type { border-top: none; }
+  #scanOverlay {
+    position: fixed; inset: 0; background: #000; z-index: 50;
+    display: flex; flex-direction: column;
+  }
+  #scanVideo { flex: 1; width: 100%; object-fit: cover; }
+  .scan-frame {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 78%; max-width: 340px; aspect-ratio: 1.6; border: 3px solid var(--accent);
+    border-radius: 16px; box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+  }
+  #scanCancel {
+    position: absolute; top: calc(1rem + env(safe-area-inset-top, 0px)); right: 1rem;
+    background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 999px;
+    width: 40px; height: 40px; font-size: 1.2rem;
+  }
+  .scan-hint {
+    position: absolute; bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); left: 0; right: 0;
+    text-align: center; color: #fff; font-size: 0.9rem; opacity: 0.85;
+  }
+  .search-result {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
+  }
+  .search-result button {
+    background: var(--accent); color: var(--accent-text); border: none; border-radius: 8px;
+    padding: 0.4rem 0.7rem; font-size: 0.8rem; font-weight: 600;
+  }
+  .qty-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.8rem; }
+  .qty-row button {
+    width: 48px; height: 48px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card-bg); font-size: 1.4rem; color: var(--text);
+  }
+  .qty-row input { text-align: center; font-size: 1.2rem; font-weight: 700; }
+  small.muted { color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="screen center">
+  <h1>Sita Yapı Saha</h1>
+  <div class="sub">Randevular, stok sayımı ve barkod okuma</div>
+  <form id="loginForm" style="width:100%; max-width: 320px;">
+    <label><span>Ad</span><input id="loginName" autocomplete="username" required /></label>
+    <label><span>Şifre</span><input id="loginPassword" type="password" autocomplete="current-password" required /></label>
+    <button class="primary" type="submit">Giriş Yap</button>
+    <div class="error" id="loginError" hidden></div>
+  </form>
+</div>
+
+<div id="mainScreen" hidden>
+  <header class="topbar">
+    <strong>Sita Yapı Saha</strong>
+    <button id="logoutBtn" type="button">Çıkış</button>
+  </header>
+  <div class="screen">
+    <div id="hubView">
+      <div class="sub" id="welcomeText"></div>
+      <button class="primary" id="goAppointmentsBtn" type="button">📋 Randevular</button>
+      <button class="primary" id="goBarcodeBtn" type="button" style="margin-top:0.8rem;">📷 Barkod / Stok</button>
+    </div>
+
+    <div id="idleView" hidden>
+      <button class="secondary" id="backToHubBtn1" type="button">← Ana Menü</button>
+      <div class="sub" style="margin-top:1rem;">Stok sayımı ve barkod okuma</div>
+      <button class="primary" id="scanBtn" type="button">📷 Barkod Okut</button>
+      <button class="secondary" id="manualBtn" type="button">Barkodu Elle Gir</button>
+    </div>
+
+    <div id="appointmentsListView" hidden>
+      <button class="secondary" id="backToHubBtn2" type="button">← Ana Menü</button>
+      <label style="margin-top:1rem;"><span>Tarih</span><input id="apptDate" type="date" /></label>
+      <div id="apptListBusy" class="sub">Yükleniyor…</div>
+      <div id="apptListEmpty" class="sub" hidden>Bu tarihte randevu yok.</div>
+      <div id="apptList"></div>
+    </div>
+
+    <div id="appointmentDetailView" hidden>
+      <button class="secondary" id="backToListBtn" type="button">← Randevular</button>
+      <div class="card">
+        <div class="name" id="apptCustomerName"></div>
+        <div class="sub" id="apptAddress" style="margin-bottom:0.6rem;"></div>
+        <div class="row"><span>Telefon</span><strong><a id="apptPhoneLink" href="#" style="color:var(--accent);text-decoration:none;"></a></strong></div>
+        <div class="row"><span>Durum</span><strong id="apptStatusLabel"></strong></div>
+        <div class="row" id="apptComplaintRow"><span>Şikayet</span><strong id="apptComplaint" style="text-align:right;max-width:60%;"></strong></div>
+      </div>
+      <div class="sub" style="margin-top:1rem;">Durumu güncelle</div>
+      <button class="primary" id="apptMarkCompletedBtn" type="button">✔ Tamamlandı olarak işaretle</button>
+      <button class="secondary" id="apptMarkPendingBtn" type="button">Bekliyor olarak işaretle</button>
+    </div>
+
+    <div id="manualEntry" hidden>
+      <label><span>Barkod</span><input id="manualBarcode" inputmode="numeric" /></label>
+      <button class="primary" id="manualLookupBtn" type="button">Ara</button>
+      <button class="secondary" id="manualCancelBtn" type="button">Vazgeç</button>
+    </div>
+
+    <div id="lookupBusy" hidden class="sub">Aranıyor…</div>
+
+    <div id="foundView" hidden>
+      <div class="card">
+        <div class="code" id="foundCode"></div>
+        <div class="name" id="foundName"></div>
+        <div class="row"><span>Fiyat (KDV hariç)</span><strong id="foundPrice"></strong></div>
+        <div class="row"><span>Mevcut miktar</span><strong id="foundQtyLabel"></strong></div>
+        <div class="qty-row">
+          <button type="button" id="qtyMinus">−</button>
+          <input id="qtyInput" type="number" inputmode="numeric" />
+          <button type="button" id="qtyPlus">+</button>
+        </div>
+        <button class="primary" id="qtyUpdateBtn" type="button">Miktarı Güncelle</button>
+      </div>
+      <button class="secondary" id="scanAgainBtn1" type="button">Yeni Tarama</button>
+    </div>
+
+    <div id="notFoundView" hidden>
+      <div class="card">
+        <strong>Bu barkod kayıtlı değil</strong>
+        <p class="sub" style="margin:0.5rem 0 0.8rem;">Barkodu (<span id="unknownBarcode"></span>) mevcut bir ürüne bağlamak için ürünü arayın.</p>
+        <label><span>Ürün ara (kod veya isim)</span><input id="linkSearch" /></label>
+        <div id="linkResults"></div>
+      </div>
+      <button class="secondary" id="scanAgainBtn2" type="button">Yeni Tarama</button>
+    </div>
+
+    <div class="error" id="mainError" hidden></div>
+  </div>
+</div>
+
+<div id="scanOverlay" hidden>
+  <button id="scanCancel" type="button">✕</button>
+  <video id="scanVideo" muted playsinline></video>
+  <div class="scan-frame"></div>
+  <div class="scan-hint">Barkodu çerçeve içine getirin</div>
+</div>
+
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+const state = { user: null };
+try {
+  const saved = localStorage.getItem("sita-barkod-user");
+  if (saved) state.user = JSON.parse(saved);
+} catch {}
+
+const el = (id) => document.getElementById(id);
+
+function showMainError(msg) {
+  el("mainError").textContent = msg;
+  el("mainError").hidden = !msg;
+}
+
+function money(n) {
+  return "₺" + (Number(n) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
+}
+
+async function api(path, opts) {
+  const res = await fetch("/api" + path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!res.ok) throw new Error("Sunucu hatası (" + res.status + ")");
+  return res.json();
+}
+
+// mainScreen içindeki tüm üst-düzey bölümler — biri gösterilirken
+// diğerleri her zaman gizlenir (basit bir tek-sayfa "router").
+const SECTIONS = [
+  "hubView",
+  "idleView",
+  "manualEntry",
+  "foundView",
+  "notFoundView",
+  "appointmentsListView",
+  "appointmentDetailView",
+];
+
+function showSection(id) {
+  SECTIONS.forEach((s) => {
+    el(s).hidden = s !== id;
+  });
+  el("lookupBusy").hidden = true;
+  showMainError("");
+}
+
+function goHub() {
+  showSection("hubView");
+}
+
+function goIdle() {
+  showSection("idleView");
+}
+
+function renderLoggedIn() {
+  el("loginScreen").hidden = true;
+  el("mainScreen").hidden = false;
+  el("welcomeText").textContent = "Merhaba, " + state.user.name;
+  goHub();
+}
+
+function renderLoggedOut() {
+  el("loginScreen").hidden = false;
+  el("mainScreen").hidden = true;
+}
+
+// ---- Giriş ----
+el("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  el("loginError").hidden = true;
+  const name = el("loginName").value.trim();
+  const password = el("loginPassword").value;
+  try {
+    const user = await api("/login", { method: "POST", body: JSON.stringify({ name, password }) });
+    if (!user) {
+      el("loginError").textContent = "Ad veya şifre hatalı.";
+      el("loginError").hidden = false;
+      return;
+    }
+    state.user = user;
+    localStorage.setItem("sita-barkod-user", JSON.stringify(user));
+    renderLoggedIn();
+  } catch (err) {
+    el("loginError").textContent = err.message || "Giriş yapılamadı.";
+    el("loginError").hidden = false;
+  }
+});
+
+el("logoutBtn").addEventListener("click", () => {
+  state.user = null;
+  localStorage.removeItem("sita-barkod-user");
+  renderLoggedOut();
+});
+
+// ---- Barkod arama ----
+let lastBarcode = null;
+
+async function lookupBarcode(code) {
+  lastBarcode = code;
+  el("idleView").hidden = true;
+  el("manualEntry").hidden = true;
+  el("foundView").hidden = true;
+  el("notFoundView").hidden = true;
+  el("lookupBusy").hidden = false;
+  showMainError("");
+  try {
+    const item = await api("/stock/by-barcode/" + encodeURIComponent(code));
+    el("lookupBusy").hidden = true;
+    if (item) {
+      showFound(item);
+    } else {
+      showNotFound(code);
+    }
+  } catch (err) {
+    el("lookupBusy").hidden = true;
+    showMainError(err.message || "Sorgu başarısız.");
+    goIdle();
+  }
+}
+
+let foundItem = null;
+function showFound(item) {
+  foundItem = item;
+  el("foundCode").textContent = item.code || "";
+  el("foundName").textContent = item.name || "(isimsiz)";
+  el("foundPrice").textContent = item.price != null ? money(item.price) : "—";
+  el("foundQtyLabel").textContent = (item.quantity ?? 0) + " " + (item.unit || "adet");
+  el("qtyInput").value = item.quantity ?? 0;
+  el("foundView").hidden = false;
+}
+
+function showNotFound(code) {
+  el("unknownBarcode").textContent = code;
+  el("linkSearch").value = "";
+  el("linkResults").innerHTML = "";
+  el("notFoundView").hidden = false;
+}
+
+el("qtyMinus").addEventListener("click", () => {
+  el("qtyInput").value = Math.max(0, Number(el("qtyInput").value || 0) - 1);
+});
+el("qtyPlus").addEventListener("click", () => {
+  el("qtyInput").value = Number(el("qtyInput").value || 0) + 1;
+});
+
+el("qtyUpdateBtn").addEventListener("click", async () => {
+  if (!foundItem) return;
+  const qty = Number(el("qtyInput").value);
+  if (!Number.isFinite(qty) || qty < 0) {
+    showMainError("Geçerli bir miktar girin.");
+    return;
+  }
+  el("qtyUpdateBtn").disabled = true;
+  try {
+    await api("/stock/" + foundItem.id, {
+      method: "PUT",
+      body: JSON.stringify({ quantity: qty, actingUserId: state.user.id }),
+    });
+    goIdle();
+  } catch (err) {
+    showMainError(err.message || "Güncellenemedi.");
+  } finally {
+    el("qtyUpdateBtn").disabled = false;
+  }
+});
+
+// ---- Bilinmeyen barkodu mevcut ürüne bağlama ----
+let linkSearchTimer = null;
+el("linkSearch").addEventListener("input", () => {
+  clearTimeout(linkSearchTimer);
+  const term = el("linkSearch").value.trim().toLowerCase();
+  if (term.length < 2) {
+    el("linkResults").innerHTML = "";
+    return;
+  }
+  linkSearchTimer = setTimeout(async () => {
+    try {
+      const all = await api("/stock");
+      const matches = all
+        .filter((s) => (s.code || "").toLowerCase().includes(term) || (s.name || "").toLowerCase().includes(term))
+        .slice(0, 8);
+      el("linkResults").innerHTML = matches
+        .map(
+          (s, i) =>
+            `<div class="search-result"><span>${s.code || ""} — ${s.name || ""}</span><button type="button" data-idx="${i}">Bağla</button></div>`
+        )
+        .join("");
+      el("linkResults").querySelectorAll("button[data-idx]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const item = matches[Number(btn.dataset.idx)];
+          btn.disabled = true;
+          btn.textContent = "…";
+          try {
+            await api("/stock/" + item.id, {
+              method: "PUT",
+              body: JSON.stringify({ barcode: lastBarcode, actingUserId: state.user.id }),
+            });
+            goIdle();
+          } catch (err) {
+            showMainError(err.message || "Bağlanamadı.");
+          }
+        });
+      });
+    } catch (err) {
+      showMainError(err.message || "Arama başarısız.");
+    }
+  }, 300);
+});
+
+// ---- Elle barkod girişi ----
+el("manualBtn").addEventListener("click", () => {
+  el("idleView").hidden = true;
+  el("manualEntry").hidden = false;
+  el("manualBarcode").value = "";
+  el("manualBarcode").focus();
+});
+el("manualCancelBtn").addEventListener("click", goIdle);
+el("manualLookupBtn").addEventListener("click", () => {
+  const code = el("manualBarcode").value.trim();
+  if (code) lookupBarcode(code);
+});
+
+el("scanAgainBtn1").addEventListener("click", goIdle);
+el("scanAgainBtn2").addEventListener("click", goIdle);
+
+// ---- Kamera ile tarama (ZXing) ----
+let zxingReader = null;
+let activeStream = null;
+
+async function startScan() {
+  showMainError("");
+  el("scanOverlay").hidden = false;
+  try {
+    zxingReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    // Arka kamerayı tercih et (telefonlarda genelde son cihaz arka kameradır,
+    // "back"/"rear" etiketi taşıyan varsa onu seçiyoruz).
+    const backCam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+    await zxingReader.decodeFromVideoDevice(backCam?.deviceId, "scanVideo", (result, err) => {
+      if (result) {
+        stopScan();
+        lookupBarcode(result.getText());
+      }
+    });
+  } catch (err) {
+    stopScan();
+    showMainError("Kameraya erişilemedi: " + (err.message || err));
+  }
+}
+
+function stopScan() {
+  el("scanOverlay").hidden = true;
+  try {
+    zxingReader?.reset();
+  } catch {}
+  zxingReader = null;
+}
+
+el("scanBtn").addEventListener("click", startScan);
+el("scanCancel").addEventListener("click", stopScan);
+
+// ---- Ana menü gezinmesi ----
+el("goBarcodeBtn").addEventListener("click", goIdle);
+el("backToHubBtn1").addEventListener("click", goHub);
+el("backToHubBtn2").addEventListener("click", goHub);
+
+// ---- Randevular ----
+const STATUS_LABELS = { pending: "Bekliyor", routed: "Rotalandı", completed: "Tamamlandı", cancelled: "İptal Edildi" };
+
+function todayISO() {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d - tz).toISOString().slice(0, 10);
+}
+
+let currentAppointments = [];
+let currentAppointment = null;
+// Kullanıcı tarihi hızlıca değiştirirse (ör. yanlışlıkla iki kez dokunursa)
+// önceki isteğin geç gelen cevabı, sonraki isteğin sonucunun üzerine
+// yazabiliyordu — her çağrıya bir sıra numarası verip sadece EN SON
+// çağrının cevabını uyguluyoruz, eskileri sessizce yok sayıyoruz.
+let appointmentsRequestSeq = 0;
+
+async function loadAppointments(date) {
+  const seq = ++appointmentsRequestSeq;
+  showSection("appointmentsListView");
+  el("apptListBusy").hidden = false;
+  el("apptListEmpty").hidden = true;
+  el("apptList").innerHTML = "";
+  try {
+    const result = await api("/appointments/by-date/" + encodeURIComponent(date));
+    if (seq !== appointmentsRequestSeq) return; // daha yeni bir istek zaten başlamış
+    currentAppointments = result;
+    el("apptListBusy").hidden = true;
+    if (currentAppointments.length === 0) {
+      el("apptListEmpty").hidden = false;
+      return;
+    }
+    // Sırayla (varsa stopOrder'a göre, yoksa müşteri adına göre) göster —
+    // masaüstündeki Rota Oluştur ekranıyla aynı mantık.
+    const sorted = [...currentAppointments].sort((a, b) => (a.stopOrder ?? 999) - (b.stopOrder ?? 999));
+    el("apptList").innerHTML = sorted
+      .map((a, i) => {
+        const statusColor =
+          a.status === "completed" ? "var(--success)" : a.status === "cancelled" ? "var(--danger)" : "var(--text-muted)";
+        return `<div class="card" data-idx="${i}" style="cursor:pointer;margin-top:0.6rem;">
+          <div class="name" style="margin-bottom:0.2rem;">${a.customerName || "(isimsiz)"}</div>
+          <div class="sub" style="margin-bottom:0.4rem;">${a.address || ""}</div>
+          <strong style="color:${statusColor};font-size:0.85rem;">${STATUS_LABELS[a.status] || a.status || "—"}</strong>
+        </div>`;
+      })
+      .join("");
+    el("apptList").querySelectorAll("[data-idx]").forEach((card) => {
+      card.addEventListener("click", () => openAppointmentDetail(sorted[Number(card.dataset.idx)]));
+    });
+  } catch (err) {
+    if (seq !== appointmentsRequestSeq) return;
+    el("apptListBusy").hidden = true;
+    showMainError(err.message || "Randevular yüklenemedi.");
+  }
+}
+
+function openAppointmentDetail(appt) {
+  currentAppointment = appt;
+  el("apptCustomerName").textContent = appt.customerName || "(isimsiz)";
+  el("apptAddress").textContent = appt.address || "";
+  el("apptPhoneLink").textContent = appt.customerPhone || "—";
+  el("apptPhoneLink").href = appt.customerPhone ? "tel:" + appt.customerPhone : "#";
+  el("apptStatusLabel").textContent = STATUS_LABELS[appt.status] || appt.status || "—";
+  if (appt.complaint) {
+    el("apptComplaintRow").hidden = false;
+    el("apptComplaint").textContent = appt.complaint;
+  } else {
+    el("apptComplaintRow").hidden = true;
+  }
+  showSection("appointmentDetailView");
+}
+
+async function updateAppointmentStatus(status) {
+  if (!currentAppointment) return;
+  try {
+    await api("/appointments/" + currentAppointment.id + "/status", {
+      method: "PUT",
+      body: JSON.stringify({ status, actingUserId: state.user.id }),
+    });
+    currentAppointment.status = status;
+    el("apptStatusLabel").textContent = STATUS_LABELS[status] || status;
+  } catch (err) {
+    showMainError(err.message || "Durum güncellenemedi.");
+  }
+}
+
+el("goAppointmentsBtn").addEventListener("click", () => {
+  el("apptDate").value = todayISO();
+  loadAppointments(todayISO());
+});
+el("apptDate").addEventListener("change", () => loadAppointments(el("apptDate").value));
+el("backToListBtn").addEventListener("click", () => showSection("appointmentsListView"));
+el("apptMarkCompletedBtn").addEventListener("click", () => updateAppointmentStatus("completed"));
+el("apptMarkPendingBtn").addEventListener("click", () => updateAppointmentStatus("pending"));
+
+// ---- Başlangıç ----
+if (state.user) {
+  renderLoggedIn();
+} else {
+  renderLoggedOut();
+}
+</script>
+</body>
+</html>

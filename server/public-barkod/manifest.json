@@ -1,0 +1,12 @@
+{
+  "name": "Sita Yapı Saha",
+  "short_name": "Saha",
+  "start_url": "/barkod/",
+  "scope": "/barkod/",
+  "display": "standalone",
+  "background_color": "#0e2a3b",
+  "theme_color": "#3eaca7",
+  "icons": [
+    { "src": "icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

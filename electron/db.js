@@ -816,6 +816,14 @@ export async function getStockItemById(id) {
   return data;
 }
 
+// Mobil barkod okuma aracı için — telefon kamerasıyla okutulan barkoda
+// karşılık gelen tek kalemi, ~10 binlik listenin tamamını çekmeden bulur.
+export async function getStockItemByBarcode(barcode) {
+  const { data, error } = await supabase.from("stockItems").select("*").eq("barcode", barcode).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 // Toplu CSV içe aktarma için — küçük listelerde olduğu gibi "tüm listeyi
 // gönder" davranışı. Sık kullanılan tekil işlemler (ekle/güncelle/sil) için
 // aşağıdaki satır bazlı fonksiyonlar kullanılır — binlerce kayıtlı bir
