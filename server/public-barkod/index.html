@@ -104,11 +104,20 @@
   /* ---- Apple tarzı gezinme: ince "‹ Geri" metin bağlantısı + altında
      kalın bir "Large Title" (iOS Ayarlar/Mail vb. uygulamalardaki gibi). ---- */
   .nav-bar { display: flex; align-items: center; margin-bottom: 0.3rem; min-height: 1.6rem; }
+  /* HIG: "it's especially important to let people swipe to navigate back" —
+     dokunma hedefi Apple'ın 44pt asgari önerisine göre büyütüldü; negatif
+     margin ile büyüyen dolgu, başlığın konumunu eskisi gibi tutuyor. */
   .nav-back {
     background: none; border: none; color: var(--accent); font-size: 1.02rem;
-    padding: 0.3rem 0.1rem; font-family: inherit; display: flex; align-items: center; gap: 0.1rem;
+    padding: 0.6rem 0.4rem 0.6rem 0; margin: -0.6rem 0 -0.6rem -0.1rem; min-height: 44px;
+    font-family: inherit; display: flex; align-items: center; gap: 0.1rem;
   }
   .large-title { font-size: 2rem; font-weight: 700; color: var(--text); margin: 0.1rem 0 1rem; letter-spacing: -0.02em; }
+  /* Geçiş animasyonu sırasında iki ekran geçici olarak üst üste bindiğinde
+     (bkz. animateNav/edge-swipe) alttaki görünmesin diye her ekranın kendi
+     zemini olsun. */
+  #hubView, #stockView, #manualEntry, #foundView, #notFoundView,
+  #appointmentsListView, #appointmentDetailView { background: var(--bg); }
 
   /* ---- Apple Ayarlar tarzı gruplu liste: tek yuvarlatılmış kapsayıcı,
      satırlar arasında ince ayraç, renkli ikon rozetleri. ---- */
@@ -128,6 +137,12 @@
   .grouped-row-text strong { font-size: 0.97rem; font-weight: 400; }
   .grouped-row-text small { color: var(--text-muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grouped-row-chevron { color: var(--border); font-size: 1.3rem; flex-shrink: 0; }
+  /* HIG: "it tends to be easier and more comfortable for people to reach a
+     control when it's located in the middle or bottom area of the display" —
+     çıkış artık üst köşede küçük bir buton değil, Ayarlar uygulamasındaki
+     "Çıkış Yap" satırı gibi listenin en altında, tek ve net bir yerde. */
+  .grouped-row.destructive { justify-content: center; }
+  .grouped-row.destructive strong { color: var(--danger); font-weight: 400; }
 
   /* ---- iOS tarzı arama çubuğu ---- */
   .search-bar {
@@ -139,7 +154,7 @@
     border: none; background: none; padding: 0; flex: 1; font-size: 1rem; color: var(--text);
   }
   .search-bar input:focus { outline: none; }
-  .search-icon { opacity: 0.5; font-size: 0.95rem; }
+  .search-icon { opacity: 0.5; display: flex; }
 
   .error { color: var(--danger); font-size: 0.9rem; margin-top: 0.7rem; }
   .card {
@@ -204,7 +219,6 @@
       <img id="topbarLogo" src="icon.png" alt="" style="width:24px;height:24px;border-radius:6px;" />
       <strong>Sita Yapı</strong>
     </div>
-    <button id="logoutBtn" type="button">Çıkış</button>
   </header>
   <div class="screen">
     <div id="hubView">
@@ -212,15 +226,18 @@
       <div class="sub" id="welcomeText" style="margin-top:-0.6rem;"></div>
       <div class="grouped-list">
         <button class="grouped-row" id="goAppointmentsBtn" type="button">
-          <span class="grouped-row-icon" style="background:#007aff;">📋</span>
+          <span class="grouped-row-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg></span>
           <span class="grouped-row-text"><strong>Randevular</strong><small>Bugünün işlerini gör, durum güncelle</small></span>
           <span class="grouped-row-chevron">›</span>
         </button>
         <button class="grouped-row" id="goStockBtn" type="button">
-          <span class="grouped-row-icon" style="background:#ff9500;">📦</span>
+          <span class="grouped-row-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
           <span class="grouped-row-text"><strong>Stok</strong><small>Barkod okut, ürün ara, miktar güncelle</small></span>
           <span class="grouped-row-chevron">›</span>
         </button>
+      </div>
+      <div class="grouped-list" style="margin-top:1.5rem;">
+        <button class="grouped-row destructive" id="logoutBtn" type="button"><strong>Çıkış Yap</strong></button>
       </div>
     </div>
 
@@ -228,17 +245,17 @@
       <div class="nav-bar"><button class="nav-back" id="backToHubBtn1" type="button">‹ Sita Yapı</button></div>
       <div class="large-title">Stok</div>
       <div class="search-bar">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
         <input id="stockSearchInput" placeholder="Kod veya isimle ara" autocomplete="off" />
       </div>
       <div id="stockDefaultActions" class="grouped-list">
         <button class="grouped-row" id="scanBtn" type="button">
-          <span class="grouped-row-icon" style="background:#34c759;">📷</span>
+          <span class="grouped-row-icon" style="background:#34c759;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
           <span class="grouped-row-text"><strong>Barkod Okut</strong><small>Kamera ile hızlı sorgula</small></span>
           <span class="grouped-row-chevron">›</span>
         </button>
         <button class="grouped-row" id="manualBtn" type="button">
-          <span class="grouped-row-icon" style="background:#8e8e93;">⌨️</span>
+          <span class="grouped-row-icon" style="background:#8e8e93;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></span>
           <span class="grouped-row-text"><strong>Barkodu Elle Gir</strong></span>
           <span class="grouped-row-chevron">›</span>
         </button>
@@ -369,13 +386,186 @@ const SECTIONS = [
   "appointmentDetailView",
 ];
 
-function showSection(id) {
-  SECTIONS.forEach((s) => {
-    el(s).hidden = s !== id;
+// ---- Apple tarzı push/pop geçişi + kenardan kaydırarak geri gitme ----
+// HIG (Designing for iOS): "it's especially important to let people swipe to
+// navigate back". Bu tek sayfalık araçta gerçek bir UINavigationController
+// yok, o yüzden "hangi ekran hangisinin altından açıldı" ilişkisini kendimiz
+// tutuyoruz (NAV_PARENT) ve geçişi/parmak takibini elle simüle ediyoruz.
+const NAV_PARENT = {
+  stockView: "hubView",
+  appointmentsListView: "hubView",
+  appointmentDetailView: "appointmentsListView",
+  manualEntry: "stockView",
+  foundView: "stockView",
+  notFoundView: "stockView",
+};
+let currentSectionId = "hubView";
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// İki ekranı geçiş süresince aynı anda, üst üste bindirilmiş şekilde
+// gösterebilmek için geçici olarak absolute konuma alır (bkz. dosya başındaki
+// #hubView vb. seçicilerdeki zemin rengi notu — üstteki ekran altını
+// tamamen kapatsın diye).
+function beginSectionOverlay(fromEl, toEl) {
+  toEl.hidden = false;
+  const screenEl = fromEl.parentElement;
+  const height = Math.max(fromEl.scrollHeight, toEl.scrollHeight, screenEl.clientHeight);
+  screenEl.style.position = "relative";
+  screenEl.style.overflow = "hidden";
+  screenEl.style.minHeight = height + "px";
+  [fromEl, toEl].forEach((e) => {
+    e.style.position = "absolute";
+    e.style.top = "0"; e.style.left = "0"; e.style.right = "0";
   });
+  return screenEl;
+}
+function endSectionOverlay(screenEl, fromEl, toEl) {
+  [fromEl, toEl].forEach((e) => {
+    e.style.position = e.style.top = e.style.left = e.style.right = "";
+    e.style.transform = e.style.transition = "";
+  });
+  screenEl.style.position = screenEl.style.overflow = screenEl.style.minHeight = "";
+}
+
+function animateNav(fromId, toId, direction) {
+  const fromEl = el(fromId), toEl = el(toId);
+  const screenEl = beginSectionOverlay(fromEl, toEl);
+  fromEl.style.transition = toEl.style.transition = "none";
+  fromEl.style.transform = "translateX(0)";
+  toEl.style.transform = direction === "forward" ? "translateX(100%)" : "translateX(-28%)";
+  if (direction === "backward") fromEl.style.boxShadow = "-6px 0 24px rgba(0,0,0,.18)";
+  void toEl.offsetWidth;
+  // requestAnimationFrame arka planda/odak dışı bir sekmede geç ya da hiç
+  // tetiklenmeyebilir (ör. bir bildirim sırasında) — bu durumda geçiş kalıcı
+  // olarak yarım kalıp gezinmeyi kilitlemesin diye bir zaman aşımı yedeği var;
+  // hangisi önce gerçekleşirse (transitionend veya zaman aşımı) o temizler.
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    toEl.removeEventListener("transitionend", onEnd);
+    fromEl.hidden = true;
+    endSectionOverlay(screenEl, fromEl, toEl);
+  };
+  const onEnd = (e) => {
+    if (e.target !== toEl || e.propertyName !== "transform") return;
+    finish();
+  };
+  toEl.addEventListener("transitionend", onEnd);
+  requestAnimationFrame(() => {
+    fromEl.style.transition = toEl.style.transition = "transform 0.34s cubic-bezier(.32,.72,0,1)";
+    fromEl.style.transform = direction === "forward" ? "translateX(-28%)" : "translateX(100%)";
+    toEl.style.transform = "translateX(0)";
+  });
+  setTimeout(finish, 450);
+}
+
+function showSection(id) {
+  const prev = currentSectionId;
+  if (id === prev) { el(id).hidden = false; return; }
+  const prevEl = el(prev);
+  const isForward = NAV_PARENT[id] === prev;
+  const isBackward = NAV_PARENT[prev] === id;
+  currentSectionId = id;
   el("lookupBusy").hidden = true;
   showMainError("");
+  if (!prefersReducedMotion() && (isForward || isBackward) && prevEl && !prevEl.hidden) {
+    SECTIONS.forEach((s) => { if (s !== prev && s !== id) el(s).hidden = true; });
+    animateNav(prev, id, isForward ? "forward" : "backward");
+  } else {
+    SECTIONS.forEach((s) => { el(s).hidden = s !== id; });
+  }
 }
+
+// Ekranın sol kenarına yakın başlayan bir parmak sürüklemesini, geçerli
+// ekranın "üst" ekranına (NAV_PARENT) dönen canlı, parmağı takip eden bir
+// geri gitme hareketine çeviriyor — iOS'un kendi "edge swipe to go back"
+// hareketiyle aynı his.
+(function setupEdgeSwipeBack() {
+  const EDGE_ZONE = 28;
+  let active = false, decided = false, startX = 0, startY = 0;
+  let fromId = null, toId = null, fromEl = null, toEl = null, screenEl = null, width = 0;
+
+  function reset() { active = false; decided = false; }
+
+  document.addEventListener("touchstart", (e) => {
+    if (active || e.touches.length !== 1 || prefersReducedMotion()) return;
+    const t = e.touches[0];
+    if (t.clientX > EDGE_ZONE) return;
+    const parent = NAV_PARENT[currentSectionId];
+    if (!parent) return;
+    active = true; decided = false;
+    startX = t.clientX; startY = t.clientY;
+    fromId = currentSectionId; toId = parent;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (!decided) {
+      if (Math.abs(dy) > Math.abs(dx) + 8) { active = false; return; }
+      if (dx < 10) return;
+      decided = true;
+      fromEl = el(fromId); toEl = el(toId);
+      SECTIONS.forEach((s) => { if (s !== fromId && s !== toId) el(s).hidden = true; });
+      screenEl = beginSectionOverlay(fromEl, toEl);
+      width = screenEl.clientWidth || window.innerWidth;
+      fromEl.style.transition = toEl.style.transition = "none";
+      fromEl.style.boxShadow = "-6px 0 24px rgba(0,0,0,.18)";
+      toEl.style.transform = "translateX(-28%)";
+    }
+    const clamped = Math.max(0, Math.min(dx, width));
+    const progress = clamped / width;
+    fromEl.style.transform = `translateX(${clamped}px)`;
+    toEl.style.transform = `translateX(${-28 * (1 - progress)}%)`;
+  }, { passive: true });
+
+  function finish(commit) {
+    if (!decided) { reset(); return; }
+    const doneFromEl = fromEl, doneToEl = toEl, doneScreenEl = screenEl, doneToId = toId;
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      doneFromEl.removeEventListener("transitionend", onEnd);
+      if (commit) {
+        doneFromEl.hidden = true;
+        currentSectionId = doneToId;
+        el("lookupBusy").hidden = true;
+        showMainError("");
+      } else {
+        doneToEl.hidden = true;
+      }
+      endSectionOverlay(doneScreenEl, doneFromEl, doneToEl);
+    };
+    const onEnd = (e) => {
+      if (e.target !== doneFromEl || e.propertyName !== "transform") return;
+      settle();
+    };
+    doneFromEl.addEventListener("transitionend", onEnd);
+    doneFromEl.style.transition = doneToEl.style.transition = "transform 0.28s cubic-bezier(.32,.72,0,1)";
+    doneFromEl.style.transform = commit ? "translateX(100%)" : "translateX(0)";
+    doneToEl.style.transform = commit ? "translateX(0)" : "translateX(-28%)";
+    setTimeout(settle, 380);
+    reset();
+  }
+
+  document.addEventListener("touchend", (e) => {
+    if (!active) return;
+    if (!decided) { reset(); return; }
+    const t = e.changedTouches[0];
+    finish(t.clientX - startX > width * 0.33);
+  });
+  document.addEventListener("touchcancel", () => {
+    if (active && decided) finish(false);
+    else reset();
+  });
+})();
 
 function goHub() {
   showSection("hubView");
@@ -647,7 +837,7 @@ el("stockSearchInput").addEventListener("input", () => {
       el("stockSearchResultsWrap").innerHTML = matches
         .map(
           (s, i) => `<button class="grouped-row" type="button" data-idx="${i}">
-            <span class="grouped-row-icon" style="background:#8e8e93;">📦</span>
+            <span class="grouped-row-icon" style="background:#8e8e93;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
             <span class="grouped-row-text"><strong>${s.name || s.code || "(isimsiz)"}</strong><small>${s.code || ""} · ${s.quantity ?? 0} ${s.unit || "adet"}</small></span>
             <span class="grouped-row-chevron">›</span>
           </button>`
