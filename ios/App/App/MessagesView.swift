@@ -61,12 +61,14 @@ struct MessagesView: View {
         defer { isLoading = false }
         guard let myId = appState.currentUser?.id else { return }
         do {
-            async let techs: [Technician] = APIClient.shared.get("/technicians")
-            async let staff: [OfficeStaffMember] = APIClient.shared.get("/office-staff")
+            // Teknisyen/ofis çalışanı tablolarındaki herkesin giriş hesabı
+            // olmayabilir — mesajlaşma sadece gerçekten giriş yapabilen,
+            // /api/users'ta kayıtlı hesaplar arasında olmalı (aksi halde
+            // mesaj, hiç kimsenin okuyamayacağı bir id'ye gönderilmiş olur).
+            async let usersReq: [AppUser] = APIClient.shared.get("/users")
             async let msgs: [ChatMessage] = APIClient.shared.get("/messages/\(myId)")
-            let (techList, staffList, messageList) = try await (techs, staff, msgs)
-            contacts = (techList.map { Contact(id: $0.id, name: $0.name) } + staffList.map { Contact(id: $0.id, name: $0.name) })
-                .filter { $0.id != myId }
+            let (userList, messageList) = try await (usersReq, msgs)
+            contacts = userList.map { Contact(id: $0.id, name: $0.name) }.filter { $0.id != myId }
             var counts: [String: Int] = [:]
             for m in messageList where m.senderId != myId && m.recipientId == myId && m.readAt == nil {
                 counts[m.senderId, default: 0] += 1

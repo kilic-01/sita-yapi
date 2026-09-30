@@ -9,9 +9,11 @@
 /* Begin PBXBuildFile section */
 		1203D417D31DBE460DD7B6FC /* AppointmentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B44F8C188ADF176452B5974 /* AppointmentsView.swift */; };
 		137B68AA49445790C1420877 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5792F3225A94091F45EF4D45 /* LoginView.swift */; };
+		1A667D0747A0FA2A8F5AD629 /* ProgramWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */; };
 		25DB6B58DF8E2D6A32F655A8 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850144F807DA244495E3F378 /* MessagesView.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		300C7D66DFD91657FBC7DF74 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F6D9B30EB202AB2204230F /* RootTabView.swift */; };
+		471103A0FC674052A95294DC /* MapTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA322021ED611A9DF23CEB5 /* MapTabView.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		4D99796BF3939C76842C06FB /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2FAFFE6C207232F306A0F6 /* Models.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -22,8 +24,10 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		58893553F79E469A200D9BDE /* ZimmetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ABD9008401336B015249BEA /* ZimmetView.swift */; };
 		6A63B36CE69B72D6B34F31E0 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5A256C1B781817B5976331 /* MoreView.swift */; };
+		74733BBCBD80A064D1E31C07 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 415D2B43C8A2D51C0A08EEAF /* MapKit.framework */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		C61C7C4D2EDC1E93B93781E8 /* StockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D0AD447C8E37CBA37E3F72 /* StockView.swift */; };
+		DAB9753CA741060C2E9AF482 /* AppointmentCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */; };
 		DB0B41620CD6B8F647259337 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C495B35F1CA275AAD7850FD5 /* HomeView.swift */; };
 		DDDB912BA558C9E86FF08511 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF3ADEAA65F2A8F12E847293 /* APIClient.swift */; };
 		F6C79A11CADAFDC6D90D31A5 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AA787D5C47FE223A911CF9F /* AppState.swift */; };
@@ -33,6 +37,7 @@
 		2ABD9008401336B015249BEA /* ZimmetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ZimmetView.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		37D0AD447C8E37CBA37E3F72 /* StockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StockView.swift; sourceTree = "<group>"; };
+		415D2B43C8A2D51C0A08EEAF /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -41,8 +46,11 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProgramWidgetView.swift; sourceTree = "<group>"; };
 		5792F3225A94091F45EF4D45 /* LoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		7D5A256C1B781817B5976331 /* MoreView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		7DA322021ED611A9DF23CEB5 /* MapTabView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapTabView.swift; sourceTree = "<group>"; };
+		82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppointmentCreateView.swift; sourceTree = "<group>"; };
 		850144F807DA244495E3F378 /* MessagesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
 		8AA787D5C47FE223A911CF9F /* AppState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -60,18 +68,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				74733BBCBD80A064D1E31C07 /* MapKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		08C92ADF39E58797FE5E6E18 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				415D2B43C8A2D51C0A08EEAF /* MapKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				08C92ADF39E58797FE5E6E18 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -106,6 +124,9 @@
 				7D5A256C1B781817B5976331 /* MoreView.swift */,
 				2ABD9008401336B015249BEA /* ZimmetView.swift */,
 				D9F6D9B30EB202AB2204230F /* RootTabView.swift */,
+				7DA322021ED611A9DF23CEB5 /* MapTabView.swift */,
+				82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */,
+				538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -204,6 +225,9 @@
 				6A63B36CE69B72D6B34F31E0 /* MoreView.swift in Sources */,
 				58893553F79E469A200D9BDE /* ZimmetView.swift in Sources */,
 				300C7D66DFD91657FBC7DF74 /* RootTabView.swift in Sources */,
+				471103A0FC674052A95294DC /* MapTabView.swift in Sources */,
+				DAB9753CA741060C2E9AF482 /* AppointmentCreateView.swift in Sources */,
+				1A667D0747A0FA2A8F5AD629 /* ProgramWidgetView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +369,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK25J32ZK3;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -367,6 +392,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK25J32ZK3;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (

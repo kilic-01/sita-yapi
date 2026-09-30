@@ -10,11 +10,27 @@ struct AppUser: Codable, Identifiable, Equatable {
     var role: String?
 }
 
+struct TechnicianLeave: Codable {
+    var startDate: String?
+    var endDate: String?
+}
+
 struct Technician: Codable, Identifiable {
     let id: String
     let name: String
     var phone: String?
     var assignable: Bool?
+    var leaves: [TechnicianLeave]?
+}
+
+/// Desktop'taki isOnLeave (src/lib/format.js) ile aynı mantık: verilen
+/// tarih, teknisyenin izin aralıklarından birinin içine düşüyor mu.
+func isOnLeave(_ technician: Technician, dateISO: String) -> Bool {
+    guard let leaves = technician.leaves, !leaves.isEmpty else { return false }
+    return leaves.contains { leave in
+        guard let start = leave.startDate, let end = leave.endDate else { return false }
+        return dateISO >= start && dateISO <= end
+    }
 }
 
 struct OfficeStaffMember: Codable, Identifiable {
@@ -31,6 +47,33 @@ struct Appointment: Codable, Identifiable {
     var status: String?
     var complaint: String?
     var stopOrder: Int?
+    var scheduledDate: String?
+    var urgency: String?
+    var feeAmount: Double?
+    var feePaid: Bool?
+    var heldForLeave: Bool?
+    var assignedTechnicianId: String?
+    var lat: Double?
+    var lng: Double?
+}
+
+/// Yeni randevu oluşturma isteği gövdesi — POST /api/appointments.
+/// customerName + address + scheduledDate dışındaki her şey backend'de
+/// zaten opsiyonel (bkz. electron/db.js addAppointment).
+struct NewAppointment: Encodable {
+    var customerName: String
+    var address: String
+    var scheduledDate: String
+    var customerPhone: String
+    var complaint: String
+    var urgency: String
+    var assignedTechnicianId: String?
+    var actingUserId: String
+}
+
+struct ShopLocation: Codable {
+    var lat: Double
+    var lng: Double
 }
 
 struct StockItem: Codable, Identifiable {

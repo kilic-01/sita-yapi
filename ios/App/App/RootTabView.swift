@@ -1,27 +1,42 @@
 import SwiftUI
 
+enum AppTab: Hashable {
+    case home, appointments, stock, messages, more
+}
+
+/// Anasayfadaki widget'lardan birine dokununca (ör. "Bugünün Randevuları")
+/// desktop'taki onNavigate("appointments") ile aynı işi yapabilmek için
+/// seçili sekmeyi dışarıdan değiştirebiliyoruz.
+@Observable
+final class TabRouter {
+    var selection: AppTab = .home
+}
+
 /// iOS 26 SDK'sıyla derlenen standart bir TabView otomatik olarak Liquid
 /// Glass malzemesini alır — web sürümündeki gibi elle backdrop-filter/blur
 /// simüle etmemize gerek yok, bu gerçek native malzeme.
 struct RootTabView: View {
+    @State private var router = TabRouter()
+
     var body: some View {
-        TabView {
-            Tab("Ana Sayfa", systemImage: "house.fill") {
+        TabView(selection: Binding(get: { router.selection }, set: { router.selection = $0 })) {
+            Tab("Ana Sayfa", systemImage: "house.fill", value: AppTab.home) {
                 HomeView()
             }
-            Tab("Randevular", systemImage: "calendar") {
+            Tab("Randevular", systemImage: "calendar", value: AppTab.appointments) {
                 AppointmentsView()
             }
-            Tab("Stok", systemImage: "shippingbox.fill") {
+            Tab("Stok", systemImage: "shippingbox.fill", value: AppTab.stock) {
                 StockView()
             }
-            Tab("Mesajlar", systemImage: "bubble.left.and.bubble.right.fill") {
+            Tab("Mesajlar", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.messages) {
                 MessagesView()
             }
-            Tab("Daha Fazla", systemImage: "ellipsis") {
+            Tab("Daha Fazla", systemImage: "ellipsis", value: AppTab.more) {
                 MoreView()
             }
         }
+        .environment(router)
     }
 }
 

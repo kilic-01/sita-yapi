@@ -18,6 +18,7 @@ struct AppointmentsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loadSeq = 0
+    @State private var showMap = false
 
     var body: some View {
         NavigationStack {
@@ -48,12 +49,24 @@ struct AppointmentsView: View {
                 }
             }
             .navigationTitle("Randevular")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showMap = true
+                    } label: {
+                        Label("Harita", systemImage: "map.fill")
+                    }
+                }
+            }
             .navigationDestination(for: Appointment.self) { appt in
                 AppointmentDetailView(appointment: appt, onStatusChanged: { updated in
                     if let idx = appointments.firstIndex(where: { $0.id == updated.id }) {
                         appointments[idx] = updated
                     }
                 })
+            }
+            .navigationDestination(isPresented: $showMap) {
+                MapTabView()
             }
             .task(id: date) { await load() }
         }
