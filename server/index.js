@@ -270,7 +270,11 @@ app.put("/api/stock", async (req, res, next) => {
 });
 app.post("/api/stock", async (req, res, next) => {
   try {
-    res.json(await handlers.addStockItem(req.body));
+    // Electron IPC tarafı (main.js "stock:add") actingUserId'yi ayrı
+    // geçiriyordu, bu HTTP ucu unutmuştu — yeni stok kalemleri aktivite
+    // kaydında kimliksiz (createdBy boş) görünüyordu.
+    const { actingUserId, ...item } = req.body;
+    res.json(await handlers.addStockItem(item, actingUserId));
   } catch (err) {
     next(err);
   }

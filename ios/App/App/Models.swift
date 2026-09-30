@@ -109,6 +109,24 @@ struct StockItem: Codable, Identifiable {
     var price: Double?
     var lowStockThreshold: Double?
     var barcode: String?
+    var depotId: String?
+    var category: String?
+    var imageUrl: String?
+}
+
+/// POST /api/stock gövdesi — yeni stok kalemi oluşturma (bkz. electron/db.js
+/// addStockItem, hepsi opsiyonel dışında code).
+struct NewStockItem: Encodable {
+    var code: String
+    var name: String
+    var quantity: Double
+    var unit: String
+    var depotId: String?
+    var category: String
+    var price: Double?
+    var imageUrl: String
+    var barcode: String
+    var actingUserId: String
 }
 
 struct PartCheckout: Codable, Identifiable {

@@ -42,10 +42,17 @@ actor APIClient {
         return try await get("/stock/by-barcode/\(encoded)")
     }
 
+    /// `body` opsiyonel — bazı silme uçları (ör. /stock/:id) aktiviteyi kimin
+    /// yaptığını (ve stok silmede yönetici doğrulamasını) actingUserId'den
+    /// çıkarıyor; DELETE gövdesiz gönderilirse bu uçlarda kimlik kaybolurdu.
     @discardableResult
-    func delete(_ path: String) async throws -> Data {
+    func delete(_ path: String, body: Encodable? = nil) async throws -> Data {
         var request = URLRequest(url: baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path))
         request.httpMethod = "DELETE"
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(AnyEncodable(body))
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.checkStatus(response, data: data)
         return data
