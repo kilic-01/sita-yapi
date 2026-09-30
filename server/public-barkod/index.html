@@ -185,20 +185,26 @@
   small.muted { color: var(--text-muted); }
 
   /* ---- Anasayfa: Figma kitinin renkli, ikon öne çıkan kart dili ---- */
-  .home-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-  .home-card {
-    background: var(--card-bg); border: none; border-radius: 18px; padding: 1.1rem;
-    display: flex; flex-direction: column; align-items: flex-start; gap: 0.55rem;
-    box-shadow: var(--shadow); text-align: left; font-family: inherit; color: var(--text);
-    transition: transform 0.12s ease;
+  /* Anasayfa artık sekme çubuğuyla aynı işi yapan büyük "buton" kartları
+     göstermiyor (Apple'ın kendi uygulamalarında ilk sekme hep gerçek
+     içerik/özet gösterir, gezinme çubuğunu tekrar etmez) — bunun yerine
+     salt bilgi veren, tıklanamayan özet kartları var. */
+  .home-info-card {
+    display: flex; align-items: center; gap: 0.9rem; background: var(--card-bg);
+    border-radius: 16px; padding: 1rem 1.1rem; box-shadow: var(--shadow); margin-bottom: 0.8rem;
   }
-  .home-card:active { transform: scale(0.97); }
-  .home-card-icon {
-    width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; color: #fff;
+  .home-info-icon {
+    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; color: #fff;
     display: flex; align-items: center; justify-content: center;
   }
-  .home-card-title { font-size: 1rem; font-weight: 700; }
-  .home-card-sub { color: var(--text-muted); font-size: 0.78rem; margin-top: -0.4rem; }
+  .home-info-text { flex: 1; min-width: 0; }
+  .home-info-value { font-size: 1.05rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-info-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar-avatar {
+    width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff;
+    border: none; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
+  }
 
   /* ---- Alt gezinme çubuğu: Apple'ın "Liquid Glass" malzemesi — yarı
      saydam, arkasındaki içeriği bulanıklaştıran, kayan (yüzen) bir cam
@@ -313,25 +319,35 @@
       <img id="topbarLogo" src="icon.png" alt="" style="width:24px;height:24px;border-radius:6px;" />
       <strong>Sita Yapı</strong>
     </div>
+    <button class="topbar-avatar" id="topbarLogoutBtn" type="button" aria-label="Hesap · Çıkış Yap"></button>
   </header>
   <div class="screen">
     <div id="hubView">
       <div class="large-title">Sita Yapı</div>
       <div class="sub" id="welcomeText" style="margin-top:-0.6rem;"></div>
-      <div class="home-cards">
-        <button class="home-card" id="goAppointmentsBtn" type="button">
-          <span class="home-card-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg></span>
-          <span class="home-card-title">Randevular</span>
-          <span class="home-card-sub">Bugünün işlerini gör</span>
-        </button>
-        <button class="home-card" id="goStockBtn" type="button">
-          <span class="home-card-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
-          <span class="home-card-title">Stok</span>
-          <span class="home-card-sub">Ürün ara, miktar güncelle</span>
-        </button>
+
+      <div class="home-info-card">
+        <span class="home-info-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></svg></span>
+        <span class="home-info-text">
+          <span class="home-info-value" id="homeApptCount">—</span>
+          <span class="home-info-label">Bugünkü randevu</span>
+        </span>
       </div>
-      <div class="grouped-list" style="margin-top:1.5rem;">
-        <button class="grouped-row destructive" id="logoutBtn" type="button"><strong>Çıkış Yap</strong></button>
+
+      <div class="home-info-card" id="homeNextApptCard" hidden>
+        <span class="home-info-icon" style="background:#34c759;"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+        <span class="home-info-text">
+          <span class="home-info-value" id="homeNextApptName">—</span>
+          <span class="home-info-label" id="homeNextApptAddress">—</span>
+        </span>
+      </div>
+
+      <div class="home-info-card">
+        <span class="home-info-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
+        <span class="home-info-text">
+          <span class="home-info-value" id="homeLowStockCount">—</span>
+          <span class="home-info-label">Kritik stokta ürün</span>
+        </span>
       </div>
     </div>
 
@@ -786,6 +802,7 @@ function showSection(id) {
 
 function goHub() {
   showSection("hubView");
+  loadHomeSummary();
 }
 
 function goStock() {
@@ -797,6 +814,7 @@ function renderLoggedIn() {
   el("mainScreen").hidden = false;
   el("tabBar").hidden = false;
   el("welcomeText").textContent = "Merhaba, " + state.user.name;
+  el("topbarLogoutBtn").textContent = (state.user.name || "?").trim().charAt(0).toUpperCase();
   goHub();
 }
 
@@ -840,10 +858,15 @@ el("togglePasswordBtn").addEventListener("click", () => {
   el("togglePasswordBtn").setAttribute("aria-label", showing ? "Şifreyi göster" : "Şifreyi gizle");
 });
 
-el("logoutBtn").addEventListener("click", () => {
-  state.user = null;
-  localStorage.removeItem("sita-barkod-user");
-  renderLoggedOut();
+// Çıkış artık anasayfada bir "buton" değil — gerçek Apple uygulamalarındaki
+// gibi üst çubuktaki hesap rozetinden erişiliyor (App Store'un "Today"
+// sekmesindeki profil ikonu gibi).
+el("topbarLogoutBtn").addEventListener("click", () => {
+  if (confirm("Çıkış yapmak istiyor musunuz?")) {
+    state.user = null;
+    localStorage.removeItem("sita-barkod-user");
+    renderLoggedOut();
+  }
 });
 
 let foundItem = null;
@@ -903,8 +926,38 @@ function invalidateStockCache(id, patch) {
 
 el("backFromFoundBtn").addEventListener("click", goStock);
 
-// ---- Ana menü gezinmesi + alt gezinme çubuğu (sekmeler) ----
-el("goStockBtn").addEventListener("click", goStock);
+// ---- Anasayfa özeti ----
+// Gerçek Apple uygulamalarının ilk sekmesi gibi (App Store "Today", Health
+// "Özet") — gezinme değil, gerçek veri: bugünkü randevu sayısı, sıradaki
+// randevu ve kritik stoktaki ürün sayısı.
+async function loadHomeSummary() {
+  try {
+    const appts = await api("/appointments/by-date/" + todayISO());
+    el("homeApptCount").textContent = String(appts.length);
+    const pending = appts
+      .filter((a) => a.status !== "completed" && a.status !== "cancelled")
+      .sort((a, b) => (a.stopOrder ?? 999) - (b.stopOrder ?? 999));
+    if (pending.length > 0) {
+      el("homeNextApptCard").hidden = false;
+      el("homeNextApptName").textContent = pending[0].customerName || "(isimsiz)";
+      el("homeNextApptAddress").textContent = pending[0].address || "—";
+    } else {
+      el("homeNextApptCard").hidden = true;
+    }
+  } catch {
+    el("homeApptCount").textContent = "—";
+    el("homeNextApptCard").hidden = true;
+  }
+  try {
+    const stock = await getAllStock();
+    const low = stock.filter((s) => s.lowStockThreshold != null && Number(s.quantity) <= Number(s.lowStockThreshold)).length;
+    el("homeLowStockCount").textContent = String(low);
+  } catch {
+    el("homeLowStockCount").textContent = "—";
+  }
+}
+
+// ---- Alt gezinme çubuğu (sekmeler) ----
 el("tabHomeBtn").addEventListener("click", goHub);
 el("tabStockBtn").addEventListener("click", goStock);
 el("tabAppointmentsBtn").addEventListener("click", () => {
@@ -1053,10 +1106,6 @@ async function updateAppointmentStatus(status) {
   }
 }
 
-el("goAppointmentsBtn").addEventListener("click", () => {
-  el("apptDate").value = todayISO();
-  loadAppointments(todayISO());
-});
 el("apptDate").addEventListener("change", () => loadAppointments(el("apptDate").value));
 el("backToListBtn").addEventListener("click", () => showSection("appointmentsListView"));
 el("apptMarkCompletedBtn").addEventListener("click", () => updateAppointmentStatus("completed"));
