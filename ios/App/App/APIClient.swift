@@ -19,7 +19,25 @@ enum APIError: LocalizedError {
 actor APIClient {
     static let shared = APIClient()
 
-    private let baseURL = URL(string: "http://192.168.1.132:4173/api")!
+    // Mac'in LAN IP'si Wi-Fi değiştikçe (ör. hotspot'a geçince) sık sık
+    // kayıyor ve simülatör/telefon backend'e hiç ulaşamaz hale geliyordu —
+    // arama/düzenleme/giriş gibi HER özellik aynı anda "bozuk" görünüyordu.
+    // Simülatör aslında Mac'in kendi ağ yığınını paylaşıyor, yani bir
+    // loopback adresi Wi-Fi ağı ne olursa olsun HER ZAMAN çalışır — bu, en
+    // sık test edilen ortam için sorunu kalıcı olarak ortadan kaldırıyor.
+    // "localhost" DEĞİL, doğrudan "127.0.0.1" kullanılıyor: "localhost" hem
+    // ::1 (IPv6) hem 127.0.0.1'e (IPv4) çözümleniyor, ama sunucu sadece
+    // IPv4'te dinliyor (app.listen(PORT, "0.0.0.0")) — istekler önce IPv6'yı
+    // deneyip "Connection refused" alıyor, IPv4'e düşene kadar gecikiyordu
+    // (bazen arama/giriş gibi hızlı ardışık isteklerde tamamen başarısız
+    // gibi görünüyordu). Gerçek cihaz için hâlâ güncel LAN IP'si gerekiyor
+    // (bunu değiştirmenin bir yolu yok, telefon fiziksel olarak ayrı bir ağ
+    // arayüzü).
+    #if targetEnvironment(simulator)
+    private let baseURL = URL(string: "http://127.0.0.1:4173/api")!
+    #else
+    private let baseURL = URL(string: "http://172.20.10.12:4173/api")!
+    #endif
     private let decoder: JSONDecoder = JSONDecoder()
     private let encoder: JSONEncoder = JSONEncoder()
 
