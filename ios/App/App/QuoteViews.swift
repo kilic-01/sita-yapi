@@ -66,11 +66,19 @@ extension Quote: Hashable {
 
 struct QuoteDetailView: View {
     let quote: Quote
+    @State private var showPrintPreview = false
 
     private var totals: QuoteTotals { computeQuoteTotals(quote.items ?? []) }
 
     var body: some View {
         List {
+            Section {
+                Button {
+                    showPrintPreview = true
+                } label: {
+                    Label("Çıktı Formatını Görüntüle", systemImage: "doc.richtext")
+                }
+            }
             Section {
                 Text(quote.customerName ?? "(isimsiz)").font(.title3.bold())
                 if let contact = quote.contactName, !contact.isEmpty {
@@ -121,6 +129,9 @@ struct QuoteDetailView: View {
         }
         .navigationTitle(quote.quoteNo ?? "Teklif")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showPrintPreview) {
+            QuotePrintPreviewView(quote: quote)
+        }
     }
 
     private func lineTotal(_ item: QuoteItem) -> Double {

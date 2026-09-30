@@ -133,6 +133,10 @@ struct Quote: Codable, Identifiable {
     var currency: String?
     var items: [QuoteItem]?
     var discountRate: Double?
+    var paymentTerms: String?
+    var warranty: String?
+    var notes: String?
+    var iban: String?
 }
 
 struct NewQuote: Encodable {
