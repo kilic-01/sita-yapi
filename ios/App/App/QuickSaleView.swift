@@ -16,12 +16,19 @@ struct QuickSaleView: View {
     @State private var deductFromStock = true
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showScanner = false
+    @State private var scanErrorMessage: String?
 
     private var totals: QuoteTotals { computeQuoteTotals(items) }
 
     var body: some View {
         Form {
             Section("Ürünler") {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Barkod ile Ürün Ekle", systemImage: "barcode.viewfinder")
+                }
                 ForEach($items) { $item in
                     VStack(alignment: .leading, spacing: 6) {
                         TextField("Kod / Açıklama", text: Binding(get: { item.description ?? "" }, set: { item.description = $0 }))
@@ -74,10 +81,57 @@ struct QuickSaleView: View {
                 .disabled(validItems.isEmpty || isSaving)
             }
         }
+        .sheet(isPresented: $showScanner) {
+            BarcodeScannerSheet(title: "Barkod ile Ürün Ekle") { code in
+                Task { await addScannedItem(code) }
+            }
+        }
+        .alert(
+            "Ürün Bulunamadı",
+            isPresented: Binding(get: { scanErrorMessage != nil }, set: { if !$0 { scanErrorMessage = nil } })
+        ) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(scanErrorMessage ?? "")
+        }
     }
 
     private var validItems: [QuoteItem] {
         items.filter { !($0.description ?? "").isEmpty && ($0.unitPrice ?? 0) > 0 }
+    }
+
+    /// Aynı barkod arka arkaya okutulursa yeni satır açmak yerine miktarı
+    /// artırır — kasada art arda aynı üründen birden fazla adet okutmayı
+    /// tek satırda tutar. Formdaki tek boş satır henüz doldurulmadıysa
+    /// (varsayılan ilk satır) onun yerine geçer, aksi halde yeni satır ekler.
+    private func addScannedItem(_ code: String) async {
+        do {
+            guard let stockItem = try await APIClient.shared.stockItem(byBarcode: code) else {
+                scanErrorMessage = "Bu barkoda ait ürün bulunamadı: \(code)"
+                return
+            }
+            if let idx = items.firstIndex(where: { $0.stockItemId == stockItem.id }) {
+                items[idx].qty = (items[idx].qty ?? 0) + 1
+                return
+            }
+            let newRow = QuoteItem(
+                qty: 1,
+                code: stockItem.code,
+                unit: stockItem.unit ?? "Adet",
+                vatRate: 20,
+                unitPrice: stockItem.price ?? 0,
+                description: stockItem.name ?? stockItem.code ?? "(isimsiz)",
+                discountRate: 0,
+                stockItemId: stockItem.id
+            )
+            if let emptyIdx = items.firstIndex(where: { ($0.description ?? "").isEmpty && ($0.unitPrice ?? 0) == 0 }) {
+                items[emptyIdx] = newRow
+            } else {
+                items.append(newRow)
+            }
+        } catch {
+            scanErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
+        }
     }
 
     private func submit() async {
@@ -86,7 +140,7 @@ struct QuickSaleView: View {
         defer { isSaving = false }
         do {
             let saleItems = validItems.map {
-                SaleItem(stockItemId: nil, code: $0.description ?? "", name: $0.description ?? "", qty: $0.qty ?? 0, unitPrice: $0.unitPrice ?? 0, discountRate: $0.discountRate ?? 0)
+                SaleItem(stockItemId: $0.stockItemId, code: $0.code ?? $0.description ?? "", name: $0.description ?? "", qty: $0.qty ?? 0, unitPrice: $0.unitPrice ?? 0, discountRate: $0.discountRate ?? 0)
             }
             let saleTotals = computeQuoteTotals(validItems)
             let body = NewSale(

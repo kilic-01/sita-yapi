@@ -35,6 +35,13 @@ actor APIClient {
         try await send(path: path, method: "PUT", body: body)
     }
 
+    /// Barkod okuma araçları için — ~10 binlik stok listesinin tamamını
+    /// çekmeden tek kalemi bulur (bkz. electron/db.js getStockItemByBarcode).
+    func stockItem(byBarcode barcode: String) async throws -> StockItem? {
+        let encoded = barcode.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barcode
+        return try await get("/stock/by-barcode/\(encoded)")
+    }
+
     @discardableResult
     func delete(_ path: String) async throws -> Data {
         var request = URLRequest(url: baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path))

@@ -84,6 +84,7 @@ struct StockItem: Codable, Identifiable {
     var unit: String?
     var price: Double?
     var lowStockThreshold: Double?
+    var barcode: String?
 }
 
 struct PartCheckout: Codable, Identifiable {
@@ -113,6 +114,9 @@ struct QuoteItem: Codable, Identifiable {
     var unitPrice: Double?
     var description: String?
     var discountRate: Double?
+    /// Yalnızca native tarafta (Hızlı Satış barkod akışı) kullanılıyor —
+    /// tekliflerin kablo formatına dahil değil, bu yüzden CodingKeys dışında.
+    var stockItemId: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case qty, code, unit, vatRate, unitPrice, description, discountRate

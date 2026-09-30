@@ -6,6 +6,9 @@ struct StockView: View {
     @State private var results: [StockItem] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
+    @State private var showScanner = false
+    @State private var scannedItem: StockItem?
+    @State private var scanErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -35,6 +38,31 @@ struct StockView: View {
             .searchable(text: $query, prompt: "Kod veya isimle ara")
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showScanner = true } label: {
+                        Image(systemName: "barcode.viewfinder")
+                    }
+                }
+            }
+            .sheet(isPresented: $showScanner) {
+                BarcodeScannerSheet(title: "Barkod Tara") { code in
+                    Task { await lookupBarcode(code) }
+                }
+            }
+            .sheet(item: $scannedItem) { item in
+                NavigationStack {
+                    StockItemDetailView(item: item)
+                }
+            }
+            .alert(
+                "Ürün Bulunamadı",
+                isPresented: Binding(get: { scanErrorMessage != nil }, set: { if !$0 { scanErrorMessage = nil } })
+            ) {
+                Button("Tamam", role: .cancel) {}
+            } message: {
+                Text(scanErrorMessage ?? "")
+            }
             // .onChange yerine .task(id:) kullanıyoruz — yeni bir sorgu
             // geldiğinde önceki bekleyen görevi SwiftUI otomatik iptal eder,
             // elle Task referansı tutup iptal etmeye kıyasla daha güvenilir
@@ -69,6 +97,18 @@ struct StockView: View {
             }.prefix(20).map { $0 }
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
+        }
+    }
+
+    private func lookupBarcode(_ code: String) async {
+        do {
+            if let item = try await APIClient.shared.stockItem(byBarcode: code) {
+                scannedItem = item
+            } else {
+                scanErrorMessage = "Bu barkoda ait ürün bulunamadı: \(code)"
+            }
+        } catch {
+            scanErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
         }
     }
 }

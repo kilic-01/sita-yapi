@@ -104,6 +104,7 @@ struct ZimmetCreateView: View {
     @State private var quantity = 1
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var showScanner = false
 
     var body: some View {
         Form {
@@ -117,6 +118,11 @@ struct ZimmetCreateView: View {
                 .labelsHidden()
             }
             Section("Parça") {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Barkod ile Bul", systemImage: "barcode.viewfinder")
+                }
                 TextField("Parça ara (kod veya isim)", text: $query)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
@@ -176,6 +182,34 @@ struct ZimmetCreateView: View {
             technicians = (try? await APIClient.shared.get("/technicians")) ?? []
             technicians = technicians.filter { $0.assignable != false }
             selectedTechId = technicians.first?.id
+        }
+        .sheet(isPresented: $showScanner) {
+            BarcodeScannerSheet(title: "Barkod ile Parça Bul") { code in
+                Task { await lookupBarcode(code) }
+            }
+        }
+        .alert(
+            "Ürün Bulunamadı",
+            isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
+        ) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func lookupBarcode(_ code: String) async {
+        do {
+            if let item = try await APIClient.shared.stockItem(byBarcode: code) {
+                selectedItem = item
+                quantity = 1
+                query = ""
+                searchResults = []
+            } else {
+                errorMessage = "Bu barkoda ait ürün bulunamadı: \(code)"
+            }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
         }
     }
 
