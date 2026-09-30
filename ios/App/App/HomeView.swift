@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Desktop'taki HOME_WIDGETS'ın (src/components/homeWidgets.jsx) native
-/// karşılığı — sürükle-bırak ızgara mobilde anlamsız olduğu için widget'lar
-/// sabit, dikey bir sırada. Kapsam dışı bırakılanlar (bilinçli): "İzin
-/// Dönüşü Bekleyen Randevular" (verimli çekmek için ayrı bir backend ucu
-/// gerekir, telefonda tüm randevu tablosunu taramak istemedik) ve "Gün Sonu
-/// Özeti" (sadece yönetici, düşük öncelik).
+/// karşılığı — sürükle-bırak ızgara yerine dikey bir liste, ama masaüstündeki
+/// gibi widget'lar kaldırılıp yeniden eklenebiliyor (bkz. HomeWidgetPreferences,
+/// "Düzenle" butonu). Kapsam dışı bırakılanlar (bilinçli): "İzin Dönüşü
+/// Bekleyen Randevular" (verimli çekmek için ayrı bir backend ucu gerekir,
+/// telefonda tüm randevu tablosunu taramak istemedik) ve "Gün Sonu Özeti"
+/// (sadece yönetici, düşük öncelik).
 
 struct HomeView: View {
     @Environment(AppState.self) private var appState
@@ -20,6 +21,9 @@ struct HomeView: View {
     @State private var lowStockItems: [StockItem] = []
     @State private var showCreateAppointment = false
     @State private var showQuickSale = false
+    @State private var widgetPrefs = HomeWidgetPreferences()
+    @State private var isEditingWidgets = false
+    @State private var showAddWidgetSheet = false
 
     var body: some View {
         NavigationStack {
@@ -29,105 +33,34 @@ struct HomeView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
+                    quickActionsRow
+
                     statsStrip
 
-                    ProgramWidgetView()
-
-                    HomeWidgetCard(title: "Bugünün Randevuları", systemImage: "calendar.badge.clock", tint: .blue) {
-                        router.selection = .appointments
-                    } content: {
-                        Text("\(todayAppts.count)").font(.system(size: 34, weight: .bold))
-                        HStack(spacing: 10) {
-                            statPill("✔ \(todayAppts.filter { $0.status == "completed" }.count) tamamlandı")
-                            statPill("➜ \(todayAppts.filter { $0.status == "routed" }.count) yolda")
-                            statPill("⏳ \(todayAppts.filter { $0.status == "pending" }.count) bekliyor")
-                        }
-                        let urgent = todayAppts.filter { $0.urgency == "acil" && $0.status != "completed" && $0.status != "cancelled" }.count
-                        if urgent > 0 {
-                            Text("\(urgent) acil").font(.caption.bold()).foregroundStyle(.white)
-                                .padding(.horizontal, 8).padding(.vertical, 3).background(.red, in: Capsule())
-                        }
+                    ForEach(widgetPrefs.visible, id: \.self) { id in
+                        editableWidget(id) { widgetContent(for: id) }
                     }
 
-                    HomeWidgetCard(title: "Yarının Randevuları", systemImage: "calendar.badge.plus", tint: .green) {
-                        router.selection = .appointments
-                    } content: {
-                        Text("\(tomorrowAppts.count)").font(.system(size: 34, weight: .bold))
-                        let notRouted = tomorrowAppts.filter { $0.status == "pending" }.count
-                        if notRouted > 0 {
-                            Text("\(notRouted) iş henüz rotalanmadı").font(.caption.bold()).foregroundStyle(.white)
-                                .padding(.horizontal, 8).padding(.vertical, 3).background(.orange, in: Capsule())
-                        }
-                    }
-
-                    HomeWidgetCard(title: "Az Stoklu Ürünler", systemImage: "shippingbox.fill", tint: .orange) {
-                        router.selection = .stock
-                    } content: {
-                        if lowStockItems.isEmpty {
-                            Label("Az stoklu ürün yok.", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.subheadline)
-                        } else {
-                            ForEach(lowStockItems.prefix(5)) { item in
-                                HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
-                                    Text(item.name ?? item.code ?? "(isimsiz)").font(.subheadline)
-                                    Spacer()
-                                    Text("\(Int(item.quantity ?? 0)) \(item.unit ?? "adet")").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            if lowStockItems.count > 5 {
-                                Text("+\(lowStockItems.count - 5) ürün daha").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    HomeWidgetCard(title: "Fiyat Teklifleri", systemImage: "doc.text.fill", tint: .gray) {
-                        router.selection = .more
-                    } content: {
-                        if quotes.isEmpty {
-                            Text("Henüz teklif oluşturulmadı.").font(.subheadline).foregroundStyle(.secondary)
-                        } else {
-                            ForEach(quotes.prefix(5)) { q in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(q.customerName ?? "(isimsiz)").font(.subheadline)
-                                        Text([q.quoteNo, q.quoteDate].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                }
-                            }
-                        }
-                    }
-
-                    HomeWidgetCard(title: "Mutabakatı Bekleyen Zimmetler", systemImage: "exclamationmark.triangle.fill", tint: .red) {
-                        router.selection = .more
-                    } content: {
-                        if overdueCheckouts.isEmpty {
-                            Label("Bekleyen mutabakat yok.", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.subheadline)
-                        } else {
-                            ForEach(overdueCheckouts.prefix(5)) { c in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(technicians.first { $0.id == c.technicianId }?.name ?? "Bilinmeyen teknisyen").font(.subheadline)
-                                    Text("\(c.date ?? "") tarihli zimmet hâlâ mutabakatsız").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
+                    if isEditingWidgets && !widgetPrefs.hidden.isEmpty {
+                        Button {
+                            showAddWidgetSheet = true
+                        } label: {
+                            Label("Widget Ekle", systemImage: "plus.circle.fill")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(14)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
                     }
                 }
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Sita Yapı")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button { showCreateAppointment = true } label: {
-                            Label("Randevu Oluştur", systemImage: "calendar.badge.plus")
-                        }
-                        Button { showQuickSale = true } label: {
-                            Label("Satış", systemImage: "turkishlirasign.circle")
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
+                    Button(isEditingWidgets ? "Bitti" : "Düzenle") {
+                        withAnimation { isEditingWidgets.toggle() }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -159,8 +92,145 @@ struct HomeView: View {
                     QuickSaleView()
                 }
             }
+            .sheet(isPresented: $showAddWidgetSheet) {
+                NavigationStack {
+                    List(widgetPrefs.hidden, id: \.self) { id in
+                        Button {
+                            withAnimation { widgetPrefs.add(id) }
+                            if widgetPrefs.hidden.isEmpty { showAddWidgetSheet = false }
+                        } label: {
+                            HStack {
+                                Text(id.title).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "plus.circle.fill").foregroundStyle(.green)
+                            }
+                        }
+                    }
+                    .navigationTitle("Widget Ekle")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Kapat") { showAddWidgetSheet = false }
+                        }
+                    }
+                }
+            }
             .task { await load() }
             .refreshable { await load() }
+        }
+    }
+
+    /// Düzenleme modundayken her widget'ın sol üst köşesine iOS'un kendi ana
+    /// ekran simgesi kaldırma davranışıyla aynı kırmızı "−" rozetini ekler.
+    @ViewBuilder
+    private func editableWidget<Content: View>(_ id: HomeWidgetID, @ViewBuilder content: () -> Content) -> some View {
+        ZStack(alignment: .topLeading) {
+            content()
+            if isEditingWidgets {
+                Button {
+                    withAnimation { widgetPrefs.remove(id) }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .red)
+                        .font(.title2)
+                        .background(Circle().fill(.white))
+                }
+                .offset(x: -8, y: -8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func widgetContent(for id: HomeWidgetID) -> some View {
+        switch id {
+        case .program:
+            ProgramWidgetView()
+
+        case .todayAppointments:
+            HomeWidgetCard(title: "Bugünün Randevuları", systemImage: "calendar.badge.clock", tint: .blue) {
+                router.selection = .appointments
+            } content: {
+                Text("\(todayAppts.count)").font(.system(size: 34, weight: .bold))
+                HStack(spacing: 10) {
+                    statPill("✔ \(todayAppts.filter { $0.status == "completed" }.count) tamamlandı")
+                    statPill("➜ \(todayAppts.filter { $0.status == "routed" }.count) yolda")
+                    statPill("⏳ \(todayAppts.filter { $0.status == "pending" }.count) bekliyor")
+                }
+                let urgent = todayAppts.filter { $0.urgency == "acil" && $0.status != "completed" && $0.status != "cancelled" }.count
+                if urgent > 0 {
+                    Text("\(urgent) acil").font(.caption.bold()).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(.red, in: Capsule())
+                }
+            }
+
+        case .tomorrowAppointments:
+            HomeWidgetCard(title: "Yarının Randevuları", systemImage: "calendar.badge.plus", tint: .green) {
+                router.selection = .appointments
+            } content: {
+                Text("\(tomorrowAppts.count)").font(.system(size: 34, weight: .bold))
+                let notRouted = tomorrowAppts.filter { $0.status == "pending" }.count
+                if notRouted > 0 {
+                    Text("\(notRouted) iş henüz rotalanmadı").font(.caption.bold()).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(.orange, in: Capsule())
+                }
+            }
+
+        case .lowStock:
+            HomeWidgetCard(title: "Az Stoklu Ürünler", systemImage: "shippingbox.fill", tint: .orange) {
+                router.selection = .stock
+            } content: {
+                if lowStockItems.isEmpty {
+                    Label("Az stoklu ürün yok.", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.subheadline)
+                } else {
+                    ForEach(lowStockItems.prefix(5)) { item in
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+                            Text(item.name ?? item.code ?? "(isimsiz)").font(.subheadline)
+                            Spacer()
+                            Text("\(Int(item.quantity ?? 0)) \(item.unit ?? "adet")").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if lowStockItems.count > 5 {
+                        Text("+\(lowStockItems.count - 5) ürün daha").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+        case .quotes:
+            HomeWidgetCard(title: "Fiyat Teklifleri", systemImage: "doc.text.fill", tint: .gray) {
+                router.selection = .more
+            } content: {
+                if quotes.isEmpty {
+                    Text("Henüz teklif oluşturulmadı.").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(quotes.prefix(5)) { q in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(q.customerName ?? "(isimsiz)").font(.subheadline)
+                                Text([q.quoteNo, q.quoteDate].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+            }
+
+        case .checkouts:
+            HomeWidgetCard(title: "Mutabakatı Bekleyen Zimmetler", systemImage: "exclamationmark.triangle.fill", tint: .red) {
+                router.selection = .more
+            } content: {
+                if overdueCheckouts.isEmpty {
+                    Label("Bekleyen mutabakat yok.", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.subheadline)
+                } else {
+                    ForEach(overdueCheckouts.prefix(5)) { c in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(technicians.first { $0.id == c.technicianId }?.name ?? "Bilinmeyen teknisyen").font(.subheadline)
+                            Text("\(c.date ?? "") tarihli zimmet hâlâ mutabakatsız").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -206,6 +276,34 @@ struct HomeView: View {
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var quickActionsRow: some View {
+        HStack(spacing: 12) {
+            quickActionButton(title: "Randevu Oluştur", systemImage: "calendar.badge.plus", tint: .blue) {
+                showCreateAppointment = true
+            }
+            quickActionButton(title: "Satış", systemImage: "turkishlirasign.circle.fill", tint: .green) {
+                showQuickSale = true
+            }
+        }
+    }
+
+    private func quickActionButton(title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.title2)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     private func load() async {
@@ -254,6 +352,62 @@ func isoDate(daysFromToday offset: Int) -> String {
 
 func todayISODate() -> String {
     isoDate(daysFromToday: 0)
+}
+
+/// Anasayfa widget'larının kimliği — kullanıcı bir widget'ı kaldırınca hangi
+/// widget'ların hâlâ eklenebilir olduğunu bilmek için CaseIterable.
+enum HomeWidgetID: String, CaseIterable, Codable, Hashable {
+    case program, todayAppointments, tomorrowAppointments, lowStock, quotes, checkouts
+
+    var title: String {
+        switch self {
+        case .program: return "Haftalık Program"
+        case .todayAppointments: return "Bugünün Randevuları"
+        case .tomorrowAppointments: return "Yarının Randevuları"
+        case .lowStock: return "Az Stoklu Ürünler"
+        case .quotes: return "Fiyat Teklifleri"
+        case .checkouts: return "Mutabakatı Bekleyen Zimmetler"
+        }
+    }
+}
+
+/// Hangi widget'ların görünür olduğunu ve sırasını cihazda saklar — sunucuda
+/// bir karşılığı yok, tamamen bu telefona özel bir tercih (bkz. AppLockState
+/// ile aynı desen).
+@Observable
+final class HomeWidgetPreferences {
+    private(set) var visible: [HomeWidgetID]
+    private static let key = "sita-yapi-home-widgets-v1"
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: Self.key),
+           let saved = try? JSONDecoder().decode([HomeWidgetID].self, from: data) {
+            visible = saved
+        } else {
+            visible = HomeWidgetID.allCases
+        }
+    }
+
+    var hidden: [HomeWidgetID] {
+        HomeWidgetID.allCases.filter { !visible.contains($0) }
+    }
+
+    func remove(_ id: HomeWidgetID) {
+        visible.removeAll { $0 == id }
+        persist()
+    }
+
+    func add(_ id: HomeWidgetID) {
+        guard !visible.contains(id) else { return }
+        visible.append(id)
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(visible) {
+            UserDefaults.standard.set(data, forKey: Self.key)
+        }
+    }
 }
 
 private struct HomeWidgetCard<Content: View>: View {
