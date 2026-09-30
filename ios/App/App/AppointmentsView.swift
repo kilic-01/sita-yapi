@@ -19,6 +19,7 @@ struct AppointmentsView: View {
     @State private var errorMessage: String?
     @State private var loadSeq = 0
     @State private var showMap = false
+    @State private var showRouteBuilder = false
 
     var body: some View {
         NavigationStack {
@@ -51,22 +52,36 @@ struct AppointmentsView: View {
             .navigationTitle("Randevular")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showMap = true
+                    Menu {
+                        Button { showMap = true } label: {
+                            Label("Harita", systemImage: "map.fill")
+                        }
+                        Button { showRouteBuilder = true } label: {
+                            Label("Rota Oluştur", systemImage: "wand.and.stars")
+                        }
                     } label: {
-                        Label("Harita", systemImage: "map.fill")
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
             .navigationDestination(for: Appointment.self) { appt in
-                AppointmentDetailView(appointment: appt, onStatusChanged: { updated in
-                    if let idx = appointments.firstIndex(where: { $0.id == updated.id }) {
-                        appointments[idx] = updated
+                AppointmentDetailView(
+                    appointment: appt,
+                    onStatusChanged: { updated in
+                        if let idx = appointments.firstIndex(where: { $0.id == updated.id }) {
+                            appointments[idx] = updated
+                        }
+                    },
+                    onDeleted: {
+                        appointments.removeAll { $0.id == appt.id }
                     }
-                })
+                )
             }
             .navigationDestination(isPresented: $showMap) {
                 MapTabView()
+            }
+            .navigationDestination(isPresented: $showRouteBuilder) {
+                RouteBuilderView()
             }
             .task(id: date) { await load() }
         }
@@ -103,16 +118,21 @@ extension Appointment: Hashable {
 
 struct AppointmentDetailView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     let appointment: Appointment
     let onStatusChanged: (Appointment) -> Void
+    let onDeleted: () -> Void
 
     @State private var current: Appointment
     @State private var isUpdating = false
     @State private var errorMessage: String?
+    @State private var showEdit = false
+    @State private var showHistory = false
 
-    init(appointment: Appointment, onStatusChanged: @escaping (Appointment) -> Void) {
+    init(appointment: Appointment, onStatusChanged: @escaping (Appointment) -> Void, onDeleted: @escaping () -> Void = {}) {
         self.appointment = appointment
         self.onStatusChanged = onStatusChanged
+        self.onDeleted = onDeleted
         _current = State(initialValue: appointment)
     }
 
@@ -156,6 +176,42 @@ struct AppointmentDetailView: View {
         }
         .navigationTitle(current.customerName ?? "Randevu")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { showEdit = true } label: {
+                        Label("Düzenle", systemImage: "pencil")
+                    }
+                    Button { showHistory = true } label: {
+                        Label("Müşteri Geçmişi", systemImage: "clock.arrow.circlepath")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            NavigationStack {
+                AppointmentEditView(
+                    appointment: current,
+                    onSaved: { updated in
+                        current = updated
+                        onStatusChanged(updated)
+                    },
+                    onDeleted: {
+                        onDeleted()
+                        dismiss()
+                    }
+                )
+            }
+        }
+        .navigationDestination(isPresented: $showHistory) {
+            CustomerHistoryView(
+                customerName: current.customerName ?? "",
+                customerPhone: current.customerPhone ?? "",
+                excludeAppointmentId: current.id
+            )
+        }
     }
 
     private func updateStatus(_ status: String) async {

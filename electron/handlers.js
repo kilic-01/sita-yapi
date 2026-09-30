@@ -170,6 +170,10 @@ export function listAppointmentsByDate(date) {
   return db.getAppointmentsByDate(date);
 }
 
+export function listAppointmentsByCustomer(name, phone, excludeId) {
+  return db.getAppointmentsByCustomer(name, phone, excludeId);
+}
+
 export async function addAppointment(input) {
   const { googleMapsApiKey, geminiApiKey } = await currentApiKeys();
 

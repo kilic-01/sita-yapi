@@ -88,7 +88,12 @@ struct AppointmentCreateView: View {
                 assignedTechnicianId: assignedTechId,
                 actingUserId: appState.currentUser?.id ?? ""
             )
-            let _: Appointment = try await APIClient.shared.post("/appointments", body: body)
+            // POST /appointments düz Appointment değil {appointment, ...}
+            // sarmalayıcısı dönüyor (bkz. Models.swift AppointmentSaveResponse)
+            // — bunu atlayıp doğrudan Appointment'a decode etmeye çalışmak
+            // (önceki hal) her randevu oluşturmada "Sunucu yanıtı okunamadı"
+            // hatası veriyordu, oysa kayıt aslında sunucuda oluşuyordu.
+            let _: AppointmentSaveResponse = try await APIClient.shared.post("/appointments", body: body)
             onCreated()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Randevu oluşturulamadı."

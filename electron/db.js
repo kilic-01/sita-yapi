@@ -287,6 +287,33 @@ export async function getAppointmentsByDate(scheduledDate) {
   return data || [];
 }
 
+// Mobil "Müşteri Geçmişi" ekranı için — src/lib/customerMatch.js'teki tam
+// eşleştirme mantığının (isim+telefon EŞ ZAMANLI) aksine, burada sadece
+// telefonla (varsa) ya da isimle (case-insensitive) sunucu tarafında filtreli,
+// küçük bir sonuç dönüyoruz — mobilde ~20 bin+ satırlık tabloyu tamamen
+// çekmek pratik değil. Bu yüzden kesin/tam eşleştirme değil, "muhtemelen
+// aynı müşteri" yaklaşık bir liste — dispatcher masaüstündeki Müşteri
+// Profili'ne kıyasla burada daha az kesin ama anında kullanılabilir.
+export async function getAppointmentsByCustomer(name, phone, excludeId) {
+  let query = supabase
+    .from("appointments")
+    .select("*")
+    .order("scheduledDate", { ascending: false })
+    .limit(50);
+  const trimmedPhone = (phone || "").trim();
+  const trimmedName = (name || "").trim();
+  if (trimmedPhone) {
+    query = query.eq("customerPhone", trimmedPhone);
+  } else if (trimmedName) {
+    query = query.ilike("customerName", trimmedName);
+  } else {
+    return [];
+  }
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data || []).filter((a) => a.id !== excludeId);
+}
+
 export async function addAppointment(input) {
   const appointment = {
     id: uuid(),

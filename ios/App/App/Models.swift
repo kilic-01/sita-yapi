@@ -57,6 +57,17 @@ struct Appointment: Codable, Identifiable {
     var lng: Double?
 }
 
+/// POST /api/appointments ve PUT /api/appointments/:id, tekliflerin/diğer
+/// endpoint'lerin aksine randevuyu DÜZ değil `{appointment, geocodeError,
+/// geocodeWarning}` sarmalayıcısı içinde döner (bkz. electron/handlers.js
+/// addAppointment/updateAppointment) — geocoding arkaplanda bitmeden hemen
+/// dönüldüğü için bu iki alan şu an her zaman null, ama sarmalayıcı hep var.
+struct AppointmentSaveResponse: Decodable {
+    let appointment: Appointment
+    let geocodeError: String?
+    let geocodeWarning: String?
+}
+
 /// Yeni randevu oluşturma isteği gövdesi — POST /api/appointments.
 /// customerName + address + scheduledDate dışındaki her şey backend'de
 /// zaten opsiyonel (bkz. electron/db.js addAppointment).

@@ -42,16 +42,25 @@ struct RootTabView: View {
 
 struct RootView: View {
     @State private var appState = AppState()
+    @State private var appLock = AppLockState()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
-            if appState.currentUser != nil {
-                RootTabView()
-            } else {
+            if appState.currentUser == nil {
                 LoginView()
+            } else if appLock.isEnabled && !appLock.isUnlocked {
+                LockScreenView(onUnlockTapped: { Task { await appLock.authenticate() } })
+                    .task { await appLock.authenticate() }
+            } else {
+                RootTabView()
             }
         }
         .environment(appState)
+        .environment(appLock)
         .tint(Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255))
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { appLock.lock() }
+        }
     }
 }

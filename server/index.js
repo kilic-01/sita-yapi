@@ -34,6 +34,16 @@ app.get("/api/appointments/by-date/:date", async (req, res, next) => {
     next(err);
   }
 });
+// Mobil "Müşteri Geçmişi" ekranı için — tüm tabloyu değil, aynı müşteriye
+// (telefon veya isimle) ait küçük bir sonuç çeker.
+app.get("/api/appointments/by-customer", async (req, res, next) => {
+  try {
+    const { name, phone, excludeId } = req.query;
+    res.json(await handlers.listAppointmentsByCustomer(name, phone, excludeId));
+  } catch (err) {
+    next(err);
+  }
+});
 app.post("/api/appointments", async (req, res, next) => {
   try {
     res.json(await handlers.addAppointment(req.body));

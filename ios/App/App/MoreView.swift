@@ -33,10 +33,17 @@ private struct MoreRow: View {
 
 struct MoreView: View {
     @Environment(AppState.self) private var appState
+    @Environment(AppLockState.self) private var appLock
 
     var body: some View {
         NavigationStack {
             List {
+                Section("Güvenlik") {
+                    Toggle(
+                        "Face ID ile Kilitle",
+                        isOn: Binding(get: { appLock.isEnabled }, set: { appLock.isEnabled = $0 })
+                    )
+                }
                 NavigationLink(value: MoreDestination.zimmet) {
                     MoreRow(title: "Zimmet", subtitle: "Parça zimmetleme", systemImage: "shippingbox.fill", tint: .indigo)
                 }
