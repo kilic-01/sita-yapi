@@ -147,7 +147,11 @@ struct AppointmentDetailView: View {
             Section {
                 if let phone = current.customerPhone, !phone.isEmpty {
                     LabeledContent("Telefon") {
-                        Link(phone, destination: URL(string: "tel:\(phone)")!)
+                        if let url = phone.telURL {
+                            Link(phone, destination: url)
+                        } else {
+                            Text(phone)
+                        }
                     }
                 }
                 LabeledContent("Durum") {

@@ -45,9 +45,15 @@ struct ProgramWidgetView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .sheet(item: $detailAppointment) { appt in
             NavigationStack {
-                AppointmentDetailView(appointment: appt, onStatusChanged: { updated in
-                    appointmentsByDay[selectedDay] = (appointmentsByDay[selectedDay] ?? []).map { $0.id == updated.id ? updated : $0 }
-                })
+                AppointmentDetailView(
+                    appointment: appt,
+                    onStatusChanged: { updated in
+                        appointmentsByDay[selectedDay] = (appointmentsByDay[selectedDay] ?? []).map { $0.id == updated.id ? updated : $0 }
+                    },
+                    onDeleted: {
+                        appointmentsByDay[selectedDay]?.removeAll { $0.id == appt.id }
+                    }
+                )
             }
         }
         .task { await load() }

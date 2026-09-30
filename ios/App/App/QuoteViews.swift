@@ -88,7 +88,11 @@ struct QuoteDetailView: View {
                     Text(address).font(.subheadline).foregroundStyle(.secondary)
                 }
                 if let phone = quote.customerPhone, !phone.isEmpty {
-                    Link(destination: URL(string: "tel:\(phone)")!) {
+                    if let url = phone.telURL {
+                        Link(destination: url) {
+                            Label(phone, systemImage: "phone.fill")
+                        }
+                    } else {
                         Label(phone, systemImage: "phone.fill")
                     }
                 }

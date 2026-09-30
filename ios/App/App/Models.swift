@@ -10,6 +10,19 @@ struct AppUser: Codable, Identifiable, Equatable {
     var role: String?
 }
 
+extension String {
+    /// Telefon numaraları backend'de serbest metin — boşluk/tire/parantez
+    /// içerebilir (özellikle Excel'den içe aktarılan ~20 bin+ eski kayıtta).
+    /// `URL(string: "tel:\(phone)")` böyle karakterlerde nil döner; bunu
+    /// zorla açmak (`!`) uygulamayı çökertirdi — önce sadece rakam/+ bırakıp
+    /// öyle deniyoruz.
+    var telURL: URL? {
+        let cleaned = filter { $0.isNumber || $0 == "+" }
+        guard !cleaned.isEmpty else { return nil }
+        return URL(string: "tel:\(cleaned)")
+    }
+}
+
 struct TechnicianLeave: Codable {
     var startDate: String?
     var endDate: String?

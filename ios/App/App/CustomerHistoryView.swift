@@ -20,7 +20,11 @@ struct CustomerHistoryView: View {
             Section {
                 Text(customerName).font(.title3.bold())
                 if !customerPhone.isEmpty {
-                    Link(customerPhone, destination: URL(string: "tel:\(customerPhone)")!)
+                    if let url = customerPhone.telURL {
+                        Link(customerPhone, destination: url)
+                    } else {
+                        Text(customerPhone)
+                    }
                 }
             }
             if isLoading {

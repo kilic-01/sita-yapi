@@ -2,9 +2,12 @@ import SwiftUI
 
 /// Desktop'taki QuickSaleModal.jsx'in native karşılığı — aynı satır/toplam
 /// mantığı (computeQuoteTotals ile aynı hesap). "Ürünler stoktan düşülsün
-/// mü?" sorusu desktop'ta window.confirm ile soruluyordu, burada bir
-/// Toggle olarak — deductedFromStock sadece bilgi amaçlı bir bayrak,
-/// backend gerçekten stok düşmüyor (bkz. electron/db.js addSale).
+/// mü?" sorusu desktop'ta window.confirm ile soruluyordu, burada bir Toggle
+/// olarak. DİKKAT: deductedFromStock, stockItemId'si olan (barkodla eklenen)
+/// satırlar için backend'de GERÇEKTEN stok düşüyor (bkz. electron/handlers.js
+/// addSale — db.js'teki aynı isimli fonksiyonun aksine, bu üstteki katman
+/// önce updateStockItem çağırıyor). Elle yazılan satırların stockItemId'si
+/// olmadığı için onlar için hâlâ sadece bilgi amaçlı.
 struct QuickSaleView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -53,7 +56,7 @@ struct QuickSaleView: View {
             Section {
                 Toggle("Ürünler stoktan düşülsün mü?", isOn: $deductFromStock)
             } footer: {
-                Text("Bu sadece bir bilgi bayrağıdır — miktarı Stok sekmesinden ayrıca güncellemeniz gerekir.")
+                Text("Açıksa, barkodla eklenen ürünlerin stok miktarı gerçekten düşülür. Elle yazılan ürünler için bu sadece bilgi amaçlıdır — miktarı Stok sekmesinden ayrıca güncellemeniz gerekir.")
             }
             Section("Toplam") {
                 LabeledContent("Ara Toplam", value: totals.araToplam.formatted(.currency(code: "TRY")))
@@ -154,6 +157,14 @@ struct QuickSaleView: View {
             )
             struct SaleResponse: Decodable { let id: String }
             let _: SaleResponse = try await APIClient.shared.post("/sales", body: body)
+            if deductFromStock {
+                for item in validItems {
+                    guard let stockId = item.stockItemId else { continue }
+                    let all = try? await StockCache.shared.all()
+                    let current = all?.first { $0.id == stockId }?.quantity ?? 0
+                    await StockCache.shared.invalidate(id: stockId, newQuantity: max(0, current - (item.qty ?? 0)))
+                }
+            }
             dismiss()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Satış kaydedilemedi."
