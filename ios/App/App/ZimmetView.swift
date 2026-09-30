@@ -7,6 +7,7 @@ struct ZimmetListView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var showCreate = false
+    @State private var reconcileTarget: PartCheckout?
 
     var body: some View {
         List {
@@ -19,15 +20,29 @@ struct ZimmetListView: View {
             } else {
                 ForEach(sorted) { c in
                     let item = c.stockItemId.flatMap { stockById[$0] }
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item?.name ?? item?.code ?? "(ürün)")
-                            Text("\(techNames[c.technicianId ?? ""] ?? "—") · \(c.date ?? "")")
-                                .font(.caption).foregroundStyle(.secondary)
+                    let isOutstanding = c.status == "outstanding"
+                    Button {
+                        if isOutstanding { reconcileTarget = c }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item?.name ?? item?.code ?? "(ürün)").foregroundStyle(.primary)
+                                Text("\(techNames[c.technicianId ?? ""] ?? "—") · \(c.date ?? "")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(Int(c.qtyTaken ?? 0)) \(item?.unit ?? "adet")").font(.subheadline.bold())
+                            if isOutstanding {
+                                Text("Mutabakat Bekliyor")
+                                    .font(.caption2.bold()).foregroundStyle(.white)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(.orange, in: Capsule())
+                            } else {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            }
                         }
-                        Spacer()
-                        Text("\(Int(c.qtyTaken ?? 0)) \(item?.unit ?? "adet")").font(.subheadline.bold())
                     }
+                    .disabled(!isOutstanding)
                 }
             }
         }
@@ -40,6 +55,15 @@ struct ZimmetListView: View {
         .sheet(isPresented: $showCreate) {
             NavigationStack {
                 ZimmetCreateView(onCreated: { Task { await load() } })
+            }
+        }
+        .sheet(item: $reconcileTarget) { checkout in
+            NavigationStack {
+                ZimmetReconcileView(
+                    checkout: checkout,
+                    itemName: checkout.stockItemId.flatMap { stockById[$0] }?.name ?? "(ürün)",
+                    onDone: { Task { await load() } }
+                )
             }
         }
         .task { await load() }
@@ -177,6 +201,87 @@ struct ZimmetCreateView: View {
             dismiss()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Zimmetlenemedi."
+        }
+    }
+}
+
+/// Desktop'taki reconcilePartCheckout ile aynı kural: kullanılan + iade
+/// edilen + arabada depolanan miktarın toplamı, alınan miktara eşit olmalı.
+struct ZimmetReconcileView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    let checkout: PartCheckout
+    let itemName: String
+    let onDone: () -> Void
+
+    @State private var qtyUsed: Int = 0
+    @State private var qtyReturned: Int = 0
+    @State private var qtyStoredInVehicle: Int = 0
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    private var taken: Int { Int(checkout.qtyTaken ?? 0) }
+    private var remaining: Int { taken - qtyUsed - qtyReturned - qtyStoredInVehicle }
+
+    var body: some View {
+        Form {
+            Section {
+                Text(itemName).font(.headline)
+                Text("Alınan: \(taken) adet").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Section("Kullanılan / İade / Araçta") {
+                Stepper("Kullanılan: \(qtyUsed)", value: $qtyUsed, in: 0...taken)
+                Stepper("İade Edilen: \(qtyReturned)", value: $qtyReturned, in: 0...taken)
+                Stepper("Araçta Depolanan: \(qtyStoredInVehicle)", value: $qtyStoredInVehicle, in: 0...taken)
+            }
+            Section {
+                LabeledContent("Kalan") {
+                    Text("\(remaining)")
+                        .foregroundStyle(remaining == 0 ? .green : .red)
+                        .fontWeight(.bold)
+                }
+                if remaining != 0 {
+                    Text("Kullanılan + iade edilen + arabada depolanan miktarın toplamı, alınan miktara (\(taken)) eşit olmalı.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+        }
+        .navigationTitle("Mutabakat")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("İptal") { dismiss() }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await submit() }
+                } label: {
+                    if isSaving { ProgressView() } else { Text("Kaydet").bold() }
+                }
+                .disabled(remaining != 0 || isSaving)
+            }
+        }
+    }
+
+    private func submit() async {
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            let body = ReconcileCheckout(
+                qtyUsed: Double(qtyUsed),
+                qtyReturned: Double(qtyReturned),
+                qtyStoredInVehicle: Double(qtyStoredInVehicle),
+                actingUserId: appState.currentUser?.id ?? ""
+            )
+            let _: PartCheckout = try await APIClient.shared.put("/part-checkouts/\(checkout.id)/reconcile", body: body)
+            onDone()
+            dismiss()
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Mutabakat kaydedilemedi."
         }
     }
 }

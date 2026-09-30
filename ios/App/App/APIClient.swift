@@ -19,7 +19,7 @@ enum APIError: LocalizedError {
 actor APIClient {
     static let shared = APIClient()
 
-    private let baseURL = URL(string: "http://192.168.1.129:4173/api")!
+    private let baseURL = URL(string: "http://192.168.1.132:4173/api")!
     private let decoder: JSONDecoder = JSONDecoder()
     private let encoder: JSONEncoder = JSONEncoder()
 

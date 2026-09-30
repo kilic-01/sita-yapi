@@ -175,8 +175,24 @@ func computeQuoteTotals(_ items: [QuoteItem]) -> QuoteTotals {
 struct PendingPart: Codable, Identifiable {
     let id: String
     var customerName: String?
+    var customerPhone: String?
     var description: String?
     var status: String?
+    var orderedAt: String?
+    var arrivedAt: String?
+}
+
+struct NewPendingPart: Encodable {
+    var customerName: String
+    var customerPhone: String
+    var description: String
+    var orderedAt: String
+    var actingUserId: String
+}
+
+struct StatusUpdate: Encodable {
+    var status: String
+    var actingUserId: String
 }
 
 struct IncomingOrder: Codable, Identifiable {
@@ -184,6 +200,41 @@ struct IncomingOrder: Codable, Identifiable {
     var customerName: String?
     var orderNo: String?
     var status: String?
+    var orderDate: String?
+    var notes: String?
+}
+
+struct NewIncomingOrder: Encodable {
+    var customerName: String
+    var orderDate: String
+    var notes: String
+    var actingUserId: String
+}
+
+struct SaleItem: Codable {
+    var stockItemId: String?
+    var code: String
+    var name: String
+    var qty: Double
+    var unitPrice: Double
+    var discountRate: Double
+}
+
+struct NewSale: Encodable {
+    var items: [SaleItem]
+    var generalDiscountRate: Double
+    var subtotal: Double
+    var vatTotal: Double
+    var total: Double
+    var deductedFromStock: Bool
+    var actingUserId: String
+}
+
+struct ReconcileCheckout: Encodable {
+    var qtyUsed: Double
+    var qtyReturned: Double
+    var qtyStoredInVehicle: Double
+    var actingUserId: String
 }
 
 struct Depot: Codable, Identifiable {

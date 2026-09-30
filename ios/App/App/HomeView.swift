@@ -19,6 +19,7 @@ struct HomeView: View {
     @State private var technicians: [Technician] = []
     @State private var lowStockItems: [StockItem] = []
     @State private var showCreateAppointment = false
+    @State private var showQuickSale = false
 
     var body: some View {
         NavigationStack {
@@ -118,8 +119,15 @@ struct HomeView: View {
             .navigationTitle("Sita Yapı")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showCreateAppointment = true } label: {
-                        Label("Randevu Oluştur", systemImage: "calendar.badge.plus")
+                    Menu {
+                        Button { showCreateAppointment = true } label: {
+                            Label("Randevu Oluştur", systemImage: "calendar.badge.plus")
+                        }
+                        Button { showQuickSale = true } label: {
+                            Label("Satış", systemImage: "turkishlirasign.circle")
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -144,6 +152,11 @@ struct HomeView: View {
             .sheet(isPresented: $showCreateAppointment) {
                 NavigationStack {
                     AppointmentCreateView(onCreated: { showCreateAppointment = false; Task { await load() } })
+                }
+            }
+            .sheet(isPresented: $showQuickSale) {
+                NavigationStack {
+                    QuickSaleView()
                 }
             }
             .task { await load() }

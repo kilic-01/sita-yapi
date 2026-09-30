@@ -64,13 +64,9 @@ struct MoreView: View {
                 case .quotes:
                     QuoteListView()
                 case .pendingParts:
-                    GenericListView(title: "Bekleyen Parçalar", fetch: { try await APIClient.shared.get("/pending-parts") as [PendingPart] }) { (p: PendingPart) in
-                        (p.customerName ?? "(isimsiz)", p.description ?? "", p.status)
-                    }
+                    PendingPartsView()
                 case .incomingOrders:
-                    GenericListView(title: "Gelen Siparişler", fetch: { try await APIClient.shared.get("/incoming-orders") as [IncomingOrder] }) { (o: IncomingOrder) in
-                        (o.customerName ?? o.orderNo ?? "(isimsiz)", o.orderNo ?? "", o.status)
-                    }
+                    IncomingOrdersView()
                 case .depots:
                     GenericListView(title: "Depolar", fetch: { try await APIClient.shared.get("/depots") as [Depot] }) { (d: Depot) in
                         (d.name ?? "(isimsiz)", "", nil)
