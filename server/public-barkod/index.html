@@ -81,7 +81,7 @@
   .sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
   label { display: block; font-size: 0.85rem; margin-bottom: 1rem; text-align: left; color: var(--text); }
   label span { display: block; margin-bottom: 0.3rem; font-weight: 600; }
-  input {
+  input, select {
     width: 100%; padding: 0.7rem 0.9rem; border-radius: 6px; border: 1px solid var(--border);
     font-size: 1rem; background: var(--card-bg); color: var(--text); font-family: inherit;
   }
@@ -126,7 +126,9 @@
      (bkz. animateNav/edge-swipe) alttaki görünmesin diye her ekranın kendi
      zemini olsun. */
   #hubView, #stockView, #foundView,
-  #appointmentsListView, #appointmentDetailView { background: var(--bg); }
+  #appointmentsListView, #appointmentDetailView,
+  #moreHubView, #genericListView, #zimmetListView, #zimmetCreateView,
+  #messagesContactsView, #messagesChatView { background: var(--bg); }
 
   /* ---- Apple Ayarlar tarzı gruplu liste: tek yuvarlatılmış kapsayıcı,
      satırlar arasında ince ayraç, renkli ikon rozetleri. ---- */
@@ -225,7 +227,63 @@
     padding: 0.55rem 0.4rem; font-size: 0.66rem; font-weight: 600; transition: color 0.15s ease;
   }
   .tab-btn.active { color: var(--accent); }
-  .tab-icon { display: flex; }
+  .tab-icon { display: flex; position: relative; }
+  .tab-dot {
+    position: absolute; top: -2px; right: -4px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger); border: 1.5px solid var(--card-bg);
+  }
+
+  /* ---- Mesajlar: kişi listesi rozeti + sohbet baloncukları ---- */
+  .contact-avatar {
+    width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; flex-shrink: 0;
+  }
+  .unread-badge {
+    background: var(--danger); color: #fff; font-size: 0.72rem; font-weight: 700;
+    min-width: 20px; height: 20px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    padding: 0 0.35rem; flex-shrink: 0;
+  }
+  .chat-scroll { display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.5rem; }
+  .bubble {
+    max-width: 78%; padding: 0.55rem 0.85rem; border-radius: 16px; font-size: 0.92rem; line-height: 1.35;
+    word-wrap: break-word;
+  }
+  .bubble.mine { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.theirs { align-self: flex-start; background: var(--card-bg); color: var(--text); box-shadow: var(--shadow); border-bottom-left-radius: 4px; }
+  .bubble time { display: block; font-size: 0.65rem; opacity: 0.65; margin-top: 0.2rem; }
+  .chat-composer {
+    position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 0.5rem; align-items: flex-end;
+    padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    background: var(--header-bg); border-top: 1px solid var(--header-border);
+  }
+  .chat-composer textarea {
+    flex: 1; resize: none; max-height: 100px; border-radius: 18px; border: 1px solid var(--border);
+    padding: 0.55rem 0.9rem; font: inherit; font-size: 0.95rem; background: var(--card-bg); color: var(--text);
+  }
+  .chat-composer textarea:focus { outline: none; }
+  .chat-send-btn {
+    width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .chat-send-btn:disabled { opacity: 0.4; }
+
+  /* ---- Genel salt-okunur liste ekranları (Daha Fazla) için basit satır ---- */
+  .plain-row { padding: 0.85rem 0; border-top: 1px solid var(--border); }
+  .plain-row:first-child { border-top: none; }
+  .plain-row .plain-title { font-weight: 600; font-size: 0.96rem; }
+  .plain-row .plain-sub { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.15rem; }
+  .plain-row .plain-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  .status-pill {
+    display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); flex-shrink: 0;
+  }
+
+  /* ---- Zimmet: yüzen "+" oluşturma butonu ---- */
+  .fab {
+    position: fixed; right: 20px; bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #fff; border: none;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,0.25); z-index: 30;
+  }
 </style>
 </head>
 <body>
@@ -331,6 +389,128 @@
       </div>
     </div>
 
+    <div id="messagesContactsView" hidden>
+      <div class="large-title">Mesajlar</div>
+      <div id="messagesContactsBusy" class="sub">Yükleniyor…</div>
+      <div id="messagesContactsEmpty" class="sub" hidden>Mesajlaşılacak kimse yok.</div>
+      <div id="messagesContactsList" class="grouped-list" hidden></div>
+    </div>
+
+    <div id="messagesChatView" hidden>
+      <div class="nav-bar"><button class="nav-back" id="backFromChatBtn" type="button">‹ Mesajlar</button></div>
+      <div class="large-title" id="chatWithName" style="margin-bottom:0.8rem;"></div>
+      <div id="chatMessages" class="chat-scroll"></div>
+      <div class="chat-composer">
+        <textarea id="chatInput" rows="1" placeholder="Mesaj yazın…"></textarea>
+        <button class="chat-send-btn" id="chatSendBtn" type="button" disabled>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="moreHubView" hidden>
+      <div class="large-title">Daha Fazla</div>
+      <div class="grouped-list">
+        <button class="grouped-row" id="moreZimmetBtn" type="button">
+          <span class="grouped-row-icon" style="background:#5856d6;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
+          <span class="grouped-row-text"><strong>Zimmet</strong><small>Parça zimmetleme</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="vehicles" type="button">
+          <span class="grouped-row-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l1-5a2 2 0 0 1 2-1.6h10A2 2 0 0 1 19 11l1 5"/><rect x="3" y="16" width="18" height="4" rx="1.5"/><circle cx="7.5" cy="20" r="1.3"/><circle cx="16.5" cy="20" r="1.3"/></svg></span>
+          <span class="grouped-row-text"><strong>Araçlar</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="fuel" type="button">
+          <span class="grouped-row-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M4 21h10M14 10h2a2 2 0 0 1 2 2v3a1.5 1.5 0 0 0 3 0V8l-2-2"/><path d="M7 7h5"/></svg></span>
+          <span class="grouped-row-text"><strong>Yakıt</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="employees" type="button">
+          <span class="grouped-row-icon" style="background:#34c759;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.3"/><path d="M15.5 13.2c2.5.4 4.5 2.5 4.5 5.3"/></svg></span>
+          <span class="grouped-row-text"><strong>Çalışanlar</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="holidays" type="button">
+          <span class="grouped-row-icon" style="background:#ff3b30;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></svg></span>
+          <span class="grouped-row-text"><strong>Tatiller</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+      </div>
+      <div class="grouped-list" style="margin-top:1.2rem;">
+        <button class="grouped-row" data-list="quotes" type="button">
+          <span class="grouped-row-icon" style="background:#8e8e93;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v5h5M8 12h8M8 16h5"/></svg></span>
+          <span class="grouped-row-text"><strong>Teklifler</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="suppliers" type="button">
+          <span class="grouped-row-icon" style="background:#5856d6;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18" rx="1"/><path d="M14 8h6v13h-6"/><path d="M7 7h.01M11 7h.01M7 11h.01M11 11h.01M7 15h.01M11 15h.01"/></svg></span>
+          <span class="grouped-row-text"><strong>Tedarikçiler</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="pendingParts" type="button">
+          <span class="grouped-row-icon" style="background:#ff9500;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
+          <span class="grouped-row-text"><strong>Bekleyen Parçalar</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="incomingOrders" type="button">
+          <span class="grouped-row-icon" style="background:#007aff;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4l2 3h4l2-3h4"/><path d="M4 12 5.5 5A2 2 0 0 1 7.4 3.5h9.2A2 2 0 0 1 18.5 5L20 12v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6Z"/></svg></span>
+          <span class="grouped-row-text"><strong>Gelen Siparişler</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="depots" type="button">
+          <span class="grouped-row-icon" style="background:#8e8e93;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 13h4"/></svg></span>
+          <span class="grouped-row-text"><strong>Depolar</strong></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+        <button class="grouped-row" data-list="activityLog" type="button">
+          <span class="grouped-row-icon" style="background:#34c759;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M14 7h6v6"/></svg></span>
+          <span class="grouped-row-text"><strong>Aktivite</strong><small>Sadece yönetici hesapları görebilir</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="genericListView" hidden>
+      <div class="nav-bar"><button class="nav-back" id="backFromGenericBtn" type="button">‹ Daha Fazla</button></div>
+      <div class="large-title" id="genericListTitle"></div>
+      <div id="genericListBusy" class="sub">Yükleniyor…</div>
+      <div id="genericListEmpty" class="sub" hidden>Kayıt yok.</div>
+      <div id="genericListError" class="error" hidden></div>
+      <div id="genericListContent" class="grouped-list" style="display:block;"></div>
+    </div>
+
+    <div id="zimmetListView" hidden>
+      <div class="nav-bar"><button class="nav-back" id="backFromZimmetListBtn" type="button">‹ Daha Fazla</button></div>
+      <div class="large-title">Zimmet</div>
+      <div id="zimmetListBusy" class="sub">Yükleniyor…</div>
+      <div id="zimmetListEmpty" class="sub" hidden>Zimmet kaydı yok.</div>
+      <div id="zimmetList" class="grouped-list" style="display:block;"></div>
+      <button class="fab" id="zimmetAddBtn" type="button" aria-label="Yeni zimmet">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+
+    <div id="zimmetCreateView" hidden>
+      <div class="nav-bar"><button class="nav-back" id="zimmetCreateCancelBtn" type="button">‹ Zimmet</button></div>
+      <div class="large-title">Yeni Zimmet</div>
+      <label><span>Teknisyen</span><select id="zimmetTechSelect"></select></label>
+      <div class="search-bar">
+        <span class="search-icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+        <input id="zimmetPartSearch" placeholder="Parça ara (kod veya isim)" autocomplete="off" />
+      </div>
+      <div id="zimmetPartResults" class="grouped-list" hidden></div>
+      <div id="zimmetSelectedPart" class="card" hidden style="margin-top:1rem;">
+        <div class="name" id="zimmetSelectedPartName"></div>
+        <div class="qty-row">
+          <button type="button" id="zimmetQtyMinus">−</button>
+          <input id="zimmetQtyInput" type="number" inputmode="numeric" value="1" />
+          <button type="button" id="zimmetQtyPlus">+</button>
+        </div>
+      </div>
+      <button class="primary" id="zimmetSubmitBtn" type="button" disabled style="margin-top:1.2rem;">Zimmetle</button>
+    </div>
+
     <div class="error" id="mainError" hidden></div>
   </div>
   <nav class="tab-bar" id="tabBar" hidden>
@@ -345,6 +525,14 @@
     <button class="tab-btn" id="tabStockBtn" type="button">
       <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></svg></span>
       <span>Stok</span>
+    </button>
+    <button class="tab-btn" id="tabMessagesBtn" type="button">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.4 8.4 8.3 8.3 0 0 1-3.8-.9L3 21l1.9-5.7a8.3 8.3 0 0 1-.9-3.8A8.4 8.4 0 0 1 12.6 3h.1a8.3 8.3 0 0 1 8.3 8.3v.2Z"/></svg><span class="tab-dot" id="messagesTabDot" hidden></span></span>
+      <span>Mesajlar</span>
+    </button>
+    <button class="tab-btn" id="tabMoreBtn" type="button">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+      <span>Daha Fazla</span>
     </button>
   </nav>
 </div>
@@ -380,12 +568,26 @@ function money(n) {
   return "₺" + (Number(n) || 0).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
 }
 
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 async function api(path, opts) {
   const res = await fetch("/api" + path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (!res.ok) throw new Error("Sunucu hatası (" + res.status + ")");
+  if (!res.ok) {
+    // Sunucu tarafındaki gerçek hata mesajını (ör. "sadece yönetici
+    // hesapları görebilir") göstermek, düz bir durum koduna göre çok daha
+    // faydalı — varsa onu kullanıyoruz.
+    let msg = "Sunucu hatası (" + res.status + ")";
+    try {
+      const body = await res.json();
+      if (body?.message) msg = body.message;
+    } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -397,6 +599,12 @@ const SECTIONS = [
   "foundView",
   "appointmentsListView",
   "appointmentDetailView",
+  "messagesContactsView",
+  "messagesChatView",
+  "moreHubView",
+  "genericListView",
+  "zimmetListView",
+  "zimmetCreateView",
 ];
 
 // ---- Apple tarzı push/pop geçişi + kenardan kaydırarak geri gitme ----
@@ -407,6 +615,10 @@ const SECTIONS = [
 const NAV_PARENT = {
   appointmentDetailView: "appointmentsListView",
   foundView: "stockView",
+  messagesChatView: "messagesContactsView",
+  genericListView: "moreHubView",
+  zimmetListView: "moreHubView",
+  zimmetCreateView: "zimmetListView",
 };
 // Alt gezinme çubuğundaki hangi sekmenin, hangi ekranlar gösterilirken
 // "aktif" görünmesi gerektiği — bir sekmenin içine dokunulup derine
@@ -415,12 +627,19 @@ const SECTION_TAB = {
   hubView: "home",
   stockView: "stock", foundView: "stock",
   appointmentsListView: "appointments", appointmentDetailView: "appointments",
+  messagesContactsView: "messages", messagesChatView: "messages",
+  moreHubView: "more", genericListView: "more", zimmetListView: "more", zimmetCreateView: "more",
 };
 function updateTabBar(sectionId) {
   const activeTab = SECTION_TAB[sectionId];
   el("tabHomeBtn").classList.toggle("active", activeTab === "home");
   el("tabAppointmentsBtn").classList.toggle("active", activeTab === "appointments");
   el("tabStockBtn").classList.toggle("active", activeTab === "stock");
+  el("tabMessagesBtn").classList.toggle("active", activeTab === "messages");
+  el("tabMoreBtn").classList.toggle("active", activeTab === "more");
+  // Sohbet ekranında klavye + gönderme çubuğuna yer açmak için yüzen sekme
+  // çubuğunu geçici olarak gizliyoruz (iOS Mesajlar'ın kendi davranışı gibi).
+  el("tabBar").style.display = sectionId === "messagesChatView" ? "none" : "flex";
 }
 let currentSectionId = "hubView";
 
@@ -719,6 +938,8 @@ el("tabAppointmentsBtn").addEventListener("click", () => {
   el("apptDate").value = todayISO();
   loadAppointments(todayISO());
 });
+el("tabMessagesBtn").addEventListener("click", loadMessagesContacts);
+el("tabMoreBtn").addEventListener("click", () => showSection("moreHubView"));
 
 // ---- Stok arama ----
 let stockSearchSeq = 0;
@@ -867,6 +1088,346 @@ el("apptDate").addEventListener("change", () => loadAppointments(el("apptDate").
 el("backToListBtn").addEventListener("click", () => showSection("appointmentsListView"));
 el("apptMarkCompletedBtn").addEventListener("click", () => updateAppointmentStatus("completed"));
 el("apptMarkPendingBtn").addEventListener("click", () => updateAppointmentStatus("pending"));
+
+// ---- Mesajlar (ofis çalışanları arası birebir sohbet) ----
+async function loadMessagesContacts() {
+  showSection("messagesContactsView");
+  el("messagesContactsBusy").hidden = false;
+  el("messagesContactsEmpty").hidden = true;
+  el("messagesContactsList").hidden = true;
+  try {
+    const [techs, staff, msgs] = await Promise.all([
+      api("/technicians"),
+      api("/office-staff"),
+      api("/messages/" + encodeURIComponent(state.user.id)),
+    ]);
+    const contacts = [...techs, ...staff].filter((p) => p.id !== state.user.id);
+    el("messagesContactsBusy").hidden = true;
+    updateMessagesTabDot(msgs);
+    if (contacts.length === 0) {
+      el("messagesContactsEmpty").hidden = false;
+      return;
+    }
+    el("messagesContactsList").hidden = false;
+    el("messagesContactsList").innerHTML = contacts
+      .map((c, i) => {
+        const unread = msgs.filter((m) => m.senderId === c.id && m.recipientId === state.user.id && !m.readAt).length;
+        const initial = (c.name || "?").trim().charAt(0).toUpperCase();
+        return `<button class="grouped-row" type="button" data-idx="${i}">
+          <span class="contact-avatar">${escapeHtml(initial)}</span>
+          <span class="grouped-row-text"><strong>${escapeHtml(c.name || "(isimsiz)")}</strong></span>
+          ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : `<span class="grouped-row-chevron">›</span>`}
+        </button>`;
+      })
+      .join("");
+    el("messagesContactsList").querySelectorAll("[data-idx]").forEach((row) => {
+      row.addEventListener("click", () => openChat(contacts[Number(row.dataset.idx)]));
+    });
+  } catch (err) {
+    el("messagesContactsBusy").hidden = true;
+    showMainError(err.message || "Kişiler yüklenemedi.");
+  }
+}
+
+function updateMessagesTabDot(msgs) {
+  const hasUnread = msgs.some((m) => m.recipientId === state.user.id && !m.readAt);
+  el("messagesTabDot").hidden = !hasUnread;
+}
+
+let currentChatContact = null;
+async function openChat(contact) {
+  currentChatContact = contact;
+  el("chatWithName").textContent = contact.name || "(isimsiz)";
+  el("chatMessages").innerHTML = "";
+  el("chatInput").value = "";
+  el("chatSendBtn").disabled = true;
+  showSection("messagesChatView");
+  try {
+    await api("/messages/read", {
+      method: "PUT",
+      body: JSON.stringify({ currentUserId: state.user.id, otherUserId: contact.id }),
+    });
+    const msgs = await api("/messages/" + encodeURIComponent(state.user.id));
+    const thread = msgs.filter(
+      (m) => (m.senderId === contact.id && m.recipientId === state.user.id) || (m.senderId === state.user.id && m.recipientId === contact.id)
+    );
+    renderChat(thread);
+  } catch (err) {
+    showMainError(err.message || "Sohbet yüklenemedi.");
+  }
+}
+
+function renderChat(thread) {
+  el("chatMessages").innerHTML = thread
+    .map((m) => {
+      const mine = m.senderId === state.user.id;
+      const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : "";
+      return `<div class="bubble ${mine ? "mine" : "theirs"}">${escapeHtml(m.body)}<time>${time}</time></div>`;
+    })
+    .join("");
+  el("chatMessages").lastElementChild?.scrollIntoView({ block: "end" });
+}
+
+el("backFromChatBtn").addEventListener("click", loadMessagesContacts);
+el("chatInput").addEventListener("input", () => {
+  el("chatSendBtn").disabled = el("chatInput").value.trim().length === 0;
+});
+el("chatSendBtn").addEventListener("click", async () => {
+  const body = el("chatInput").value.trim();
+  if (!body || !currentChatContact) return;
+  el("chatSendBtn").disabled = true;
+  try {
+    await api("/messages", {
+      method: "POST",
+      body: JSON.stringify({ senderId: state.user.id, recipientId: currentChatContact.id, body }),
+    });
+    await openChat(currentChatContact);
+  } catch (err) {
+    showMainError(err.message || "Gönderilemedi.");
+  } finally {
+    el("chatSendBtn").disabled = el("chatInput").value.trim().length === 0;
+  }
+});
+
+// ---- Daha Fazla: salt-okunur özellik listeleri ----
+// Masaüstündeki karşılıklarının tam CRUD'unu değil (bunların çoğu — çalışan/
+// araç/tatil listeleri — masaüstünde de sadece yönetici hesaplarına açık),
+// sahadaki bir kullanıcının ihtiyaç duyacağı görünümü sağlıyoruz: hızlıca
+// bakıp çıkacağı bir liste. Her girişteki fetch/render çifti, ortak
+// openGenericList() motorunu besliyor — 10 ayrı ekran yerine tek bir şablon.
+const GENERIC_LISTS = {
+  vehicles: {
+    title: "Araçlar",
+    fetch: () => api("/vehicles"),
+    render: (v) => ({ title: v.plate || "(plakasız)", sub: [v.brand, v.model, v.year].filter(Boolean).join(" ") || "—" }),
+  },
+  fuel: {
+    title: "Yakıt",
+    fetch: async () => (await api("/fuel")).sort((a, b) => new Date(b.processDate) - new Date(a.processDate)).slice(0, 50),
+    render: (f) => ({
+      title: f.plate || "—",
+      sub: [f.stationName, f.stationCity].filter(Boolean).join(", ") + " · " + new Date(f.processDate).toLocaleDateString("tr-TR"),
+      meta: money(f.amount),
+    }),
+  },
+  employees: {
+    title: "Çalışanlar",
+    fetch: async () => {
+      const [techs, staff] = await Promise.all([api("/technicians"), api("/office-staff")]);
+      return [...techs.map((t) => ({ ...t, _role: "Teknisyen" })), ...staff.map((s) => ({ ...s, _role: "Ofis" }))];
+    },
+    render: (e) => ({ title: e.name || "(isimsiz)", sub: [e._role, e.phone].filter(Boolean).join(" · ") }),
+  },
+  holidays: {
+    title: "Tatiller",
+    fetch: () => api("/holidays"),
+    render: (h) => ({ title: h.name || "(isimsiz)", sub: h.startDate === h.endDate ? h.startDate : `${h.startDate} – ${h.endDate}` }),
+  },
+  quotes: {
+    title: "Teklifler",
+    fetch: () => api("/quotes"),
+    render: (q) => ({ title: q.customerName || "(isimsiz)", sub: [q.quoteNo, q.quoteDate].filter(Boolean).join(" · ") }),
+  },
+  suppliers: {
+    title: "Tedarikçiler",
+    fetch: () => api("/suppliers"),
+    render: (s) => ({ title: s.name || "(isimsiz)", sub: s.url || "" }),
+  },
+  pendingParts: {
+    title: "Bekleyen Parçalar",
+    fetch: () => api("/pending-parts"),
+    render: (p) => ({ title: p.customerName || "(isimsiz)", sub: p.description || "", status: p.status }),
+  },
+  incomingOrders: {
+    title: "Gelen Siparişler",
+    fetch: () => api("/incoming-orders"),
+    render: (o) => ({ title: o.customerName || o.orderNo || "(isimsiz)", sub: o.orderNo || "", status: o.status }),
+  },
+  depots: {
+    title: "Depolar",
+    fetch: () => api("/depots"),
+    render: (d) => ({ title: d.name || "(isimsiz)" }),
+  },
+  activityLog: {
+    title: "Aktivite",
+    fetch: () => api("/activity-log?actingUserId=" + encodeURIComponent(state.user.id)),
+    render: (a) => ({ title: a.description || a.action || a.type || "İşlem", sub: a.createdAt ? new Date(a.createdAt).toLocaleString("tr-TR") : "" }),
+  },
+};
+
+function renderGenericRow(item, key) {
+  const r = GENERIC_LISTS[key].render(item);
+  return `<div class="plain-row">
+    <div class="plain-meta">
+      <div>
+        <div class="plain-title">${escapeHtml(r.title)}</div>
+        ${r.sub ? `<div class="plain-sub">${escapeHtml(r.sub)}</div>` : ""}
+      </div>
+      ${r.meta ? `<strong>${escapeHtml(r.meta)}</strong>` : r.status ? `<span class="status-pill">${escapeHtml(r.status)}</span>` : ""}
+    </div>
+  </div>`;
+}
+
+let currentGenericKey = null;
+async function openGenericList(key) {
+  currentGenericKey = key;
+  const cfg = GENERIC_LISTS[key];
+  el("genericListTitle").textContent = cfg.title;
+  el("genericListBusy").hidden = false;
+  el("genericListEmpty").hidden = true;
+  el("genericListError").hidden = true;
+  el("genericListContent").innerHTML = "";
+  showSection("genericListView");
+  try {
+    const items = await cfg.fetch();
+    if (currentGenericKey !== key) return; // kullanıcı bu arada başka bir listeye geçti
+    el("genericListBusy").hidden = true;
+    if (!items || items.length === 0) {
+      el("genericListEmpty").hidden = false;
+      return;
+    }
+    el("genericListContent").innerHTML = items.map((it) => renderGenericRow(it, key)).join("");
+  } catch (err) {
+    if (currentGenericKey !== key) return;
+    el("genericListBusy").hidden = true;
+    el("genericListError").hidden = false;
+    el("genericListError").textContent = err.message || "Yüklenemedi.";
+  }
+}
+
+el("moreHubView").querySelectorAll("[data-list]").forEach((row) => {
+  row.addEventListener("click", () => openGenericList(row.dataset.list));
+});
+el("backFromGenericBtn").addEventListener("click", () => showSection("moreHubView"));
+
+// ---- Zimmet (parça zimmetleme) ----
+async function loadZimmetList() {
+  showSection("zimmetListView");
+  el("zimmetListBusy").hidden = false;
+  el("zimmetListEmpty").hidden = true;
+  el("zimmetList").innerHTML = "";
+  try {
+    const [checkouts, techs, stock] = await Promise.all([api("/part-checkouts"), api("/technicians"), getAllStock()]);
+    el("zimmetListBusy").hidden = true;
+    const techById = Object.fromEntries(techs.map((t) => [t.id, t.name]));
+    const stockById = Object.fromEntries(stock.map((s) => [s.id, s]));
+    const sorted = [...checkouts].sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0)).slice(0, 50);
+    if (sorted.length === 0) {
+      el("zimmetListEmpty").hidden = false;
+      return;
+    }
+    el("zimmetList").innerHTML = sorted
+      .map((c) => {
+        const item = stockById[c.stockItemId];
+        return `<div class="plain-row">
+          <div class="plain-meta">
+            <div>
+              <div class="plain-title">${escapeHtml(item?.name || item?.code || "(ürün)")}</div>
+              <div class="plain-sub">${escapeHtml(techById[c.technicianId] || "—")} · ${escapeHtml(c.date || "")}</div>
+            </div>
+            <strong>${c.qtyTaken ?? 0} ${escapeHtml(item?.unit || "adet")}</strong>
+          </div>
+        </div>`;
+      })
+      .join("");
+  } catch (err) {
+    el("zimmetListBusy").hidden = true;
+    showMainError(err.message || "Zimmet listesi yüklenemedi.");
+  }
+}
+
+let zimmetTechsLoaded = false;
+let zimmetSelectedItem = null;
+async function openZimmetCreate() {
+  showSection("zimmetCreateView");
+  el("zimmetPartSearch").value = "";
+  el("zimmetPartResults").hidden = true;
+  el("zimmetSelectedPart").hidden = true;
+  zimmetSelectedItem = null;
+  el("zimmetSubmitBtn").disabled = true;
+  if (!zimmetTechsLoaded) {
+    try {
+      const techs = (await api("/technicians")).filter((t) => t.assignable !== false);
+      el("zimmetTechSelect").innerHTML = techs.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+      zimmetTechsLoaded = true;
+    } catch (err) {
+      showMainError(err.message || "Teknisyenler yüklenemedi.");
+    }
+  }
+}
+
+let zimmetSearchTimer = null;
+el("zimmetPartSearch").addEventListener("input", () => {
+  clearTimeout(zimmetSearchTimer);
+  const term = el("zimmetPartSearch").value.trim().toLowerCase();
+  if (term.length < 2) {
+    el("zimmetPartResults").hidden = true;
+    return;
+  }
+  zimmetSearchTimer = setTimeout(async () => {
+    const all = await getAllStock();
+    const matches = all
+      .filter((s) => (s.code || "").toLowerCase().includes(term) || (s.name || "").toLowerCase().includes(term))
+      .slice(0, 15);
+    el("zimmetPartResults").hidden = matches.length === 0;
+    el("zimmetPartResults").innerHTML = matches
+      .map(
+        (s, i) => `<button class="grouped-row" type="button" data-idx="${i}">
+          <span class="grouped-row-text"><strong>${escapeHtml(s.name || s.code || "(isimsiz)")}</strong><small>${escapeHtml(s.code || "")} · ${s.quantity ?? 0} ${escapeHtml(s.unit || "adet")}</small></span>
+          <span class="grouped-row-chevron">›</span>
+        </button>`
+      )
+      .join("");
+    el("zimmetPartResults").querySelectorAll("[data-idx]").forEach((row) => {
+      row.addEventListener("click", () => {
+        zimmetSelectedItem = matches[Number(row.dataset.idx)];
+        el("zimmetSelectedPartName").textContent = zimmetSelectedItem.name || zimmetSelectedItem.code || "(isimsiz)";
+        el("zimmetQtyInput").value = 1;
+        el("zimmetSelectedPart").hidden = false;
+        el("zimmetPartResults").hidden = true;
+        el("zimmetPartSearch").value = "";
+        el("zimmetSubmitBtn").disabled = false;
+      });
+    });
+  }, 250);
+});
+el("zimmetQtyMinus").addEventListener("click", () => {
+  el("zimmetQtyInput").value = Math.max(1, Number(el("zimmetQtyInput").value || 1) - 1);
+});
+el("zimmetQtyPlus").addEventListener("click", () => {
+  el("zimmetQtyInput").value = Number(el("zimmetQtyInput").value || 1) + 1;
+});
+el("zimmetSubmitBtn").addEventListener("click", async () => {
+  if (!zimmetSelectedItem) return;
+  const qty = Number(el("zimmetQtyInput").value);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    showMainError("Geçerli bir miktar girin.");
+    return;
+  }
+  el("zimmetSubmitBtn").disabled = true;
+  try {
+    await api("/part-checkouts", {
+      method: "POST",
+      body: JSON.stringify({
+        technicianId: el("zimmetTechSelect").value,
+        stockItemId: zimmetSelectedItem.id,
+        date: todayISO(),
+        qtyTaken: qty,
+        actingUserId: state.user.id,
+      }),
+    });
+    invalidateStockCache(zimmetSelectedItem.id, { quantity: Math.max(0, (zimmetSelectedItem.quantity || 0) - qty) });
+    loadZimmetList();
+  } catch (err) {
+    showMainError(err.message || "Zimmetlenemedi.");
+    el("zimmetSubmitBtn").disabled = false;
+  }
+});
+
+el("moreZimmetBtn").addEventListener("click", loadZimmetList);
+el("backFromZimmetListBtn").addEventListener("click", () => showSection("moreHubView"));
+el("zimmetAddBtn").addEventListener("click", openZimmetCreate);
+el("zimmetCreateCancelBtn").addEventListener("click", loadZimmetList);
 
 // ---- Başlangıç ----
 if (state.user) {
