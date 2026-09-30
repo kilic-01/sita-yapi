@@ -67,6 +67,7 @@ struct ZimmetListView: View {
             }
         }
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private var sorted: [PartCheckout] {

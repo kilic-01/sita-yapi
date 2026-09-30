@@ -126,6 +126,13 @@ struct HomeView: View {
     private func editableWidget<Content: View>(_ id: HomeWidgetID, @ViewBuilder content: () -> Content) -> some View {
         ZStack(alignment: .topLeading) {
             content()
+                // Düzenleme modundayken widget'ın kendi dokunma eylemi (ör.
+                // sekmeye geçiş) hâlâ tetiklenebiliyordu — kullanıcı "−"
+                // rozetine değil de gövdeye dokununca istemeden başka bir
+                // sekmeye atılıyordu. Düzenlerken içeriği tamamen dokunmaya
+                // kapatıyoruz, sadece kaldırma rozeti tepki veriyor.
+                .allowsHitTesting(!isEditingWidgets)
+                .opacity(isEditingWidgets ? 0.6 : 1)
             if isEditingWidgets {
                 Button {
                     withAnimation { widgetPrefs.remove(id) }
@@ -439,6 +446,15 @@ actor StockCache {
 
     func all() async throws -> [StockItem] {
         if let cached { return cached }
+        return try await reload()
+    }
+
+    /// Önbellek tek seferlik dolduktan sonra sonsuza dek eskiyordu — başka
+    /// bir cihazdan/masaüstünden yapılan stok değişiklikleri hiç
+    /// yansımıyordu. Liste ekranlarındaki "aşağı çek" (.refreshable) bunu
+    /// çağırıp önbelleği gerçekten tazeliyor.
+    @discardableResult
+    func reload() async throws -> [StockItem] {
         let items: [StockItem] = try await APIClient.shared.get("/stock")
         cached = items
         return items

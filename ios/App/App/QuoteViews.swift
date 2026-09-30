@@ -44,6 +44,7 @@ struct QuoteListView: View {
             }
         }
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {

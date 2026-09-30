@@ -50,6 +50,7 @@ struct PendingPartsView: View {
             }
         }
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private var sorted: [PendingPart] {

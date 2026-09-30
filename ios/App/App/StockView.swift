@@ -74,6 +74,13 @@ struct StockView: View {
                 guard !Task.isCancelled else { return }
                 await search(query)
             }
+            .refreshable {
+                // Önbellek tek seferlik dolduktan sonra hiç yenilenmiyordu —
+                // başka bir cihazdan yapılan stok değişiklikleri asla
+                // yansımazdı. Aşağı çekince gerçekten yeniden çekiyoruz.
+                _ = try? await StockCache.shared.reload()
+                if query.count >= 2 { await search(query) }
+            }
             .navigationDestination(for: StockItem.self) { item in
                 StockItemDetailView(item: item)
             }

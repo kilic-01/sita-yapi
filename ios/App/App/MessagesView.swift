@@ -12,6 +12,7 @@ struct MessagesView: View {
     @State private var contacts: [Contact] = []
     @State private var unreadByContact: [String: Int] = [:]
     @State private var isLoading = false
+    @State private var hasLoadedOnce = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -51,14 +52,24 @@ struct MessagesView: View {
             .navigationDestination(for: Contact.self) { contact in
                 ChatView(contactId: contact.id, contactName: contact.name)
             }
-            .task { await load() }
+            // SwiftUI'nin TabView'i her sekmeyi canlı tuttuğu için, sadece
+            // ilk açılışta çalışan bir .task hiç yenilenmiyordu — başka biri
+            // mesaj gönderdiğinde uygulamayı kapatıp açmadan görülemiyordu.
+            // Bu yüzden sekme açıkken periyodik olarak (ve aşağı çekilince)
+            // sessizce yeniden çekiyoruz.
+            .task {
+                while !Task.isCancelled {
+                    await load()
+                    try? await Task.sleep(for: .seconds(8))
+                }
+            }
+            .refreshable { await load() }
         }
     }
 
     private func load() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
+        if !hasLoadedOnce { isLoading = true }
+        defer { isLoading = false; hasLoadedOnce = true }
         guard let myId = appState.currentUser?.id else { return }
         do {
             // Teknisyen/ofis çalışanı tablolarındaki herkesin giriş hesabı
@@ -74,8 +85,13 @@ struct MessagesView: View {
                 counts[m.senderId, default: 0] += 1
             }
             unreadByContact = counts
+            errorMessage = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kişiler yüklenemedi."
+            // Periyodik yenilemede geçici bir ağ hatası, mevcut listeyi bir
+            // hata ekranıyla değiştirmemeli — sadece ilk yüklemede göster.
+            if !hasLoadedOnce {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kişiler yüklenemedi."
+            }
         }
     }
 }
@@ -125,7 +141,15 @@ struct ChatView: View {
         }
         .navigationTitle(contactName)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        // Karşı taraf sohbet açıkken mesaj gönderirse, bir realtime bağlantı
+        // olmadığı için (bkz. desktop'taki Supabase realtime) bunu görmenin
+        // tek yolu periyodik olarak sessizce yeniden çekmek.
+        .task {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
     }
 
     @ViewBuilder
@@ -152,8 +176,13 @@ struct ChatView: View {
             messages = all.filter {
                 ($0.senderId == contactId && $0.recipientId == myId) || ($0.senderId == myId && $0.recipientId == contactId)
             }
+            errorMessage = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Sohbet yüklenemedi."
+            // Periyodik yenilemede geçici bir hata, zaten açık olan sohbeti
+            // bir hata mesajıyla değiştirmemeli.
+            if messages.isEmpty {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Sohbet yüklenemedi."
+            }
         }
     }
 

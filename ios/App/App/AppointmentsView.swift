@@ -84,6 +84,7 @@ struct AppointmentsView: View {
                 RouteBuilderView()
             }
             .task(id: date) { await load() }
+            .refreshable { await load() }
         }
     }
 
