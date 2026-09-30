@@ -1,14 +1,46 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    /// Uygulama ön plandayken de bildirimin görünmesini sağlar — varsayılan
+    /// davranış (delegate atanmışken) ön plandaki bildirimleri sessizce yutar.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let tokenHex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        guard
+            let data = UserDefaults.standard.data(forKey: "sita-yapi-native-user"),
+            let user = try? JSONDecoder().decode(AppUser.self, from: data)
+        else { return }
+        Task {
+            struct Body: Encodable { let userId: String; let token: String; let platform: String; let actingUserId: String }
+            let _: EmptyResponse? = try? await APIClient.shared.post(
+                "/device-tokens",
+                body: Body(userId: user.id, token: tokenHex, platform: "ios", actingUserId: user.id)
+            )
+        }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        // Simülatörde (gerçek APNs kaydı hiç yapılamaz) ya da bildirim izni
+        // reddedildiğinde burası çağrılır — sessizce yutuyoruz, uygulamanın
+        // geri kalanı bildirimsiz de sorunsuz çalışır.
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

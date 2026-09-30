@@ -6,3 +6,7 @@ release/
 # Gerçek API anahtarları/Supabase kimlik bilgileri burada — asla commit'lenmez.
 # Şablon için electron/config.example.js'e bakın.
 electron/config.js
+
+# APNs (push bildirimi) özel anahtarı — Apple Developer hesabından indirilen
+# .p8 dosyası, asla commit'lenmez.
+electron/secrets/

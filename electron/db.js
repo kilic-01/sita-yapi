@@ -1539,6 +1539,32 @@ export async function getMessagesFor(userId) {
   return data || [];
 }
 
+// ---------- Push Bildirim Cihaz Token'ları (iOS native uygulama) ----------
+// Not: "deviceTokens" tablosu diğer tüm tablolar gibi Supabase dashboard'unda
+// elle oluşturulmalı — bkz. proje kökündeki APNS_SETUP.md.
+export async function registerDeviceToken(userId, token, platform) {
+  const { error } = await supabase
+    .from("deviceTokens")
+    .upsert(
+      { userId, token, platform: platform || "ios", updatedAt: new Date().toISOString() },
+      { onConflict: "token" }
+    );
+  if (error) throw new Error(error.message);
+}
+
+export async function getDeviceTokensForUser(userId) {
+  const { data, error } = await supabase.from("deviceTokens").select("token").eq("userId", userId);
+  if (error) throw new Error(error.message);
+  return (data || []).map((r) => r.token);
+}
+
+// APNs "bu token artık geçersiz" derse (uygulama silinmiş/bildirim izni
+// kaldırılmış) çağrılır — aksi halde her mesajda aynı ölü token'a boşuna
+// istek atmaya devam ederdik.
+export async function removeDeviceToken(token) {
+  await supabase.from("deviceTokens").delete().eq("token", token);
+}
+
 export async function sendMessage(senderId, recipientId, body) {
   const message = {
     id: uuid(),

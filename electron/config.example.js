@@ -13,6 +13,15 @@ export const SHOP_LOCATION = {
   lng: 0,
 };
 
+// Apple Push Notifications (iOS native uygulama) — developer.apple.com >
+// Certificates, Identifiers & Profiles > Keys altında oluşturulan .p8
+// anahtarı. Dosyayı electron/secrets/ altına koyup buraya dosya adını yazın
+// (electron/secrets/ de .gitignore'da, hiç commit'lenmez).
+export const APNS_KEY_PATH = new URL("./secrets/AuthKey_XXXXXXXXXX.p8", import.meta.url).pathname;
+export const APNS_KEY_ID = "";
+export const APNS_TEAM_ID = "";
+export const APNS_BUNDLE_ID = "";
+
 // Paylaşımlı bulut veritabanı (Supabase) — geliştirme/telefon testi HER ZAMAN
 // "dev" projesine, paketlenmiş/canlı uygulama "prod" projesine bağlanır.
 // Böylece geliştirirken gerçek işletme verisine yanlışlıkla dokunma riski olmaz.

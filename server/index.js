@@ -526,6 +526,18 @@ app.put("/api/incoming-orders/:id/dismiss-reminder", async (req, res, next) => {
   }
 });
 
+// iOS native uygulamanın giriş sonrası kaydettiği push bildirim cihaz
+// token'ı (bkz. electron/db.js registerDeviceToken).
+app.post("/api/device-tokens", async (req, res, next) => {
+  try {
+    const { userId, token, platform, actingUserId } = req.body;
+    await handlers.registerDeviceToken(userId, token, platform, actingUserId);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get("/api/messages/:userId", async (req, res, next) => {
   try {
     res.json(await handlers.listMessagesFor(req.params.userId));

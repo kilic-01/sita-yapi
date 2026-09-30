@@ -10,6 +10,7 @@ import { getRandomFeaturedImage } from "./wikimedia.js";
 import { assignToTechnicians, orderTechnicianStops, isOnLeave, haversineDistance } from "./routing.js";
 import { GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, FILOTIM_API_KEY, SHOP_LOCATION } from "./config.js";
 import { fetchFuelPurchases, fetchFuelDevices, fetchFleetSummary } from "./filotimSync.js";
+import { sendPushNotificationToTokens } from "./apnsPush.js";
 
 // API anahtarları önce Ayarlar'dan yönetici tarafından girilmiş bir
 // değer var mı diye kontrol eder, yoksa electron/config.js'teki varsayılana
@@ -883,8 +884,39 @@ export function listMessagesFor(userId) {
   return db.getMessagesFor(userId);
 }
 
-export function sendMessage(senderId, recipientId, body) {
-  return db.sendMessage(senderId, recipientId, body);
+export async function sendMessage(senderId, recipientId, body) {
+  const message = await db.sendMessage(senderId, recipientId, body);
+  // Bildirim gönderimi mesaj kaydını ASLA engellememeli — APNs'e erişilemese
+  // ya da anahtar/ayar eksik olsa bile mesaj zaten kaydedildi, sadece push
+  // sessizce başarısız olur (bkz. notifyUserPush içindeki try/catch).
+  const sender = (await db.getUsers()).find((u) => u.id === senderId);
+  notifyUserPush(recipientId, { title: sender?.name || "Yeni mesaj", body });
+  return message;
+}
+
+export function registerDeviceToken(userId, token, platform, actingUserId) {
+  return db.registerDeviceToken(userId, token, platform);
+}
+
+// Teknisyenlerin (saha ekibi) giriş hesabı YOK — sadece dispatcher/ofis
+// kullanıcıları (users tablosu) native uygulamaya girip bildirim alabilir.
+// Bu yüzden push bildirimi şu an sadece mesajlaşmada kullanılıyor; "randevu
+// teknisyene atandı" gibi bir bildirimin gidebileceği bir hesap yok.
+async function notifyUserPush(userId, notification) {
+  try {
+    const tokens = await db.getDeviceTokensForUser(userId);
+    if (tokens.length === 0) return;
+    const results = await sendPushNotificationToTokens(tokens, notification);
+    await Promise.all(
+      results.map((result, i) => {
+        if (!result.ok && (result.reason === "BadDeviceToken" || result.reason === "Unregistered")) {
+          return db.removeDeviceToken(tokens[i]);
+        }
+      })
+    );
+  } catch (err) {
+    console.error("Push bildirimi gönderilemedi:", err);
+  }
 }
 
 export function markMessagesRead(currentUserId, otherUserId) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 enum AppTab: Hashable {
     case home, appointments, stock, messages, more
@@ -61,6 +62,16 @@ struct RootView: View {
         .tint(Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255))
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { appLock.lock() }
+        }
+        .task(id: appState.currentUser?.id) {
+            guard appState.currentUser != nil else { return }
+            // İzin verilirse didRegisterForRemoteNotificationsWithDeviceToken
+            // (AppDelegate) tetiklenir, token'ı okuyup backend'e kaydeder —
+            // reddedilirse sessizce hiçbir şey olmaz, uygulama etkilenmez.
+            let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            if granted {
+                await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
+            }
         }
     }
 }
