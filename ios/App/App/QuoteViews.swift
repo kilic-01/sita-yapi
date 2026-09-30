@@ -130,7 +130,7 @@ struct QuoteDetailView: View {
         .navigationTitle(quote.quoteNo ?? "Teklif")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showPrintPreview) {
-            QuotePrintPreviewView(quote: quote)
+            QuoteWebPrintView(quote: quote)
         }
     }
 
