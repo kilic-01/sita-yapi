@@ -62,9 +62,7 @@ struct MoreView: View {
                 case .zimmet:
                     ZimmetListView()
                 case .quotes:
-                    GenericListView(title: "Teklifler", fetch: { try await APIClient.shared.get("/quotes") as [Quote] }) { (q: Quote) in
-                        (q.customerName ?? "(isimsiz)", [q.quoteNo, q.quoteDate].compactMap { $0 }.joined(separator: " · "), nil)
-                    }
+                    QuoteListView()
                 case .pendingParts:
                     GenericListView(title: "Bekleyen Parçalar", fetch: { try await APIClient.shared.get("/pending-parts") as [PendingPart] }) { (p: PendingPart) in
                         (p.customerName ?? "(isimsiz)", p.description ?? "", p.status)

@@ -80,7 +80,6 @@ struct ZimmetCreateView: View {
     @State private var quantity = 1
     @State private var isSubmitting = false
     @State private var errorMessage: String?
-    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -95,18 +94,17 @@ struct ZimmetCreateView: View {
             }
             Section("Parça") {
                 TextField("Parça ara (kod veya isim)", text: $query)
-                    .onChange(of: query) { _, newValue in
-                        searchTask?.cancel()
-                        guard newValue.count >= 2 else { searchResults = []; return }
-                        searchTask = Task {
-                            try? await Task.sleep(for: .milliseconds(250))
-                            guard !Task.isCancelled else { return }
-                            let all = (try? await StockCache.shared.all()) ?? []
-                            let lower = newValue.lowercased()
-                            searchResults = all.filter {
-                                ($0.code?.lowercased().contains(lower) ?? false) || ($0.name?.lowercased().contains(lower) ?? false)
-                            }.prefix(15).map { $0 }
-                        }
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .task(id: query) {
+                        guard query.count >= 2 else { searchResults = []; return }
+                        try? await Task.sleep(for: .milliseconds(250))
+                        guard !Task.isCancelled else { return }
+                        let all = (try? await StockCache.shared.all()) ?? []
+                        let lower = query.lowercased()
+                        searchResults = all.filter {
+                            ($0.code?.lowercased().contains(lower) ?? false) || ($0.name?.lowercased().contains(lower) ?? false)
+                        }.prefix(15).map { $0 }
                     }
                 ForEach(searchResults) { item in
                     Button {

@@ -25,6 +25,7 @@
 		58893553F79E469A200D9BDE /* ZimmetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ABD9008401336B015249BEA /* ZimmetView.swift */; };
 		6A63B36CE69B72D6B34F31E0 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5A256C1B781817B5976331 /* MoreView.swift */; };
 		74733BBCBD80A064D1E31C07 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 415D2B43C8A2D51C0A08EEAF /* MapKit.framework */; };
+		7AC7BB9412DDBA978729919C /* QuoteViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2B0D0AAF26A20F5302E49BB /* QuoteViews.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		C61C7C4D2EDC1E93B93781E8 /* StockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D0AD447C8E37CBA37E3F72 /* StockView.swift */; };
 		DAB9753CA741060C2E9AF482 /* AppointmentCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */; };
@@ -59,6 +60,7 @@
 		C495B35F1CA275AAD7850FD5 /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		CA2FAFFE6C207232F306A0F6 /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		D9F6D9B30EB202AB2204230F /* RootTabView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
+		E2B0D0AAF26A20F5302E49BB /* QuoteViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuoteViews.swift; sourceTree = "<group>"; };
 		FF3ADEAA65F2A8F12E847293 /* APIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -127,6 +129,7 @@
 				7DA322021ED611A9DF23CEB5 /* MapTabView.swift */,
 				82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */,
 				538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */,
+				E2B0D0AAF26A20F5302E49BB /* QuoteViews.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -228,6 +231,7 @@
 				471103A0FC674052A95294DC /* MapTabView.swift in Sources */,
 				DAB9753CA741060C2E9AF482 /* AppointmentCreateView.swift in Sources */,
 				1A667D0747A0FA2A8F5AD629 /* ProgramWidgetView.swift in Sources */,
+				7AC7BB9412DDBA978729919C /* QuoteViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

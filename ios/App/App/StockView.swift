@@ -6,7 +6,6 @@ struct StockView: View {
     @State private var results: [StockItem] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
-    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -34,14 +33,18 @@ struct StockView: View {
             }
             .navigationTitle("Stok")
             .searchable(text: $query, prompt: "Kod veya isimle ara")
-            .onChange(of: query) { _, newValue in
-                searchTask?.cancel()
-                guard newValue.count >= 2 else { results = []; return }
-                searchTask = Task {
-                    try? await Task.sleep(for: .milliseconds(250))
-                    guard !Task.isCancelled else { return }
-                    await search(newValue)
-                }
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            // .onChange yerine .task(id:) kullanıyoruz — yeni bir sorgu
+            // geldiğinde önceki bekleyen görevi SwiftUI otomatik iptal eder,
+            // elle Task referansı tutup iptal etmeye kıyasla daha güvenilir
+            // (arama hiç tetiklenmiyor gibi görünen sorunun kaynağı muhtemelen
+            // buradaki elle iptal mantığındaki bir yarış durumuydu).
+            .task(id: query) {
+                guard query.count >= 2 else { results = []; return }
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                await search(query)
             }
             .navigationDestination(for: StockItem.self) { item in
                 StockItemDetailView(item: item)

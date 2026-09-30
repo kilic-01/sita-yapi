@@ -104,11 +104,68 @@ struct ChatMessage: Codable, Identifiable {
     var readAt: String?
 }
 
+struct QuoteItem: Codable, Identifiable {
+    var id = UUID()
+    var qty: Double?
+    var code: String?
+    var unit: String?
+    var vatRate: Double?
+    var unitPrice: Double?
+    var description: String?
+    var discountRate: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case qty, code, unit, vatRate, unitPrice, description, discountRate
+    }
+}
+
 struct Quote: Codable, Identifiable {
     let id: String
     var quoteNo: String?
     var customerName: String?
+    var contactName: String?
+    var customerPhone: String?
+    var customerEmail: String?
+    var customerAddress: String?
     var quoteDate: String?
+    var validityDays: Int?
+    var preparedBy: String?
+    var currency: String?
+    var items: [QuoteItem]?
+    var discountRate: Double?
+}
+
+struct NewQuote: Encodable {
+    var customerName: String
+    var contactName: String
+    var customerPhone: String
+    var customerEmail: String
+    var customerAddress: String
+    var quoteDate: String
+    var validityDays: Int
+    var preparedBy: String
+    var currency: String
+    var items: [QuoteItem]
+    var actingUserId: String
+}
+
+struct QuoteTotals {
+    var araToplam: Double = 0
+    var indirimTutari: Double = 0
+    var kdvToplami: Double = 0
+    var genelToplam: Double = 0
+}
+
+/// src/lib/orderTotals.js'teki computeTotals ile birebir aynı mantık.
+func computeQuoteTotals(_ items: [QuoteItem]) -> QuoteTotals {
+    func gross(_ item: QuoteItem) -> Double { (item.qty ?? 0) * (item.unitPrice ?? 0) }
+    func lineNet(_ item: QuoteItem) -> Double { gross(item) * (1 - (item.discountRate ?? 0) / 100) }
+    let grossToplam = items.reduce(0) { $0 + gross($1) }
+    let araToplam = items.reduce(0) { $0 + lineNet($1) }
+    let indirim = grossToplam - araToplam
+    let kdv = items.reduce(0) { $0 + lineNet($1) * ((($1.vatRate ?? 0)) / 100) }
+    let genel = araToplam + kdv
+    return QuoteTotals(araToplam: araToplam, indirimTutari: indirim, kdvToplami: kdv, genelToplam: genel)
 }
 
 struct PendingPart: Codable, Identifiable {
