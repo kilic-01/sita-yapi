@@ -11,29 +11,40 @@ struct StockView: View {
     @State private var scanErrorMessage: String?
     @State private var depots: [Depot] = []
     @State private var showCreate = false
+    @State private var lowStockItems: [StockItem] = []
+    @State private var isLoadingDefault = true
+
+    private var isFiltering: Bool { query.count >= 2 }
 
     var body: some View {
         NavigationStack {
             List {
-                if query.count < 2 {
-                    Text("Ürün aramak için kod veya isim yazın.").foregroundStyle(.secondary)
-                } else if isSearching {
-                    ProgressView()
-                } else if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                } else if results.isEmpty {
-                    Text("Sonuç bulunamadı.").foregroundStyle(.secondary)
+                if isFiltering {
+                    if isSearching {
+                        ProgressView()
+                    } else if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.red)
+                    } else if results.isEmpty {
+                        Text("Sonuç bulunamadı.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(results) { item in
+                            stockRow(item)
+                        }
+                    }
                 } else {
-                    ForEach(results) { item in
-                        NavigationLink(value: item) {
-                            HStack(spacing: 10) {
-                                stockThumbnail(item)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name ?? item.code ?? "(isimsiz)").font(.body)
-                                    Text("\(item.code ?? "") · \(formattedQty(item)) \(item.unit ?? "adet")")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                    // Arama yapılmadan sayfa tamamen boş görünüyordu — kod/isim
+                    // yazmayı gerektiren TEK giriş noktası aramaydı. Masaüstündeki
+                    // StockPage.jsx gibi, hiç arama yapmadan az stoklu ürünleri
+                    // varsayılan olarak gösteriyoruz ki ürünlere hiç yazı
+                    // yazmadan da (ör. arama kutusuna dokunmadan) ulaşılabilsin.
+                    if isLoadingDefault {
+                        ProgressView()
+                    } else if lowStockItems.isEmpty {
+                        Text("Az stoklu ürün yok. Belirli bir ürünü bulmak için arayın.").foregroundStyle(.secondary)
+                    } else {
+                        Section("Az Stoklu Ürünler (\(lowStockItems.count))") {
+                            ForEach(lowStockItems.prefix(100)) { item in
+                                stockRow(item)
                             }
                         }
                     }
@@ -63,7 +74,7 @@ struct StockView: View {
             .sheet(item: $scannedItem) { item in
                 NavigationStack {
                     StockItemDetailView(item: item, depots: depots, onDeleted: {
-                        results.removeAll { $0.id == item.id }
+                        removeFromLists(item.id)
                     })
                 }
             }
@@ -94,19 +105,59 @@ struct StockView: View {
             .task {
                 depots = (try? await APIClient.shared.get("/depots")) ?? []
             }
+            .task {
+                await loadDefaultList()
+            }
             .refreshable {
                 // Önbellek tek seferlik dolduktan sonra hiç yenilenmiyordu —
                 // başka bir cihazdan yapılan stok değişiklikleri asla
                 // yansımazdı. Aşağı çekince gerçekten yeniden çekiyoruz.
                 _ = try? await StockCache.shared.reload()
-                if query.count >= 2 { await search(query) }
+                if isFiltering {
+                    await search(query)
+                } else {
+                    await loadDefaultList()
+                }
             }
             .navigationDestination(for: StockItem.self) { item in
                 StockItemDetailView(item: item, depots: depots, onDeleted: {
-                    results.removeAll { $0.id == item.id }
+                    removeFromLists(item.id)
                 })
             }
         }
+    }
+
+    @ViewBuilder
+    private func stockRow(_ item: StockItem) -> some View {
+        NavigationLink(value: item) {
+            HStack(spacing: 10) {
+                stockThumbnail(item)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name ?? item.code ?? "(isimsiz)").font(.body)
+                    Text("\(item.code ?? "") · \(formattedQty(item)) \(item.unit ?? "adet")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func removeFromLists(_ id: String) {
+        results.removeAll { $0.id == id }
+        lowStockItems.removeAll { $0.id == id }
+    }
+
+    private func loadDefaultList() async {
+        isLoadingDefault = true
+        defer { isLoadingDefault = false }
+        let all = (try? await StockCache.shared.all()) ?? []
+        lowStockItems = all
+            .filter { ($0.quantity ?? 0) <= ($0.lowStockThreshold ?? 2) }
+            .sorted {
+                let aOver = ($0.quantity ?? 0) - ($0.lowStockThreshold ?? 2)
+                let bOver = ($1.quantity ?? 0) - ($1.lowStockThreshold ?? 2)
+                return aOver < bOver
+            }
     }
 
     @ViewBuilder

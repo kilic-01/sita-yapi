@@ -16,7 +16,7 @@ const config: CapacitorConfig = {
   appName: 'Sita Yapı',
   webDir: 'dist',
   server: {
-    url: 'http://192.168.1.129:4173/barkod/',
+    url: 'http://192.168.1.28:4173/barkod/',
     cleartext: true
   }
 };
