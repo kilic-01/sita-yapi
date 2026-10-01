@@ -36,7 +36,7 @@ actor APIClient {
     #if targetEnvironment(simulator)
     private let baseURL = URL(string: "http://127.0.0.1:4173/api")!
     #else
-    private let baseURL = URL(string: "http://172.20.10.12:4173/api")!
+    private let baseURL = URL(string: "http://192.168.1.28:4173/api")!
     #endif
     private let decoder: JSONDecoder = JSONDecoder()
     private let encoder: JSONEncoder = JSONEncoder()
