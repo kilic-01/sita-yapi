@@ -231,6 +231,8 @@ struct StockItemDetailView: View {
     @State private var errorMessage: String?
     @State private var showEdit = false
     @State private var showDeleteConfirm = false
+    @State private var showBarcodeScanner = false
+    @State private var barcodeErrorMessage: String?
 
     init(item: StockItem, depots: [Depot], onDeleted: @escaping () -> Void = {}) {
         self.depots = depots
@@ -280,6 +282,12 @@ struct StockItemDetailView: View {
                 }
                 if let barcode = current.barcode, !barcode.isEmpty {
                     LabeledContent("Barkod", value: barcode)
+                } else {
+                    Button {
+                        showBarcodeScanner = true
+                    } label: {
+                        Label("Barkod Ekle", systemImage: "barcode.viewfinder")
+                    }
                 }
             }
             Section {
@@ -329,6 +337,42 @@ struct StockItemDetailView: View {
         ) {
             Button("Sil", role: .destructive) { Task { await delete() } }
             Button("Vazgeç", role: .cancel) {}
+        }
+        .sheet(isPresented: $showBarcodeScanner) {
+            BarcodeScannerSheet(title: "Barkod Ekle") { code in
+                Task { await assignBarcode(code) }
+            }
+        }
+        .alert(
+            "Barkod Eklenemedi",
+            isPresented: Binding(get: { barcodeErrorMessage != nil }, set: { if !$0 { barcodeErrorMessage = nil } })
+        ) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(barcodeErrorMessage ?? "")
+        }
+    }
+
+    /// Barkodu olmayan ürünlere kamerayla hızlıca yeni barkod atamak için —
+    /// tam "Düzenle" formunu açmaya gerek kalmadan. Aynı barkodun başka bir
+    /// üründe zaten kayıtlı olup olmadığını kontrol ediyoruz, yoksa
+    /// by-barcode araması iki farklı ürüne çarpan belirsiz bir eşleşme
+    /// döndürürdü.
+    private func assignBarcode(_ code: String) async {
+        do {
+            if let existing = try await APIClient.shared.stockItem(byBarcode: code), existing.id != current.id {
+                barcodeErrorMessage = "Bu barkod zaten başka bir ürüne (\(existing.name ?? existing.code ?? "")) kayıtlı."
+                return
+            }
+            struct Body: Encodable { let barcode: String; let actingUserId: String }
+            let updated: StockItem = try await APIClient.shared.put(
+                "/stock/\(current.id)",
+                body: Body(barcode: code, actingUserId: appState.currentUser?.id ?? "")
+            )
+            current = updated
+            try? await StockCache.shared.reload()
+        } catch {
+            barcodeErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Barkod kaydedilemedi."
         }
     }
 
