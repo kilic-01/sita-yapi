@@ -231,6 +231,7 @@ struct StockItemDetailView: View {
     @State private var errorMessage: String?
     @State private var showEdit = false
     @State private var showDeleteConfirm = false
+    @State private var showFinalDeleteConfirm = false
     @State private var showBarcodeScanner = false
     @State private var barcodeErrorMessage: String?
 
@@ -335,8 +336,19 @@ struct StockItemDetailView: View {
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Sil", role: .destructive) { Task { await delete() } }
+            Button("Sil", role: .destructive) { showFinalDeleteConfirm = true }
             Button("Vazgeç", role: .cancel) {}
+        }
+        // Yanlışlıkla ürün silmeyi önlemek için tek onay yetmiyordu — ikinci,
+        // ürün adını açıkça gösteren bir son uyarı daha ekleniyor.
+        .alert(
+            "Son Kez Soruyoruz",
+            isPresented: $showFinalDeleteConfirm
+        ) {
+            Button("Evet, Kalıcı Olarak Sil", role: .destructive) { Task { await delete() } }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text("\"\(current.name ?? current.code ?? "Bu ürün")\" geri alınamaz şekilde silinecek.")
         }
         .sheet(isPresented: $showBarcodeScanner) {
             BarcodeScannerSheet(title: "Barkod Ekle") { code in
