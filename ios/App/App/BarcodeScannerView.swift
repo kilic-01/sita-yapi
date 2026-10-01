@@ -28,8 +28,7 @@ struct BarcodeScannerSheet: View {
             Group {
                 if cameraAvailable {
                     ScannerRepresentable { code in
-                        onScan(code)
-                        dismiss()
+                        dismissThenReport(code)
                     }
                     .ignoresSafeArea()
                 } else {
@@ -67,8 +66,23 @@ struct BarcodeScannerSheet: View {
     private func submitManual() {
         let trimmed = manualCode.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        onScan(trimmed)
+        dismissThenReport(trimmed)
+    }
+
+    /// Okunan kodu çağırana HEMEN iletmek yerine önce bu sayfayı kapatıp
+    /// kapanma animasyonunun bitmesini bekliyoruz. Önceki haliyle (önce
+    /// onScan, hemen ardından dismiss) çağıranın barkod bulunamadı
+    /// uyarısı/yeni bir sayfa açması bu sayfanın kendi kapanma geçişiyle
+    /// çakışıyordu — iOS ikisini aynı anda işleyemediği için uyarı bazen
+    /// hiç çıkmıyor, bazen gözle görülür gecikiyordu (telefonda "yanlış
+    /// barkod okutunca tepki vermiyor/çok geç tepki veriyor" olarak
+    /// bildirildi).
+    private func dismissThenReport(_ code: String) {
         dismiss()
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            onScan(code)
+        }
     }
 }
 
