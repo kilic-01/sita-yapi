@@ -134,11 +134,17 @@ struct StockView: View {
         defer { isSearching = false }
         do {
             let all = try await StockCache.shared.all()
+            // İlk yükleme birkaç saniye sürebildiği için (bkz. StockCache),
+            // bu çağrı tamamlandığında kullanıcı çoktan farklı bir şey
+            // yazmış olabilir — eski sonucu güncel sorgunun üzerine yazmayı
+            // önlüyoruz.
+            guard term == query else { return }
             let lower = term.lowercased()
             results = all.filter {
                 ($0.code?.lowercased().contains(lower) ?? false) || ($0.name?.lowercased().contains(lower) ?? false)
             }.prefix(20).map { $0 }
         } catch {
+            guard term == query else { return }
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
         }
     }

@@ -443,9 +443,23 @@ private struct HomeWidgetCard<Content: View>: View {
 actor StockCache {
     static let shared = StockCache()
     private var cached: [StockItem]?
+    // StockView'daki arama her tuş vuruşunda .task(id: query) ile önceki
+    // aramayı iptal edip yeniden başlatıyor (bkz. doğru debounce davranışı).
+    // ~10 binlik liste dev sunucusunda (Supabase'den her seferinde taze
+    // çekildiği için) ilk seferinde birkaç saniye sürebiliyor — kullanıcı bu
+    // süre dolmadan yazmaya devam ederse istek hiç tamamlanma fırsatı
+    // bulamıyordu (her tuş vuruşu bir öncekini iptal ediyordu), arama
+    // sonsuza dek "çalışmıyor" gibi görünüyordu. Çözüm: asıl ağ isteğini
+    // AYRI, yapılandırılmamış bir Task içinde başlatıyoruz — bu, onu
+    // başlatan çağıranın (arama task'ının) iptalinden etkilenmiyor, bu
+    // yüzden art arda gelen tuş vuruşları ne kadar isteği iptal ederse
+    // etsin, en baştaki indirme arka planda kesintisiz tamamlanıp önbelleği
+    // dolduruyor.
+    private var inFlightTask: Task<[StockItem], Error>?
 
     func all() async throws -> [StockItem] {
         if let cached { return cached }
+        if let inFlightTask { return try await inFlightTask.value }
         return try await reload()
     }
 
@@ -455,7 +469,13 @@ actor StockCache {
     /// çağırıp önbelleği gerçekten tazeliyor.
     @discardableResult
     func reload() async throws -> [StockItem] {
-        let items: [StockItem] = try await APIClient.shared.get("/stock")
+        if let inFlightTask { return try await inFlightTask.value }
+        let task = Task<[StockItem], Error> {
+            try await APIClient.shared.get("/stock")
+        }
+        inFlightTask = task
+        defer { inFlightTask = nil }
+        let items = try await task.value
         cached = items
         return items
     }
