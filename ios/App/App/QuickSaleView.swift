@@ -85,7 +85,7 @@ struct QuickSaleView: View {
             }
         }
         .sheet(isPresented: $showScanner) {
-            BarcodeScannerSheet(title: "Barkod ile Ürün Ekle", continuous: true) { code in
+            BarcodeScannerSheet(title: "Barkod ile Ürün Ekle") { code in
                 Task { await addScannedItem(code) }
             }
         }

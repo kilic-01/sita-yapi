@@ -6,14 +6,15 @@ import VisionKit
 /// kamera olmadığı için DataScannerViewController.isSupported daima false
 /// döner — bu yüzden aynı sayfa, kamera yoksa/izin yoksa elle barkod girişine
 /// düşen bir yedek sunuyor (fiziksel cihazda hiç görünmez).
+///
+/// Bilerek tek okumalık: bir barkod okunduğunda sayfa hemen kapanıyor. Hızlı
+/// Satış'ta birden fazla ürün eklemek için "sürekli açık kalan tarayıcı"
+/// denendi, ama kamera aynı barkodu görmeye devam ettikçe art arda/kontrolsüz
+/// okuyordu — kullanıcı her ürün için bilerek "Barkod ile Ürün Ekle"ye
+/// tekrar basmayı tercih etti, bu çok daha öngörülebilir.
 struct BarcodeScannerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
-    /// Stok/Zimmet'te tek bir ürün bulup hemen kapanması yeterli; Hızlı
-    /// Satış'ta tek seferde birden fazla ürün okutulabilmesi gerekiyor —
-    /// true olduğunda tarayıcı her okumadan sonra kapanmaz, kullanıcı
-    /// "Bitti"ye basana kadar art arda okutmaya devam edebilir.
-    var continuous: Bool = false
     let onScan: (String) -> Void
 
     @State private var manualCode = ""
@@ -26,9 +27,9 @@ struct BarcodeScannerSheet: View {
         NavigationStack {
             Group {
                 if cameraAvailable {
-                    ScannerRepresentable(continuous: continuous) { code in
+                    ScannerRepresentable { code in
                         onScan(code)
-                        if !continuous { dismiss() }
+                        dismiss()
                     }
                     .ignoresSafeArea()
                 } else {
@@ -40,11 +41,6 @@ struct BarcodeScannerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("İptal") { dismiss() }
-                }
-                if continuous {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Bitti") { dismiss() }.bold()
-                    }
                 }
             }
         }
@@ -72,16 +68,11 @@ struct BarcodeScannerSheet: View {
         let trimmed = manualCode.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         onScan(trimmed)
-        if continuous {
-            manualCode = ""
-        } else {
-            dismiss()
-        }
+        dismiss()
     }
 }
 
 private struct ScannerRepresentable: UIViewControllerRepresentable {
-    let continuous: Bool
     let onScan: (String) -> Void
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
@@ -108,24 +99,20 @@ private struct ScannerRepresentable: UIViewControllerRepresentable {
         uiViewController.stopScanning()
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(continuous: continuous, onScan: onScan) }
+    func makeCoordinator() -> Coordinator { Coordinator(onScan: onScan) }
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        let continuous: Bool
         let onScan: (String) -> Void
         private var handled = false
-        init(continuous: Bool, onScan: @escaping (String) -> Void) {
-            self.continuous = continuous
-            self.onScan = onScan
-        }
+        init(onScan: @escaping (String) -> Void) { self.onScan = onScan }
 
         func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
-            if !continuous { guard !handled else { return } }
+            guard !handled else { return }
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     handled = true
                     onScan(payload)
-                    if !continuous { break }
+                    break
                 }
             }
         }
