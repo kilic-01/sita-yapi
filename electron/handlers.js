@@ -163,6 +163,24 @@ async function runBackgroundGeocode(appointmentId, addressDetail, googleMapsApiK
   }
 }
 
+// estimateJobDurationMinutes (Gemini çağrısı) kötü ağ koşullarında ~21sn'ye
+// kadar sürebiliyor (10sn deneme + 1.5sn bekleme + 10sn tekrar deneme) ve bu
+// süre mobil istemcilerin (Android/iOS) istek zaman aşımı sınırını aşabiliyor
+// — istemci "zaman aşımı" hatası gösterirken kayıt sunucuda zaten başarıyla
+// oluşuyordu. runBackgroundGeocode ile AYNI desen: kayıt HEMEN (tahmini süre
+// olmadan) oluşturulup dönülüyor, tahmin arkaplanda hesaplanıp geldiğinde
+// satıra yazılıyor — mevcut realtime akışıyla ekrana kendiliğinden yansır.
+async function runBackgroundEstimate(appointmentId, complaint, geminiApiKey) {
+  try {
+    const estimatedDurationMinutes = await estimateJobDurationMinutes(complaint, geminiApiKey);
+    if (estimatedDurationMinutes != null) {
+      await db.updateAppointment(appointmentId, { estimatedDurationMinutes });
+    }
+  } catch (err) {
+    console.error("Arkaplan süre tahmini hatası:", err);
+  }
+}
+
 export function listAppointments() {
   return db.getAppointments();
 }
@@ -177,11 +195,6 @@ export function listAppointmentsByCustomer(name, phone, excludeId) {
 
 export async function addAppointment(input) {
   const { googleMapsApiKey, geminiApiKey } = await currentApiKeys();
-
-  const estimatedDurationMinutes = await estimateJobDurationMinutes(
-    input.complaint,
-    geminiApiKey
-  );
 
   // Dispatcher oluştururken bilerek bir teknisyen seçtiyse (ör. bilgi zaten
   // o teknisyen üzerinden geldiyse), randevu doğrudan ona atanmış olarak
@@ -219,18 +232,22 @@ export async function addAppointment(input) {
     lat: null,
     lng: null,
     geocodeIssue: null,
-    estimatedDurationMinutes,
+    estimatedDurationMinutes: null,
     status,
     assignedTechnicianId,
     stopOrder,
     manuallyAssigned,
   });
 
-  // Kayıt zaten oluşturuldu — geocoding'in bitmesini BEKLEMEDEN dönüyoruz.
-  // Sonuç (bulunsa da bulunamasa da) arkaplanda appointments satırına
-  // yazılır ve mevcut realtime akışıyla tüm ekranlara kendiliğinden yayılır.
+  // Kayıt zaten oluşturuldu — geocoding'in VE süre tahmininin (Gemini)
+  // bitmesini BEKLEMEDEN dönüyoruz. Sonuçlar arkaplanda appointments
+  // satırına yazılır ve mevcut realtime akışıyla tüm ekranlara kendiliğinden
+  // yayılır.
   if (googleMapsApiKey) {
     runBackgroundGeocode(appointment.id, input.addressDetail, googleMapsApiKey);
+  }
+  if (geminiApiKey && input.complaint && input.complaint.trim()) {
+    runBackgroundEstimate(appointment.id, input.complaint, geminiApiKey);
   }
 
   return { appointment, geocodeError: null, geocodeWarning: null };
@@ -249,11 +266,11 @@ export async function updateAppointment(id, patch) {
   const addressChanged = patch.address && patch.address !== existing?.address;
   const scheduleChanged = patch.scheduledDate && patch.scheduledDate !== existing?.scheduledDate;
 
-  if (patch.complaint !== undefined) {
-    finalPatch.estimatedDurationMinutes = await estimateJobDurationMinutes(
-      patch.complaint,
-      geminiApiKey
-    );
+  // Şikayet tamamen boşaltıldıysa tahmin edilecek bir şey yok — eski
+  // (artık alakasız) süre tahminini hemen temizliyoruz. Şikayet dolu/
+  // değiştiyse tahmin arkaplanda hesaplanır (aşağıda, kayıt döndükten sonra).
+  if (patch.complaint !== undefined && !patch.complaint.trim()) {
+    finalPatch.estimatedDurationMinutes = null;
   }
 
   // Not: adres ya da tarih değişse bile durum/teknisyen ataması/rota sırası
@@ -309,6 +326,11 @@ export async function updateAppointment(id, patch) {
   // (varsa) arkaplan sonucu gelene kadar ekranda kalır, kayıt engellenmez.
   if (addressChanged && googleMapsApiKey) {
     runBackgroundGeocode(id, patch.addressDetail, googleMapsApiKey);
+  }
+  // Şikayet değiştiyse süre tahmini de aynı şekilde arkaplanda yeniden
+  // hesaplanır — addAppointment'taki aynı zaman aşımı gerekçesi.
+  if (patch.complaint !== undefined && geminiApiKey && patch.complaint && patch.complaint.trim()) {
+    runBackgroundEstimate(id, patch.complaint, geminiApiKey);
   }
 
   return { appointment, geocodeError: null, geocodeWarning: null };

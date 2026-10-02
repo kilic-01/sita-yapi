@@ -33,29 +33,40 @@ export default function PendingPartsPage({ pendingParts = [], stockItems = [], c
   const [form, setForm] = useState(null); // null = form kapalı
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [waitingSearch, setWaitingSearch] = useState("");
   const [historySearch, setHistorySearch] = useState("");
   const [descDebouncedSearch, setDescDebouncedSearch] = useState("");
   const [descSuggestOpen, setDescSuggestOpen] = useState(false);
   const descSearchTimerRef = useRef(null);
   const descInputRef = useRef(null);
 
-  const waiting = useMemo(
-    () =>
-      pendingParts
-        .filter((p) => p.status !== "geldi")
-        .sort((a, b) => {
-          const da = a.orderedAt || a.createdAt || "";
-          const db_ = b.orderedAt || b.createdAt || "";
-          return da < db_ ? -1 : da > db_ ? 1 : 0;
-        }),
-    [pendingParts]
-  );
+  const waiting = useMemo(() => {
+    const q = waitingSearch.trim().toLowerCase();
+    return pendingParts
+      .filter((p) => p.status !== "geldi")
+      .filter(
+        (p) =>
+          !q ||
+          p.customerName.toLowerCase().includes(q) ||
+          (p.vitraReceiptNo || "").toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        const da = a.orderedAt || a.createdAt || "";
+        const db_ = b.orderedAt || b.createdAt || "";
+        return da < db_ ? -1 : da > db_ ? 1 : 0;
+      });
+  }, [pendingParts, waitingSearch]);
 
   const history = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     return pendingParts
       .filter((p) => p.status === "geldi")
-      .filter((p) => !q || p.customerName.toLowerCase().includes(q))
+      .filter(
+        (p) =>
+          !q ||
+          p.customerName.toLowerCase().includes(q) ||
+          (p.vitraReceiptNo || "").toLowerCase().includes(q)
+      )
       .sort((a, b) => {
         const da = a.arrivedAt || a.updatedAt || a.createdAt || "";
         const db_ = b.arrivedAt || b.updatedAt || b.createdAt || "";
@@ -312,8 +323,16 @@ export default function PendingPartsPage({ pendingParts = [], stockItems = [], c
 
       {view === "waiting" ? (
         <div className="card">
+          <input
+            value={waitingSearch}
+            onChange={(e) => setWaitingSearch(e.target.value)}
+            placeholder="Müşteri adı ya da fiş numarasına göre ara…"
+            style={{ marginBottom: "0.75rem" }}
+          />
           {waiting.length === 0 ? (
-            <p style={{ opacity: 0.7 }}>Şu anda parça bekleyen müşteri yok.</p>
+            <p style={{ opacity: 0.7 }}>
+              {waitingSearch.trim() ? "Aramayla eşleşen kayıt yok." : "Şu anda parça bekleyen müşteri yok."}
+            </p>
           ) : (
             waiting.map((p) => {
               const orderedDate = p.orderedAt || p.createdAt;
@@ -363,11 +382,11 @@ export default function PendingPartsPage({ pendingParts = [], stockItems = [], c
           <input
             value={historySearch}
             onChange={(e) => setHistorySearch(e.target.value)}
-            placeholder="Müşteri adına göre ara…"
+            placeholder="Müşteri adı ya da fiş numarasına göre ara…"
             style={{ marginBottom: "0.75rem" }}
           />
           {history.length === 0 ? (
-            <p style={{ opacity: 0.7 }}>Kayıt yok.</p>
+            <p style={{ opacity: 0.7 }}>{historySearch.trim() ? "Aramayla eşleşen kayıt yok." : "Kayıt yok."}</p>
           ) : (
             history.map((p) => {
               const waitedDays = daysBetween(p.orderedAt, p.arrivedAt);
