@@ -15,11 +15,33 @@ let supabase;
 let onChangeCallback = null;
 let onSyncStatusCallback = null;
 
+// Wi-Fi değişimi/IP yenileme gibi bir ağ kopmasından sonra, Node'un fetch
+// altyapısının (undici) keep-alive havuzunda kalan eski bağlantılar ölü
+// kalıp "TypeError: fetch failed" ile başarısız olmaya devam edebiliyor —
+// uygulama yeniden başlatılana kadar HER istek aynı şekilde patlıyordu (bkz.
+// "quotes:add" sırasında görülen, sadece programı kapatıp açınca düzelen
+// hata). Bu seviyede TEK bir deneme daha yapmak genelde yeterli: ikinci
+// deneme havuzdan taze bir bağlantı açıyor. Supabase istemcisinin TÜM
+// isteklerinden geçen tek nokta burası olduğu için düzeltme de burada.
+async function fetchWithRetry(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return fetch(url, options);
+    }
+    throw err;
+  }
+}
+
 // `userDataPath` artık kullanılmıyor (veri yerel dosya yerine Supabase'de
 // tutuluyor) — main.js/server/index.js ile aynı çağrı imzasını korumak için
 // parametre olarak duruyor.
 export async function initDb(_userDataPath) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    global: { fetch: fetchWithRetry },
+  });
   subscribeToRealtime();
 }
 
@@ -53,6 +75,7 @@ const REALTIME_TABLES = [
   "incomingOrders",
   "pendingParts",
   "partCheckouts",
+  "feeEntries",
 ];
 
 let realtimeChannel = null;
@@ -560,10 +583,22 @@ export async function addPartCheckout(input) {
     qtyUsed: null,
     qtyReturned: null,
     appointmentId: null,
-    note: input.note || "",
+    // "Başka Kişi Ekle" ile seçilip zimmet TEK bir kişiye (technicianId)
+    // yazılırken, formda birlikte seçilmiş diğer kişilerin id'leri burada
+    // JSON olarak taşınıyor — sadece bilgi/gösterim amaçlı, stoktan düşüm
+    // veya ayrı kayıt oluşturmuyor. Yeni bir sütun eklemek yerine zaten var
+    // olan (ve bu ekranda hiç kullanılmayan) "note" sütunu kullanılıyor —
+    // Supabase'de elle migrasyon gerektirmeden hemen çalışsın diye.
+    note: input.companionTechnicianIds?.length
+      ? JSON.stringify({ companionTechnicianIds: input.companionTechnicianIds })
+      : input.note || "",
     // Aynı anda birden fazla kişiye zimmetlenirken (bkz. PartCheckoutsPage'te
     // "Başka Kişi Ekle") hepsinin kaydı bu ortak kimlikle işaretlenir ki liste
-    // ekranı onları ayrı ayrı değil tek bir grup olarak gösterebilsin.
+    // ekranı onları ayrı ayrı değil tek bir grup olarak gösterebilsin. ESKİ
+    // davranış — artık yeni kayıtlarda kullanılmıyor (her seçilen kişiye ayrı
+    // kayıt/stok düşümü kafa karıştırıyordu, bkz. yukarıdaki not alanı), ama
+    // geçmiş kayıtların grup başlığı altında gösterilmesi için okuma
+    // tarafında hâlâ destekleniyor.
     groupId: input.groupId || null,
     ...stampCreatedPatch(input.actingUserId),
   };
@@ -1553,9 +1588,9 @@ export async function registerDeviceToken(userId, token, platform) {
 }
 
 export async function getDeviceTokensForUser(userId) {
-  const { data, error } = await supabase.from("deviceTokens").select("token").eq("userId", userId);
+  const { data, error } = await supabase.from("deviceTokens").select("token, platform").eq("userId", userId);
   if (error) throw new Error(error.message);
-  return (data || []).map((r) => r.token);
+  return data || [];
 }
 
 // APNs "bu token artık geçersiz" derse (uygulama silinmiş/bildirim izni
@@ -1596,3 +1631,83 @@ export async function deleteMessage(id, actingUserId) {
   const { error } = await supabase.from("messages").delete().eq("id", id).eq("senderId", actingUserId);
   if (error) throw new Error(error.message);
 }
+
+// ---------- Ücret Takip (Vitra'dan alınacak ücretlerin takibi) ----------
+// Eskiden Excel'de elle tutulan "Yedek Parça / İşçilik / Garanti Dahili"
+// dökümünün sistem içi karşılığı. Kullanıcı KDV HARİÇ tutarı girer, KDV
+// oranı kayıt bazında değişebildiği için (bkz. teklif ekranındaki aynı
+// yaklaşım) totalAmount (KDV dahil) o anki orana göre hesaplanıp AYRICA
+// saklanır — ileride varsayılan oran değişse bile geçmiş kayıtların/aylık
+// arşivin toplamı bozulmasın diye.
+
+export async function listFeeEntries() {
+  const { data, error } = await supabase.from("feeEntries").select("*").order("date", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function addFeeEntry(input) {
+  const amount = Number(input.amount) || 0;
+  if (amount <= 0) throw new Error("Tutar 0'dan büyük olmalı");
+  if (!["yedekParca", "iscilik", "garantiDahili", "urunler"].includes(input.category)) {
+    throw new Error("Geçersiz kategori");
+  }
+  const vatRate = Number(input.vatRate ?? 20);
+  const totalAmount = amount * (1 + vatRate / 100);
+  const row = {
+    id: uuid(),
+    category: input.category,
+    description: input.description || "",
+    amount,
+    vatRate,
+    totalAmount,
+    date: input.date || new Date().toISOString().slice(0, 10),
+    note: input.note || "",
+    ...stampCreatedPatch(input.actingUserId),
+  };
+  const { data, error } = await supabase.from("feeEntries").insert(row).select().single();
+  if (error) throw new Error(error.message);
+  await logActivity(
+    input.actingUserId,
+    "feeEntry",
+    `ücret takip kaydı ekledi: ${FEE_CATEGORY_LABELS[input.category]} — ${totalAmount.toFixed(2)}₺ (KDV dahil)`
+  );
+  return data;
+}
+
+export async function updateFeeEntry(id, patch) {
+  const { actingUserId, ...rest } = patch;
+  const next = { ...rest };
+  // Tutar ya da oran değiştiyse KDV dahil toplamı yeniden hesapla — ikisi de
+  // verilmediyse mevcut kaydı okuyup eksik taraftan tamamlamamız gerekir.
+  if (next.amount !== undefined || next.vatRate !== undefined) {
+    const { data: existing } = await supabase.from("feeEntries").select("*").eq("id", id).maybeSingle();
+    const amount = Number(next.amount ?? existing?.amount ?? 0);
+    const vatRate = Number(next.vatRate ?? existing?.vatRate ?? 20);
+    next.amount = amount;
+    next.vatRate = vatRate;
+    next.totalAmount = amount * (1 + vatRate / 100);
+  }
+  const { data, error } = await supabase
+    .from("feeEntries")
+    .update({ ...next, ...stampUpdatedPatch(actingUserId) })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  await logActivity(actingUserId, "feeEntry", "ücret takip kaydını güncelledi");
+  return data;
+}
+
+export async function deleteFeeEntry(id, actingUserId) {
+  const { error } = await supabase.from("feeEntries").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(actingUserId, "feeEntry", "ücret takip kaydını sildi");
+}
+
+const FEE_CATEGORY_LABELS = {
+  yedekParca: "Yedek Parça",
+  iscilik: "İşçilik",
+  garantiDahili: "Garanti Dahili",
+  urunler: "Ürünler",
+};

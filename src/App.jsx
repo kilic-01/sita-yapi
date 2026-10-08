@@ -23,6 +23,7 @@ import CalendarPage from "./components/CalendarPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import OtherPage from "./components/OtherPage.jsx";
 import QuotesPage from "./components/QuotesPage.jsx";
+import FeeTrackingPage from "./components/FeeTrackingPage.jsx";
 import IncomingOrdersPage from "./components/IncomingOrdersPage.jsx";
 import MessagesDock from "./components/MessagesDock.jsx";
 import WhatsAppDock from "./components/WhatsAppDock.jsx";
@@ -47,6 +48,7 @@ export default function App() {
   const [incomingOrders, setIncomingOrders] = useState([]);
   const [pendingParts, setPendingParts] = useState([]);
   const [partCheckouts, setPartCheckouts] = useState([]);
+  const [feeEntries, setFeeEntries] = useState([]);
   const [messages, setMessages] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -177,6 +179,7 @@ export default function App() {
       window.api.listIncomingOrders().then(setIncomingOrders);
       window.api.listPendingParts().then(setPendingParts);
       window.api.listPartCheckouts().then(setPartCheckouts);
+      window.api.listFeeEntries().then(setFeeEntries);
       window.api.getCameraSettings().then(setCameras);
       window.api
         .listMessagesFor(currentUser.id)
@@ -261,6 +264,7 @@ export default function App() {
       incomingOrders: () => currentUser && window.api.listIncomingOrders().then(setIncomingOrders),
       pendingParts: () => currentUser && window.api.listPendingParts().then(setPendingParts),
       partCheckouts: () => currentUser && window.api.listPartCheckouts().then(setPartCheckouts),
+      feeEntries: () => currentUser && window.api.listFeeEntries().then(setFeeEntries),
       messages: () =>
         currentUser &&
         window.api
@@ -980,6 +984,13 @@ export default function App() {
             onSaved={handleQuoteSaved}
             stockItems={stockItems}
             currentUser={currentUser}
+          />
+        )}
+        {activeTab === "feeTracking" && (
+          <FeeTrackingPage
+            feeEntries={feeEntries}
+            currentUser={currentUser}
+            onChanged={() => window.api.listFeeEntries().then(setFeeEntries)}
           />
         )}
         {activeTab === "cameras" && !currentUser?.hiddenTabs?.includes("cameras") && (

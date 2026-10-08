@@ -11,6 +11,7 @@ import {
   Video,
   ListChecks,
   MoreHorizontal,
+  ReceiptTurkishLira,
 } from "lucide-react";
 import { TurkishLiraFileIcon } from "./icons.jsx";
 import { MapPinIcon, SettingsIcon, BoxSearchIcon, PendingPartsBoxIcon } from "./icons.jsx";
@@ -26,6 +27,7 @@ export const TABS = [
   { id: "orders", label: "Tedarikçiden Sipariş", icon: <BoxSearchIcon size={18} strokeWidth={1.75} /> },
   { id: "incomingOrders", label: "Firmalardan Gelen Siparişler", icon: <ShoppingCartPlus size={18} strokeWidth={1.75} /> },
   { id: "quotes", label: "Fiyat Teklifi", icon: <TurkishLiraFileIcon size={18} strokeWidth={1.75} /> },
+  { id: "feeTracking", label: "Ücret Takip", icon: <ReceiptTurkishLira size={18} strokeWidth={1.75} /> },
   { id: "history", label: "Geçmiş", icon: <History size={18} strokeWidth={1.75} /> },
   { id: "cameras", label: "Kameralar", icon: <Video size={18} strokeWidth={1.75} /> },
   { id: "other", label: "Diğer", icon: <MoreHorizontal size={18} strokeWidth={1.75} /> },
@@ -39,7 +41,7 @@ export const TAB_GROUPS = [
   ["home"],
   ["appointments", "routes", "map"],
   ["partCheckouts", "pendingParts", "stock"],
-  ["orders", "incomingOrders", "quotes"],
+  ["orders", "incomingOrders", "quotes", "feeTracking"],
   ["history", "cameras"],
   ["other"],
   ["settings"],

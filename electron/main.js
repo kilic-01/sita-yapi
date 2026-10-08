@@ -246,6 +246,10 @@ ipcMain.handle("partCheckouts:add", (_e, input) => handlers.addPartCheckout(inpu
 ipcMain.handle("partCheckouts:reconcile", (_e, { id, patch }) => handlers.reconcilePartCheckout(id, patch));
 ipcMain.handle("partCheckouts:update", (_e, { id, patch }) => handlers.updatePartCheckout(id, patch));
 ipcMain.handle("partCheckouts:delete", (_e, { id, actingUserId }) => handlers.deletePartCheckout(id, actingUserId));
+ipcMain.handle("feeEntries:list", () => handlers.listFeeEntries());
+ipcMain.handle("feeEntries:add", (_e, input) => handlers.addFeeEntry(input));
+ipcMain.handle("feeEntries:update", (_e, { id, patch }) => handlers.updateFeeEntry(id, patch));
+ipcMain.handle("feeEntries:delete", (_e, { id, actingUserId }) => handlers.deleteFeeEntry(id, actingUserId));
 ipcMain.handle("appointments:reassign", (_e, { id, technicianId, actingUserId }) =>
   handlers.reassignAppointment(id, technicianId, actingUserId)
 );
@@ -1061,8 +1065,17 @@ function decryptSupplierPassword(supplier) {
   }
 }
 
-// DVR'ın XMEye-uyumlu RTSP yolu: Hikvision tarzı /h264/ch{N}/main/av_stream
-// (depoda gerçek cihaz üzerinde denenip doğrulanmış URL kalıbı).
+// DVR markasına göre RTSP yolu değişiyor — ikisi de sahada denenip
+// doğrulanmış kalıplar:
+//   - "xmeye": depodaki DVR'ın kullandığı, Hikvision'ı taklit eden ucuz
+//     XMEye/OEM DVR'larda (ve bazı eski Hikvision/Dahua klonlarında) yaygın
+//     kalıp — /h264/ch{N}/main/av_stream. "urlPattern" alanı olmayan ESKİ
+//     kayıtlarda (bu alan eklenmeden önce girilmiş depo DVR'ı gibi) geriye
+//     dönük uyumluluk için varsayılan bu.
+//   - "hikvision": gerçek Hikvision cihazlarının (ISAPI/PSIA standardı)
+//     kullandığı kalıp — /Streaming/Channels/{N}01 (kanal N'in ana akışı;
+//     "01" sabit sonek, "02" alt akış/substream olurdu ama burada hep ana
+//     akış kullanılıyor).
 function buildCameraRtspUrl(config, channelId) {
   if (!config?.host) return null;
   const password = config.passwordEncrypted
@@ -1076,6 +1089,10 @@ function buildCameraRtspUrl(config, channelId) {
     : null;
   const auth = config.username ? `${encodeURIComponent(config.username)}:${encodeURIComponent(password || "")}@` : "";
   const port = config.port || 554;
+  const pattern = config.urlPattern || "xmeye";
+  if (pattern === "hikvision") {
+    return `rtsp://${auth}${config.host}:${port}/Streaming/Channels/${channelId}01`;
+  }
   return `rtsp://${auth}${config.host}:${port}/h264/ch${channelId}/main/av_stream`;
 }
 

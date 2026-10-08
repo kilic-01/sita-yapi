@@ -11,6 +11,7 @@ import { assignToTechnicians, orderTechnicianStops, isOnLeave, haversineDistance
 import { GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, FILOTIM_API_KEY, SHOP_LOCATION } from "./config.js";
 import { fetchFuelPurchases, fetchFuelDevices, fetchFleetSummary } from "./filotimSync.js";
 import { sendPushNotificationToTokens } from "./apnsPush.js";
+import { sendFcmPushNotificationToTokens } from "./fcmPush.js";
 
 // API anahtarları önce Ayarlar'dan yönetici tarafından girilmiş bir
 // değer var mı diye kontrol eder, yoksa electron/config.js'teki varsayılana
@@ -378,6 +379,22 @@ export function updatePartCheckout(id, patch) {
 
 export function deletePartCheckout(id, actingUserId) {
   return db.deletePartCheckout(id, actingUserId);
+}
+
+export function listFeeEntries() {
+  return db.listFeeEntries();
+}
+
+export function addFeeEntry(input) {
+  return db.addFeeEntry(input);
+}
+
+export function updateFeeEntry(id, patch) {
+  return db.updateFeeEntry(id, patch);
+}
+
+export function deleteFeeEntry(id, actingUserId) {
+  return db.deleteFeeEntry(id, actingUserId);
 }
 
 const STATUS_LABELS_TR = {
@@ -926,16 +943,28 @@ export function registerDeviceToken(userId, token, platform, actingUserId) {
 // teknisyene atandı" gibi bir bildirimin gidebileceği bir hesap yok.
 async function notifyUserPush(userId, notification) {
   try {
-    const tokens = await db.getDeviceTokensForUser(userId);
-    if (tokens.length === 0) return;
-    const results = await sendPushNotificationToTokens(tokens, notification);
-    await Promise.all(
-      results.map((result, i) => {
+    const deviceTokens = await db.getDeviceTokensForUser(userId);
+    if (deviceTokens.length === 0) return;
+    // iOS -> APNs, Android -> FCM; iki servisin token/hata biçimi farklı
+    // olduğu için ayrı listelenip ayrı istemciye gönderiliyor.
+    const iosTokens = deviceTokens.filter((d) => d.platform !== "android").map((d) => d.token);
+    const androidTokens = deviceTokens.filter((d) => d.platform === "android").map((d) => d.token);
+    const [iosResults, androidResults] = await Promise.all([
+      iosTokens.length ? sendPushNotificationToTokens(iosTokens, notification) : [],
+      androidTokens.length ? sendFcmPushNotificationToTokens(androidTokens, notification) : [],
+    ]);
+    await Promise.all([
+      ...iosResults.map((result, i) => {
         if (!result.ok && (result.reason === "BadDeviceToken" || result.reason === "Unregistered")) {
-          return db.removeDeviceToken(tokens[i]);
+          return db.removeDeviceToken(iosTokens[i]);
         }
-      })
-    );
+      }),
+      ...androidResults.map((result, i) => {
+        if (!result.ok && result.reason === "UNREGISTERED") {
+          return db.removeDeviceToken(androidTokens[i]);
+        }
+      }),
+    ]);
   } catch (err) {
     console.error("Push bildirimi gönderilemedi:", err);
   }

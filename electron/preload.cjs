@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld("api", {
   updatePartCheckout: (id, patch) => ipcRenderer.invoke("partCheckouts:update", { id, patch }),
   deletePartCheckout: (id, actingUserId) => ipcRenderer.invoke("partCheckouts:delete", { id, actingUserId }),
 
+  listFeeEntries: () => ipcRenderer.invoke("feeEntries:list"),
+  addFeeEntry: (input) => ipcRenderer.invoke("feeEntries:add", input),
+  updateFeeEntry: (id, patch) => ipcRenderer.invoke("feeEntries:update", { id, patch }),
+  deleteFeeEntry: (id, actingUserId) => ipcRenderer.invoke("feeEntries:delete", { id, actingUserId }),
+
   listTechnicians: () => ipcRenderer.invoke("technicians:list"),
   setTechnicians: (list, actingUserId) => ipcRenderer.invoke("technicians:set", { list, actingUserId }),
 
