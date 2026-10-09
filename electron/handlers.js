@@ -448,6 +448,13 @@ export async function reassignAppointment(id, technicianId, actingUserId) {
     // Dispatcher elle yeniden atadı — daha önce "izinde beklet"
     // işaretlenmişse bu bayrak artık geçersiz.
     heldForLeave: false,
+    // Bilerek elle atandı — buildRoutes'un otomatik yeniden dağıtım havuzu
+    // bunu ARTIK hiç değiştirmemeli (bkz. db.js buildRoutes'taki "pending"
+    // filtresi: manuallyAssigned=true olanlar zaten o havuza girmiyor).
+    // Aksi halde dispatcher Randevular'dan (ya da Rota Oluştur'dan) elle
+    // seçtiği teknisyen, bir sonraki "Rota Oluştur" tıklamasında coğrafi
+    // dağıtım algoritması tarafından sessizce değiştiriliyordu.
+    manuallyAssigned: true,
     actingUserId,
   });
 
@@ -712,10 +719,13 @@ export async function addSale(input) {
   if (input.deductedFromStock) {
     for (const item of input.items) {
       if (!item.stockItemId) continue;
-      const stockItem = await db.getStockItemById(item.stockItemId);
-      if (!stockItem) continue;
-      const newQty = Math.max(0, Number(stockItem.quantity) - Number(item.qty));
-      await db.updateStockItem(item.stockItemId, { quantity: newQty }, input.actingUserId);
+      // Bir ürün birden fazla depoda olabildiği için hangi depodan
+      // düşüleceği satırda belirtilmiş olmalı (bkz. QuickSaleModal.jsx —
+      // tek depoda stoğu varsa otomatik seçiliyor, birden fazlaysa
+      // kullanıcıya soruluyor). Belirtilmemişse (ör. eski/güncellenmemiş
+      // bir istemci) o satır sessizce atlanır, satış kaydı yine oluşur.
+      if (!item.depotId) continue;
+      await db.deductStockItemDepotQuantity(item.stockItemId, item.depotId, Number(item.qty), input.actingUserId);
     }
   }
   return db.addSale(input);
@@ -790,6 +800,18 @@ export function listFuelDevices() {
   return db.getFuelDevices();
 }
 
+export function addManualFuelEntry(input) {
+  return db.addManualFuelEntry(input);
+}
+
+export function updateManualFuelEntry(id, patch) {
+  return db.updateManualFuelEntry(id, patch);
+}
+
+export function deleteManualFuelEntry(id, actingUserId) {
+  return db.deleteManualFuelEntry(id, actingUserId);
+}
+
 // Uygulama her açıldığında bir kez, ama günde bir defadan fazla değil —
 // dispatcher'ın "Şimdi Senkronize Et" butonuna hiç basmasa bile veri
 // tamamen güncel olmasa da makul ölçüde taze kalsın diye (bkz. main.js
@@ -853,6 +875,18 @@ export function updateStockItem(id, patch, actingUserId) {
 
 export function deleteStockItem(id, actingUserId) {
   return db.deleteStockItemRow(id, actingUserId);
+}
+
+export function getStockItemDepots(stockItemId) {
+  return db.getStockItemDepots(stockItemId);
+}
+
+export function setStockItemDepotQuantity(stockItemId, depotId, quantity, actingUserId) {
+  return db.setStockItemDepotQuantity(stockItemId, depotId, quantity, actingUserId);
+}
+
+export function removeStockItemDepot(stockItemId, depotId, actingUserId) {
+  return db.removeStockItemDepot(stockItemId, depotId, actingUserId);
 }
 
 export function listUsers() {

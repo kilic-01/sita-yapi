@@ -102,8 +102,14 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
     imageUrl: "",
     barcode: "",
   });
-  const [quantityDrafts, setQuantityDrafts] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
+  // Bir ürün birden fazla depoda farklı miktarlarda durabiliyor (bkz.
+  // electron/db.js stockItemDepots) — Düzenle penceresi açılınca o ürünün
+  // GÜNCEL depo dağılımı sunucudan çekilip burada tutulur. "originalDepotRows"
+  // kaydederken hangi satırların silinmiş/değişmiş olduğunu anlamak için.
+  const [editDepotRows, setEditDepotRows] = useState([]);
+  const [originalDepotRows, setOriginalDepotRows] = useState([]);
+  const [loadingDepotRows, setLoadingDepotRows] = useState(false);
   const [zoomImage, setZoomImage] = useState(null); // { url, label }
 
   // Binlerce satırlı stok listesinde bu türetilmiş diziler useMemo OLMADAN
@@ -137,35 +143,60 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
     onSaved(stockItems.filter((s) => s.id !== item.id));
   }
 
-  function handleQuantityDraft(item, value) {
-    setQuantityDrafts((d) => ({ ...d, [item.id]: value }));
-  }
-
-  function commitQuantity(item) {
-    const draft = quantityDrafts[item.id];
-    if (draft === undefined) return;
-    setQuantityDrafts((d) => {
-      const next = { ...d };
-      delete next[item.id];
-      return next;
-    });
-    const value = Math.max(0, Number(draft) || 0);
-    if (value !== Number(item.quantity)) updateItem(item.id, { quantity: value });
-  }
-
   function startEdit(item) {
     setEditingId(item.id);
     setEditDraft({ ...item });
+    setLoadingDepotRows(true);
+    window.api.listStockItemDepots(item.id).then((rows) => {
+      setEditDepotRows(rows.map((r) => ({ depotId: r.depotId, quantity: r.quantity })));
+      setOriginalDepotRows(rows.map((r) => ({ depotId: r.depotId, quantity: r.quantity })));
+      setLoadingDepotRows(false);
+    });
   }
 
   async function saveEdit() {
+    // "quantity"/"depotId" artık bu düz patch'in parçası değil — depo
+    // dağılımı ayrı uçlarla (aşağıda) kaydediliyor.
+    const { quantity, depotId, ...rest } = editDraft;
     const patch = {
-      ...editDraft,
+      ...rest,
       lowStockThreshold: editDraft.lowStockThreshold === "" ? null : Number(editDraft.lowStockThreshold),
     };
     await updateItem(editingId, patch);
+
+    const removed = originalDepotRows.filter((o) => !editDepotRows.some((r) => r.depotId === o.depotId));
+    for (const row of removed) {
+      await window.api.removeStockItemDepot(editingId, row.depotId, currentUser?.id);
+    }
+    for (const row of editDepotRows) {
+      if (!row.depotId) continue;
+      const original = originalDepotRows.find((o) => o.depotId === row.depotId);
+      if (!original || Number(original.quantity) !== Number(row.quantity)) {
+        await window.api.setStockItemDepotQuantity(editingId, row.depotId, Number(row.quantity) || 0, currentUser?.id);
+      }
+    }
+    if (removed.length || editDepotRows.length) {
+      const fresh = await window.api.listStockItems();
+      onSaved(fresh);
+    }
     setEditingId(null);
     setEditDraft(null);
+    setEditDepotRows([]);
+    setOriginalDepotRows([]);
+  }
+
+  function addDepotRow() {
+    const unused = depots.find((d) => !editDepotRows.some((r) => r.depotId === d.id));
+    if (!unused) return;
+    setEditDepotRows((rows) => [...rows, { depotId: unused.id, quantity: 0 }]);
+  }
+
+  function updateDepotRow(index, patch) {
+    setEditDepotRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  }
+
+  function removeDepotRow(index) {
+    setEditDepotRows((rows) => rows.filter((_, i) => i !== index));
   }
 
   async function handleAddItem(e) {
@@ -307,19 +338,9 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
             </>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <input
-            type="number"
-            min="0"
-            value={quantityDrafts[item.id] ?? item.quantity}
-            onChange={(e) => handleQuantityDraft(item, e.target.value)}
-            onBlur={() => commitQuantity(item)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-            style={{ width: 70, textAlign: "center" }}
-          />
-          <small>{item.unit || "adet"}</small>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 90, justifyContent: "flex-end" }}>
+          <strong>{item.quantity ?? 0}</strong>
+          <small style={{ opacity: 0.75 }}>{item.unit || "adet"}</small>
         </div>
         <button
           type="button"
@@ -547,6 +568,8 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
           onClose={() => {
             setEditingId(null);
             setEditDraft(null);
+            setEditDepotRows([]);
+            setOriginalDepotRows([]);
           }}
         >
           <form
@@ -575,36 +598,12 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
             </div>
             <div className="form-row">
               <label>
-                Miktar
-                <input
-                  type="number"
-                  min="0"
-                  value={editDraft.quantity}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, quantity: e.target.value }))}
-                  style={{ width: 90 }}
-                />
-              </label>
-              <label>
                 Birim
                 <input
                   value={editDraft.unit}
                   onChange={(e) => setEditDraft((d) => ({ ...d, unit: e.target.value }))}
                   style={{ width: 90 }}
                 />
-              </label>
-              <label>
-                Depo
-                <select
-                  value={editDraft.depotId || ""}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, depotId: e.target.value || null }))}
-                >
-                  <option value="">Belirtilmemiş</option>
-                  {depots.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label>
                 Kategori
@@ -614,6 +613,64 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
                   categories={categories}
                 />
               </label>
+            </div>
+
+            <div style={{ marginTop: "0.5rem" }}>
+              <strong style={{ fontSize: "0.85rem" }}>Depo Dağılımı</strong>
+              <p style={{ margin: "0.2rem 0 0.5rem", fontSize: "0.78rem", opacity: 0.7 }}>
+                Bu ürün birden fazla depoda farklı miktarlarda durabilir — her depo için ayrı bir
+                miktar girin.
+              </p>
+              {loadingDepotRows ? (
+                <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Yükleniyor…</p>
+              ) : (
+                <>
+                  {editDepotRows.map((row, i) => (
+                    <div key={row.depotId || i} className="form-row" style={{ marginBottom: "0.4rem" }}>
+                      <select
+                        value={row.depotId || ""}
+                        onChange={(e) => updateDepotRow(i, { depotId: e.target.value })}
+                        style={{ flex: 1 }}
+                      >
+                        <option value="">Seçin…</option>
+                        {depots.map((d) => (
+                          <option
+                            key={d.id}
+                            value={d.id}
+                            disabled={editDepotRows.some((r, j) => j !== i && r.depotId === d.id)}
+                          >
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        value={row.quantity}
+                        onChange={(e) => updateDepotRow(i, { quantity: e.target.value })}
+                        style={{ width: 90 }}
+                      />
+                      <button type="button" className="icon-btn delete" title="Kaldır" aria-label="Kaldır" onClick={() => removeDepotRow(i)}>
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  ))}
+                  {editDepotRows.length < depots.length && (
+                    <button type="button" className="secondary" onClick={addDepotRow} style={{ fontSize: "0.82rem" }}>
+                      + Depo Ekle
+                    </button>
+                  )}
+                  {depots.length === 0 && (
+                    <p style={{ fontSize: "0.82rem", opacity: 0.7 }}>Henüz depo tanımlanmamış.</p>
+                  )}
+                  <p style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+                    Toplam:{" "}
+                    <strong>
+                      {editDepotRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)} {editDraft.unit || "adet"}
+                    </strong>
+                  </p>
+                </>
+              )}
             </div>
             <div className="form-row">
               <label>
@@ -667,6 +724,8 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
               onClick={() => {
                 setEditingId(null);
                 setEditDraft(null);
+                setEditDepotRows([]);
+                setOriginalDepotRows([]);
               }}
             >
               Vazgeç

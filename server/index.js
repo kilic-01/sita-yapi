@@ -17,7 +17,11 @@ const PORT = 4173;
 await db.initDb();
 
 const app = express();
-app.use(express.json());
+// Varsayılan limit 100kb — profil fotoğrafı gibi base64 gövdeler (mobil
+// profil ekranı, PUT /api/users/:id) bunu kolayca aşıp 413 ile reddediliyordu.
+// Masaüstü bu sınırı hiç görmüyordu çünkü IPC üzerinden direkt çalışıyor,
+// sadece HTTP'den geçen mobil istemciler etkileniyordu.
+app.use(express.json({ limit: "5mb" }));
 
 app.get("/api/appointments", async (req, res, next) => {
   try {
@@ -274,6 +278,13 @@ app.post("/api/stock", async (req, res, next) => {
     // geçiriyordu, bu HTTP ucu unutmuştu — yeni stok kalemleri aktivite
     // kaydında kimliksiz (createdBy boş) görünüyordu.
     const { actingUserId, ...item } = req.body;
+    // Mobil uygulamalardan (bu HTTP ucu SADECE onlar tarafından kullanılıyor
+    // — masaüstü IPC üzerinden doğrudan handlers.addStockItem'ı çağırıyor)
+    // depo seçimi olmadan ürün eklenmesin diye bilerek SADECE burada
+    // zorunlu kılındı; masaüstündeki Stok sayfası hâlâ depo opsiyonel.
+    if (!item.depotId) {
+      return res.status(400).json({ message: "Depo seçimi zorunlu." });
+    }
     res.json(await handlers.addStockItem(item, actingUserId));
   } catch (err) {
     next(err);
@@ -293,6 +304,30 @@ app.put("/api/stock/:id", async (req, res, next) => {
 app.delete("/api/stock/:id", async (req, res, next) => {
   try {
     await handlers.deleteStockItem(req.params.id, req.body?.actingUserId);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+app.get("/api/stock/:id/depots", async (req, res, next) => {
+  try {
+    res.json(await handlers.getStockItemDepots(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+app.put("/api/stock/:id/depots/:depotId", async (req, res, next) => {
+  try {
+    const { quantity, actingUserId } = req.body;
+    await handlers.setStockItemDepotQuantity(req.params.id, req.params.depotId, quantity, actingUserId);
+    res.json(await handlers.getStockItemDepots(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+app.delete("/api/stock/:id/depots/:depotId", async (req, res, next) => {
+  try {
+    await handlers.removeStockItemDepot(req.params.id, req.params.depotId, req.body?.actingUserId);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -384,6 +419,36 @@ app.put("/api/quotes/:id", async (req, res, next) => {
 app.delete("/api/quotes/:id", async (req, res, next) => {
   try {
     await handlers.deleteQuote(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/fee-entries", async (req, res, next) => {
+  try {
+    res.json(await handlers.listFeeEntries());
+  } catch (err) {
+    next(err);
+  }
+});
+app.post("/api/fee-entries", async (req, res, next) => {
+  try {
+    res.json(await handlers.addFeeEntry(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+app.put("/api/fee-entries/:id", async (req, res, next) => {
+  try {
+    res.json(await handlers.updateFeeEntry(req.params.id, req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+app.delete("/api/fee-entries/:id", async (req, res, next) => {
+  try {
+    await handlers.deleteFeeEntry(req.params.id, req.body?.actingUserId);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -530,8 +595,9 @@ app.put("/api/incoming-orders/:id/dismiss-reminder", async (req, res, next) => {
   }
 });
 
-// iOS native uygulamanın giriş sonrası kaydettiği push bildirim cihaz
-// token'ı (bkz. electron/db.js registerDeviceToken).
+// iOS/Android native uygulamalarının giriş sonrası kaydettiği push bildirim
+// cihaz token'ı (bkz. electron/db.js registerDeviceToken, platform alanına
+// göre electron/handlers.js'teki notifyUserPush APNs/FCM'e yönlendirir).
 app.post("/api/device-tokens", async (req, res, next) => {
   try {
     const { userId, token, platform, actingUserId } = req.body;

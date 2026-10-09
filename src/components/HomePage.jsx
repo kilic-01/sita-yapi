@@ -90,6 +90,7 @@ export default function HomePage({
   appointments,
   technicians,
   stockItems = [],
+  depots = [],
   quotes = [],
   partCheckouts = [],
   pendingParts = [],
@@ -100,6 +101,7 @@ export default function HomePage({
   onNavigateToIssue,
   onEditAppointment,
   onOpenStockItem,
+  onSearchAtSuppliers,
   showToast,
 }) {
   const today = todayISO();
@@ -294,43 +296,72 @@ export default function HomePage({
                 </button>
               ))}
               {matchingStock.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    clearSearch();
-                    onOpenStockItem?.(s.code);
-                  }}
-                  className="search-result-row"
-                >
-                  <Package size={15} strokeWidth={1.75} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} />
-                  <div style={{ minWidth: 0 }}>
-                    <strong>{s.code}</strong>
-                    {s.name && <small style={{ opacity: 0.8 }}> {s.name}</small>}
-                    {s.barcode && (
-                      <QrCode
-                        size={13}
-                        strokeWidth={1.75}
-                        title={`Barkod: ${s.barcode}`}
-                        style={{ marginLeft: "0.25rem", verticalAlign: "middle", color: "var(--text)" }}
-                      />
-                    )}
-                    <div style={{ opacity: 0.8 }}>
-                      <small>
-                        {s.quantity} {s.unit || "adet"}
-                        {s.price != null && (
-                          <>
-                            {" "}
-                            · KDV hariç ₺{Number(s.price).toLocaleString("tr-TR")} · KDV dahil{" "}
-                            <strong style={{ opacity: 1, color: "var(--text)" }}>
-                              ₺{(Number(s.price) * 1.2).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
-                            </strong>
-                          </>
-                        )}
-                      </small>
+                <div key={s.id} className="search-result-row" style={{ cursor: "default", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSearch();
+                      onOpenStockItem?.(s.code);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "0.5rem",
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: "left",
+                      background: "none",
+                      border: "none",
+                      color: "inherit",
+                      padding: 0,
+                      font: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Package size={15} strokeWidth={1.75} style={{ marginTop: 2, flexShrink: 0, opacity: 0.7 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <strong>{s.code}</strong>
+                      {s.name && <small style={{ opacity: 0.8 }}> {s.name}</small>}
+                      {s.barcode && (
+                        <QrCode
+                          size={13}
+                          strokeWidth={1.75}
+                          title={`Barkod: ${s.barcode}`}
+                          style={{ marginLeft: "0.25rem", verticalAlign: "middle", color: "var(--text)" }}
+                        />
+                      )}
+                      <div style={{ opacity: 0.8 }}>
+                        <small>
+                          {s.quantity} {s.unit || "adet"}
+                          {s.price != null && (
+                            <>
+                              {" "}
+                              · KDV hariç ₺{Number(s.price).toLocaleString("tr-TR")} · KDV dahil{" "}
+                              <strong style={{ opacity: 1, color: "var(--text)" }}>
+                                ₺{(Number(s.price) * 1.2).toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                              </strong>
+                            </>
+                          )}
+                        </small>
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  {onSearchAtSuppliers && (
+                    <button
+                      type="button"
+                      title="Tedarikçilerde ara"
+                      onClick={() => {
+                        clearSearch();
+                        onSearchAtSuppliers(s.code);
+                      }}
+                      className="secondary"
+                      style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0, padding: "0.3rem 0.6rem", fontSize: "0.78rem" }}
+                    >
+                      <Search size={13} strokeWidth={1.75} />
+                      Tedarikçide Ara
+                    </button>
+                  )}
+                </div>
               ))}
               {matchingQuotes.map((q) => (
                 <button
@@ -482,6 +513,7 @@ export default function HomePage({
       {showQuickSale && (
         <QuickSaleModal
           stockItems={stockItems}
+          depots={depots}
           currentUser={currentUser}
           onClose={() => setShowQuickSale(false)}
           onSaved={() => showToast?.("success", "Satış kaydedildi.")}

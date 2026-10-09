@@ -287,6 +287,9 @@ ipcMain.handle("maps:incrementUsageCount", () => handlers.incrementMapUsageCount
 ipcMain.handle("fuel:sync", (_e, { actingUserId }) => handlers.syncFuelTransactions(actingUserId));
 ipcMain.handle("fuel:list", () => handlers.listFuelTransactions());
 ipcMain.handle("fuel:devices:list", () => handlers.listFuelDevices());
+ipcMain.handle("fuel:manual:add", (_e, input) => handlers.addManualFuelEntry(input));
+ipcMain.handle("fuel:manual:update", (_e, { id, patch }) => handlers.updateManualFuelEntry(id, patch));
+ipcMain.handle("fuel:manual:delete", (_e, { id, actingUserId }) => handlers.deleteManualFuelEntry(id, actingUserId));
 
 ipcMain.handle("users:list", () => handlers.listUsers());
 ipcMain.handle("users:add", (_e, { name, password, role, hiddenTabs, settingsSections, actingUserId }) =>
@@ -512,6 +515,13 @@ ipcMain.handle("stock:update", (_e, { id, patch, actingUserId }) =>
   handlers.updateStockItem(id, patch, actingUserId)
 );
 ipcMain.handle("stock:delete", (_e, { id, actingUserId }) => handlers.deleteStockItem(id, actingUserId));
+ipcMain.handle("stock:depots:list", (_e, stockItemId) => handlers.getStockItemDepots(stockItemId));
+ipcMain.handle("stock:depots:set", (_e, { stockItemId, depotId, quantity, actingUserId }) =>
+  handlers.setStockItemDepotQuantity(stockItemId, depotId, quantity, actingUserId)
+);
+ipcMain.handle("stock:depots:remove", (_e, { stockItemId, depotId, actingUserId }) =>
+  handlers.removeStockItemDepot(stockItemId, depotId, actingUserId)
+);
 
 ipcMain.handle("suppliers:list", () => handlers.listSuppliers());
 

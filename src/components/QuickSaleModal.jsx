@@ -12,10 +12,23 @@ import SuggestionDropdown from "./SuggestionDropdown.jsx";
 // burada yeniden icat edilmedi.
 
 function emptyItem() {
-  return { code: "", description: "", qty: 1, unitPrice: "", discountRate: 0, vatRate: 20, stockItemId: null };
+  return {
+    code: "",
+    description: "",
+    qty: 1,
+    unitPrice: "",
+    discountRate: 0,
+    vatRate: 20,
+    stockItemId: null,
+    // Bir ürün birden fazla depoda olabildiği için (bkz. electron/db.js
+    // stockItemDepots) hangi depodan düşüleceği net değilse (depotOptions'ta
+    // birden fazla satır varsa) kullanıcı seçene kadar null kalır.
+    depotId: null,
+    depotOptions: null,
+  };
 }
 
-export default function QuickSaleModal({ stockItems = [], currentUser, onClose, onSaved }) {
+export default function QuickSaleModal({ stockItems = [], depots = [], currentUser, onClose, onSaved }) {
   const [items, setItems] = useState([emptyItem()]);
   const [suggestFor, setSuggestFor] = useState(null);
   const [generalDiscountRate, setGeneralDiscountRateState] = useState(0);
@@ -35,14 +48,27 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
     setItems((its) => its.filter((_, i) => i !== idx));
   }
 
-  function pickStockItem(idx, stockItem) {
+  function depotName(id) {
+    return depots.find((d) => d.id === id)?.name || "Bilinmeyen depo";
+  }
+
+  async function pickStockItem(idx, stockItem) {
     setItem(idx, {
       code: stockItem.code,
       description: stockItem.name || "",
       unitPrice: stockItem.price != null ? String(stockItem.price) : "",
       stockItemId: stockItem.id,
+      depotId: null,
+      depotOptions: null,
     });
     setSuggestFor(null);
+    const rows = (await window.api.listStockItemDepots(stockItem.id)).filter((r) => Number(r.quantity) > 0);
+    setItem(idx, {
+      depotOptions: rows,
+      // Stoğu tek depoda varsa soru sormadan otomatik seçilir — birden
+      // fazla depoda varsa kullanıcı aşağıdaki seçiciden kendisi seçer.
+      depotId: rows.length === 1 ? rows[0].depotId : null,
+    });
   }
 
   // "Genel İndirim Oranı" tüm satırların KENDİ iskonto (%) alanını aynı
@@ -66,6 +92,15 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
     // sorulur; hayır denirse satışın gerçekten olup olmadığı ayrıca
     // sorulur — ikisine de hayır denirse hiçbir şey kaydedilmez.
     const deduct = window.confirm("Ürünler stoktan düşülsün mü?");
+    if (deduct) {
+      const ambiguous = validItems.find(
+        (it) => it.stockItemId && !it.depotId && it.depotOptions && it.depotOptions.length > 1
+      );
+      if (ambiguous) {
+        setError(`"${ambiguous.code}" birden fazla depoda var — hangi depodan düşüleceğini seçin.`);
+        return;
+      }
+    }
     const shouldSave = deduct || window.confirm("Satış gerçekleşti mi?");
     if (!shouldSave) return;
 
@@ -75,6 +110,7 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
       await window.api.addSale({
         items: validItems.map((it) => ({
           stockItemId: it.stockItemId,
+          depotId: it.depotId,
           code: it.code,
           name: it.description,
           qty: Number(it.qty) || 0,
@@ -109,6 +145,7 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
                 <th style={{ padding: "0.4rem", width: 70 }}>Adet</th>
                 <th style={{ padding: "0.4rem", width: 110 }}>Birim Fiyat</th>
                 <th style={{ padding: "0.4rem", width: 90 }}>İskonto (%)</th>
+                <th style={{ padding: "0.4rem", width: 130 }}>Depo</th>
                 <th style={{ padding: "0.4rem", width: 110, textAlign: "right" }}>Tutar</th>
                 <th style={{ padding: "0.4rem", width: 36 }} />
               </tr>
@@ -211,6 +248,30 @@ export default function QuickSaleModal({ stockItems = [], currentUser, onClose, 
                         onChange={(e) => setItem(idx, { discountRate: e.target.value })}
                         style={{ width: "100%" }}
                       />
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {!item.stockItemId ? (
+                        <small style={{ opacity: 0.5 }}>—</small>
+                      ) : !item.depotOptions ? (
+                        <small style={{ opacity: 0.5 }}>Yükleniyor…</small>
+                      ) : item.depotOptions.length === 0 ? (
+                        <small style={{ color: "var(--danger, #e74c3c)" }}>Stokta yok</small>
+                      ) : item.depotOptions.length === 1 ? (
+                        <small>{depotName(item.depotOptions[0].depotId)}</small>
+                      ) : (
+                        <select
+                          value={item.depotId || ""}
+                          onChange={(e) => setItem(idx, { depotId: e.target.value })}
+                          style={{ width: "100%" }}
+                        >
+                          <option value="">Seçin…</option>
+                          {item.depotOptions.map((r) => (
+                            <option key={r.depotId} value={r.depotId}>
+                              {depotName(r.depotId)} ({r.quantity})
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td style={{ padding: "0.4rem", textAlign: "right" }}>{formatMoney(lineTotal)}</td>
                     <td style={{ padding: "0.4rem" }}>

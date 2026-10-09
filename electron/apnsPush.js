@@ -7,7 +7,7 @@
 import http2 from "node:http2";
 import fs from "node:fs";
 import jwt from "jsonwebtoken";
-import { APNS_KEY_PATH, APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID } from "./config.js";
+import { APNS_KEY_PATH, APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, IS_DEV_DB } from "./config.js";
 
 // Apple, aynı provider token'ın tekrar tekrar (dakikada bir) üretilmesini
 // istemiyor — token 1 saate kadar geçerli, biz 50 dakikada bir yeniliyoruz.
@@ -26,7 +26,14 @@ function providerToken() {
   return cachedToken;
 }
 
-const APNS_HOST = "https://api.push.apple.com";
+// Xcode'un "Apple Development" imzasıyla (debug build) üretilen cihaz
+// token'ları SADECE sandbox APNs'te geçerli — production'a gönderilirse
+// Apple her zaman "BadDeviceToken" ile reddediyor (token'ın kendisi geçerli
+// olsa bile). Bu projede "dev" veritabanına bağlı olmak pratikte her zaman
+// development-imzalı bir build ile test edildiği anlamına geliyor (bkz.
+// electron/config.js'teki IS_DEV_DB) — paketlenmiş/App Store build'leri
+// (production veritabanı) her zaman production APNs'i kullanmalı.
+const APNS_HOST = IS_DEV_DB ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
 
 /// Tek bir cihaz token'ına bildirim gönderir. Hata durumunda (ör. "kayıt"
 /// (device token) artık geçersiz — uygulama silinmiş) fırlatmak yerine

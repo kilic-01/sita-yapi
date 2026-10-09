@@ -76,6 +76,8 @@ const REALTIME_TABLES = [
   "pendingParts",
   "partCheckouts",
   "feeEntries",
+  "fuelTransactions",
+  "stockItemDepots",
 ];
 
 let realtimeChannel = null;
@@ -563,20 +565,21 @@ export async function addPartCheckout(input) {
   if (!item) throw new Error("Stok kalemi bulunamadı");
   const qty = Number(input.qtyTaken) || 0;
   if (qty <= 0) throw new Error("Miktar 0'dan büyük olmalı");
+  if (!input.depotId) throw new Error("Hangi depodan düşüleceği belirtilmeli");
 
-  // Parça fiziksel olarak depodan çıkıyor — addSale'deki aynı oku-hesapla-yaz
-  // deseniyle stoktan hemen düşülür. Mutabakat yapılınca (reconcilePartCheckout)
-  // sadece GERÇEKTEN kullanılmayıp iade edilen kısım geri eklenir.
-  await updateStockItem(
-    input.stockItemId,
-    { quantity: Math.max(0, Number(item.quantity) - qty) },
-    input.actingUserId
-  );
+  // Parça fiziksel olarak depodan çıkıyor — addSale'deki aynı mantıkla
+  // stoktan hemen düşülür, ama artık TEK bir toplam değil, belirtilen
+  // depodaki miktar düşülüyor (bir ürün birden fazla depoda olabilir).
+  // Mutabakat yapılınca (reconcilePartCheckout) sadece GERÇEKTEN
+  // kullanılmayıp iade edilen kısım AYNI depoya geri eklenir — bu yüzden
+  // depotId aşağıda partCheckouts satırına da kaydediliyor.
+  await deductStockItemDepotQuantity(input.stockItemId, input.depotId, qty, input.actingUserId);
 
   const row = {
     id: uuid(),
     technicianId: input.technicianId,
     stockItemId: input.stockItemId,
+    depotId: input.depotId,
     date: input.date,
     qtyTaken: qty,
     status: "outstanding",
@@ -610,6 +613,13 @@ export async function addPartCheckout(input) {
     const { groupId, ...rowWithoutGroup } = row;
     ({ data, error } = await supabase.from("partCheckouts").insert(rowWithoutGroup).select().single());
   }
+  if (error && isMissingColumnError(error, "depotId")) {
+    // "depotId" sütunu henüz eklenmemiş olabilir — stoktan düşüm yukarıda
+    // zaten yapıldı, sadece hangi depodan düşüldüğü kaydı tutulamaz
+    // (iade mutabakatında stok geri eklenemez, aşağıdaki not'a bakın).
+    const { depotId, ...rowWithoutDepot } = row;
+    ({ data, error } = await supabase.from("partCheckouts").insert(rowWithoutDepot).select().single());
+  }
   if (error) throw new Error(error.message);
   await logActivity(
     input.actingUserId,
@@ -640,16 +650,11 @@ export async function reconcilePartCheckout(id, patch) {
 
   // Kullanılan ve arabada depolanan kısım zaten zimmetlenirken stoktan
   // düşülmüştü, dokunulmaz (ikisi de fiziksel olarak depoda değil) —
-  // sadece GERÇEKTEN iade edilen kısım depoya geri eklenir.
-  if (qtyReturned > 0) {
-    const item = await getStockItemById(existing.stockItemId);
-    if (item) {
-      await updateStockItem(
-        existing.stockItemId,
-        { quantity: Number(item.quantity) + qtyReturned },
-        patch.actingUserId
-      );
-    }
+  // sadece GERÇEKTEN iade edilen kısım, ALINDIĞI depoya geri eklenir.
+  // "depotId" eski (migrasyon öncesi) bir kayıtta yoksa hangi depoya
+  // geri ekleneceği bilinmediği için bu kısım sessizce atlanır.
+  if (qtyReturned > 0 && existing.depotId) {
+    await addStockItemDepotQuantity(existing.stockItemId, existing.depotId, qtyReturned, patch.actingUserId);
   }
 
   const finalPatch = {
@@ -860,6 +865,11 @@ export function getDepots() {
   return selectAll("depots");
 }
 
+async function getDepotById(id) {
+  const { data } = await supabase.from("depots").select("*").eq("id", id).maybeSingle();
+  return data;
+}
+
 export async function setDepots(list, actingUserId) {
   const result = await replaceTable("depots", list);
   await logActivity(actingUserId, "depot", "depo listesini güncelledi");
@@ -897,23 +907,157 @@ export async function setStockItems(list, actingUserId) {
 }
 
 export async function addStockItem(item, actingUserId) {
-  const row = { id: uuid(), ...item };
+  // "depotId"/"quantity" artık burada DOĞRUDAN yazılmıyor — bir ürünün
+  // birden fazla depoda farklı miktarlarda durabilmesi için gerçek kaynak
+  // "stockItemDepots" tablosu (bkz. aşağıdaki setStockItemDepotQuantity).
+  // "stockItems.quantity" bundan sonra sadece o tablodaki satırların
+  // TOPLAMINI yansıtan, elle yazılmayan bir alan — mevcut ~10 binlik
+  // listede (az stok uyarısı, arama sonucu rozeti vb.) "item.quantity"yi
+  // okuyan hiçbir yerin değişmesine gerek kalmasın diye bilerek böyle.
+  const { depotId, quantity, ...rest } = item;
+  const row = { id: uuid(), ...rest, quantity: 0 };
   const { data, error } = await supabase.from("stockItems").insert(row).select().single();
   if (error) throw new Error(error.message);
+  if (depotId && Number(quantity) > 0) {
+    await setStockItemDepotQuantity(data.id, depotId, Number(quantity), actingUserId, { skipActivityLog: true });
+  }
   await logActivity(actingUserId, "stock", `stok kalemi ekledi: ${data.code} — ${data.name}`);
+  return (await getStockItemById(data.id)) || data;
+}
+
+// ---------- Depo Bazlı Stok Dağılımı (bir ürün, birden fazla depoda) ----------
+// Aynı ürün farklı depolara dağıtık şekilde tutulabiliyor (ör. hem dükkanda
+// hem bir şantiyede) — bu yüzden tek bir "depotId"/"quantity" çifti yeterli
+// değil. Gerçek kaynak bu tablo; "stockItems.quantity" her yazmadan sonra
+// bu tablodaki satırların toplamına eşitlenip senkron tutulur ki az-stok
+// uyarısı/arama sonucu gibi TEK bir sayı bekleyen onlarca eski ekran
+// (masaüstü+iOS+Android) hiç değişmeden doğru toplamı göstermeye devam etsin.
+
+async function resyncStockItemTotal(stockItemId) {
+  const { data: rows, error } = await supabase
+    .from("stockItemDepots")
+    .select("quantity")
+    .eq("stockItemId", stockItemId);
+  if (error) throw new Error(error.message);
+  const total = (rows || []).reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+  const { error: updErr } = await supabase.from("stockItems").update({ quantity: total }).eq("id", stockItemId);
+  if (updErr) throw new Error(updErr.message);
+  return total;
+}
+
+export async function getStockItemDepots(stockItemId) {
+  const { data, error } = await supabase
+    .from("stockItemDepots")
+    .select("*")
+    .eq("stockItemId", stockItemId);
+  if (error) throw new Error(error.message);
   return data;
 }
 
+export async function setStockItemDepotQuantity(stockItemId, depotId, quantity, actingUserId, opts = {}) {
+  const qty = Math.max(0, Number(quantity) || 0);
+  const { data: existing } = await supabase
+    .from("stockItemDepots")
+    .select("*")
+    .eq("stockItemId", stockItemId)
+    .eq("depotId", depotId)
+    .maybeSingle();
+  if (existing) {
+    const { error } = await supabase.from("stockItemDepots").update({ quantity: qty }).eq("id", existing.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("stockItemDepots")
+      .insert({ id: uuid(), stockItemId, depotId, quantity: qty });
+    if (error) throw new Error(error.message);
+  }
+  await resyncStockItemTotal(stockItemId);
+  if (!opts.skipActivityLog) {
+    const [item, depot] = await Promise.all([getStockItemById(stockItemId), getDepotById(depotId)]);
+    await logActivity(
+      actingUserId,
+      "stock",
+      `depo miktarı güncellendi: ${item?.code || ""} — ${depot?.name || "bilinmeyen depo"} = ${qty}`
+    );
+  }
+}
+
+export async function removeStockItemDepot(stockItemId, depotId, actingUserId) {
+  const { error } = await supabase
+    .from("stockItemDepots")
+    .delete()
+    .eq("stockItemId", stockItemId)
+    .eq("depotId", depotId);
+  if (error) throw new Error(error.message);
+  await resyncStockItemTotal(stockItemId);
+  await logActivity(actingUserId, "stock", "ürünün bir depo kaydını kaldırdı");
+}
+
+// Hızlı Satış/Parça Zimmeti gibi stoktan fiziksel düşüm yapılan yerlerde
+// kullanılır — belirli bir depodaki miktarı azaltır (0'ın altına inmez).
+export async function deductStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId) {
+  const { data: existing } = await supabase
+    .from("stockItemDepots")
+    .select("*")
+    .eq("stockItemId", stockItemId)
+    .eq("depotId", depotId)
+    .maybeSingle();
+  const current = Number(existing?.quantity) || 0;
+  const next = Math.max(0, current - (Number(amount) || 0));
+  if (existing) {
+    const { error } = await supabase.from("stockItemDepots").update({ quantity: next }).eq("id", existing.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("stockItemDepots")
+      .insert({ id: uuid(), stockItemId, depotId, quantity: 0 });
+    if (error) throw new Error(error.message);
+  }
+  await resyncStockItemTotal(stockItemId);
+}
+
+// Parça iadesinde (reconcilePartCheckout) geri eklenir.
+export async function addStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId) {
+  const { data: existing } = await supabase
+    .from("stockItemDepots")
+    .select("*")
+    .eq("stockItemId", stockItemId)
+    .eq("depotId", depotId)
+    .maybeSingle();
+  const current = Number(existing?.quantity) || 0;
+  const next = current + (Number(amount) || 0);
+  if (existing) {
+    const { error } = await supabase.from("stockItemDepots").update({ quantity: next }).eq("id", existing.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("stockItemDepots")
+      .insert({ id: uuid(), stockItemId, depotId, quantity: next });
+    if (error) throw new Error(error.message);
+  }
+  await resyncStockItemTotal(stockItemId);
+}
+
 export async function updateStockItem(id, patch, actingUserId) {
-  const { data, error } = await supabase
-    .from("stockItems")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw new Error("Ürün bulunamadı");
+  // "quantity" artık burada doğrudan YAZILMIYOR — depo bazlı dağılım
+  // yüzünden (bkz. setStockItemDepotQuantity) tek bir sayı olarak
+  // güncellenemez. "depotId" ile birlikte geldiyse O depodaki miktar
+  // olarak yorumlanıp oraya yönlendirilir; "depotId" yoksa (hangi depoyu
+  // kastettiği belirsiz) sessizce yok sayılır.
+  const { quantity, depotId, ...rest } = patch;
+  let data;
+  if (Object.keys(rest).length > 0) {
+    const { data: updated, error } = await supabase.from("stockItems").update(rest).eq("id", id).select().single();
+    if (error) throw new Error("Ürün bulunamadı");
+    data = updated;
+  }
+  if (quantity !== undefined && depotId) {
+    await setStockItemDepotQuantity(id, depotId, quantity, actingUserId, { skipActivityLog: true });
+  }
+  if (!data) data = await getStockItemById(id);
+  if (!data) throw new Error("Ürün bulunamadı");
   await logActivity(actingUserId, "stock", `stok güncelledi: ${data.code} — ${data.name}`);
-  return data;
+  return getStockItemById(id);
 }
 
 // Stok silme SADECE yönetici hesaplarında — buton zaten arayüzde admin
@@ -981,6 +1125,74 @@ export async function replaceFuelDevices(list) {
 
 export async function getFuelDevices() {
   return selectAll("fuelDevices");
+}
+
+// Filotim kartı/takip cihazı OLMAYAN araçlar için elle girilen yakıt
+// masrafı — aynı "fuelTransactions" tablosuna yazılır ki "Araç Bazlı Yakıt
+// Gideri" tablosu ve FuelConsumptionChart hiçbir değişiklik gerekmeden bu
+// kayıtları da hesaba katsın (ikisi de sadece plate/amount/liter/processDate
+// okuyor, kaynağın Filotim mi elle mi olduğunu bilmiyor). Filotim satırları
+// hiçbir zaman createdBy doldurmadığı için (bkz. upsertFuelTransactions)
+// "createdBy dolu = manuel kayıt" ayrımı yeterli, ayrı bir kolon gerekmiyor.
+export async function addManualFuelEntry(input) {
+  const amount = Number(input.amount) || 0;
+  if (amount <= 0) throw new Error("Tutar 0'dan büyük olmalı");
+  if (!input.plate) throw new Error("Araç seçilmeli");
+  const row = {
+    // "id" Filotim'in kendi işlem id'siyle aynı kolon (bigint) — Filotim
+    // id'leri hep pozitif olduğu için negatif, milisaniye+rastgele tabanlı
+    // bir sayı kullanmak çakışmayı garanti şekilde önlüyor (uuid() burada
+    // ÇALIŞMAZ, kolon bigint).
+    id: -(Date.now() * 1000 + Math.floor(Math.random() * 1000)),
+    plate: input.plate,
+    amount,
+    liter: input.liter != null && input.liter !== "" ? Number(input.liter) : null,
+    processDate: input.date || new Date().toISOString().slice(0, 10),
+    ...stampCreatedPatch(input.actingUserId),
+  };
+  const { data, error } = await supabase.from("fuelTransactions").insert(row).select().single();
+  if (error) throw new Error(error.message);
+  await logActivity(
+    input.actingUserId,
+    "fuelEntry",
+    `manuel yakıt kaydı ekledi: ${input.plate} — ${amount.toLocaleString("tr-TR")} TL`
+  );
+  return data;
+}
+
+async function requireManualFuelEntry(id) {
+  const { data: existing, error } = await supabase.from("fuelTransactions").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!existing?.createdBy) throw new Error("Filotim'den senkronize edilen kayıt düzenlenemez/silinemez");
+  return existing;
+}
+
+export async function updateManualFuelEntry(id, patch) {
+  // Giriş şekli addManualFuelEntry ile aynı (plate/amount/liter/date) —
+  // "date" burada "processDate" koluna yazılır, kolon adı frontend'e sızmaz.
+  const { actingUserId, plate, amount, liter, date } = patch;
+  await requireManualFuelEntry(id);
+  const next = {};
+  if (plate !== undefined) next.plate = plate;
+  if (amount !== undefined) next.amount = Number(amount) || 0;
+  if (liter !== undefined) next.liter = liter != null && liter !== "" ? Number(liter) : null;
+  if (date !== undefined) next.processDate = date;
+  const { data, error } = await supabase
+    .from("fuelTransactions")
+    .update({ ...next, ...stampUpdatedPatch(actingUserId) })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  await logActivity(actingUserId, "fuelEntry", "manuel yakıt kaydını güncelledi");
+  return data;
+}
+
+export async function deleteManualFuelEntry(id, actingUserId) {
+  await requireManualFuelEntry(id);
+  const { error } = await supabase.from("fuelTransactions").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(actingUserId, "fuelEntry", "manuel yakıt kaydını sildi");
 }
 
 // ---------- Ayarlar (anahtar/değer) ----------

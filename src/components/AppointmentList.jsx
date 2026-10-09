@@ -11,6 +11,7 @@ export default function AppointmentList({
   onDelete,
   onEdit,
   onStatusChange,
+  onTechnicianChange,
   onOpenCustomerProfile,
 }) {
   const [search, setSearch] = useState("");
@@ -21,7 +22,6 @@ export default function AppointmentList({
   // yapılırken (müşteri bulmak için) tarih sınırı tamamen kaldırılır —
   // tüm tarihlerdeki eşleşmeler (geçmiş kayıtlar dahil) görünür.
   const [dateFilter, setDateFilter] = useState(todayISO());
-  const techName = (id) => technicians.find((t) => t.id === id)?.name || "-";
   const userName = (id) => users.find((u) => u.id === id)?.name || "-";
   const isAdmin = currentUser?.role === "admin";
 
@@ -213,7 +213,19 @@ export default function AppointmentList({
                       "-"
                     )}
                   </td>
-                  <td>{a.assignedTechnicianId ? techName(a.assignedTechnicianId) : "-"}</td>
+                  <td>
+                    <select
+                      value={a.assignedTechnicianId || ""}
+                      onChange={(e) => onTechnicianChange(a.id, e.target.value || null)}
+                    >
+                      <option value="">Atanmamış</option>
+                      {technicians.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   {isAdmin && <td>{userName(a.createdBy)}</td>}
                   {isAdmin && (
                     <td>

@@ -13,6 +13,11 @@ function newDvrRow() {
     port: 554,
     username: "",
     password: "",
+    // Gerçek Hikvision cihazları (ISAPI standardı) varsayılan — depodaki
+    // XMEye/OEM tarzı DVR'ın kaydı bu alan hiç olmadan girildiği için o
+    // otomatik olarak eski kalıbı kullanmaya devam ediyor (bkz.
+    // electron/main.js buildCameraRtspUrl).
+    urlPattern: "hikvision",
     channels: [{ id: 1, name: "Kamera 1" }],
   };
 }
@@ -147,6 +152,16 @@ export default function CameraSettingsSection({ cameras, onSaved, currentUser })
                 onChange={(e) => patchRow(i, { port: Number(e.target.value) || 554 })}
                 placeholder="15541"
               />
+            </label>
+            <label style={{ maxWidth: 220 }}>
+              Cihaz Tipi
+              <select
+                value={row.urlPattern || "xmeye"}
+                onChange={(e) => patchRow(i, { urlPattern: e.target.value })}
+              >
+                <option value="hikvision">Hikvision (orijinal cihaz)</option>
+                <option value="xmeye">XMEye / OEM DVR (depodaki gibi)</option>
+              </select>
             </label>
           </div>
           <div className="form-row" style={{ alignItems: "flex-end", marginTop: "0.5rem" }}>

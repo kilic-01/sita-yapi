@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld("api", {
   syncFuelTransactions: (actingUserId) => ipcRenderer.invoke("fuel:sync", { actingUserId }),
   listFuelTransactions: () => ipcRenderer.invoke("fuel:list"),
   listFuelDevices: () => ipcRenderer.invoke("fuel:devices:list"),
+  addManualFuelEntry: (input) => ipcRenderer.invoke("fuel:manual:add", input),
+  updateManualFuelEntry: (id, patch) => ipcRenderer.invoke("fuel:manual:update", { id, patch }),
+  deleteManualFuelEntry: (id, actingUserId) => ipcRenderer.invoke("fuel:manual:delete", { id, actingUserId }),
 
   listUsers: () => ipcRenderer.invoke("users:list"),
   addUser: (name, password, role, hiddenTabs, settingsSections, actingUserId) =>
@@ -87,6 +90,11 @@ contextBridge.exposeInMainWorld("api", {
   addStockItem: (item, actingUserId) => ipcRenderer.invoke("stock:add", { item, actingUserId }),
   updateStockItem: (id, patch, actingUserId) => ipcRenderer.invoke("stock:update", { id, patch, actingUserId }),
   deleteStockItem: (id, actingUserId) => ipcRenderer.invoke("stock:delete", { id, actingUserId }),
+  listStockItemDepots: (stockItemId) => ipcRenderer.invoke("stock:depots:list", stockItemId),
+  setStockItemDepotQuantity: (stockItemId, depotId, quantity, actingUserId) =>
+    ipcRenderer.invoke("stock:depots:set", { stockItemId, depotId, quantity, actingUserId }),
+  removeStockItemDepot: (stockItemId, depotId, actingUserId) =>
+    ipcRenderer.invoke("stock:depots:remove", { stockItemId, depotId, actingUserId }),
 
   listSuppliers: () => ipcRenderer.invoke("suppliers:list"),
   setSuppliers: (list, actingUserId) => ipcRenderer.invoke("suppliers:set", { list, actingUserId }),

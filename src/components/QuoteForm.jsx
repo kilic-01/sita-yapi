@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Plus, Trash2, QrCode } from "lucide-react";
 import { todayISO } from "../lib/format.js";
 import { computeTotals, formatMoney } from "../lib/orderTotals.js";
+import { toUserMessage } from "../lib/errors.js";
 import SuggestionDropdown from "./SuggestionDropdown.jsx";
 
 const DEFAULT_PAYMENT_TERMS = "Nakit · Anlaşmalı Kredi ve Banka Kartları · Havale/EFT";
@@ -127,7 +128,7 @@ export default function QuoteForm({ quote, onSaved, onCancel, stockItems = [], c
         : await window.api.addQuote(payload);
       onSaved(saved);
     } catch (err) {
-      setError(err.message);
+      setError(toUserMessage(err));
     } finally {
       setSaving(false);
     }

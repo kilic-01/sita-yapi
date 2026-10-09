@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Pencil, X } from "lucide-react";
 import { todayISO } from "../lib/format.js";
+import FeeTrackingPrintView from "./FeeTrackingPrintView.jsx";
 
 // Eskiden Excel'de elle tutulan (Yedek Parça / İşçilik / Garanti Dahili
 // sütunları + "Önceki Aylar" arşivi) Vitra ücret takibinin sistem içi
@@ -11,7 +12,7 @@ import { todayISO } from "../lib/format.js";
 // Birbirine yakın tonlar (ör. üç farklı teal/yeşil) dilimleri ayırt
 // edilemez hale getiriyordu — renk çemberinde belirgin şekilde ayrışan
 // (mavi/yeşil/turuncu/mor) dört renk seçildi.
-const CATEGORIES = [
+export const CATEGORIES = [
   { id: "yedekParca", label: "Yedek Parça", color: "#3b82f6" },
   { id: "iscilik", label: "İşçilik", color: "#22c55e" },
   { id: "garantiDahili", label: "Garanti Dahili", color: "#f59e0b" },
@@ -26,7 +27,7 @@ function polarToCartesian(cx, cy, r, angleDeg) {
 // Pasta dilimini (donut deliği ile) bir SVG path'ine çevirir — conic-gradient
 // yerine gerçek <path> elemanları kullanılıyor ki her dilim ayrı ayrı
 // hover edilip üzerine gelince ismi/tutarı gösterilebilsin.
-function donutSlicePath(cx, cy, outerR, innerR, startAngle, endAngle) {
+export function donutSlicePath(cx, cy, outerR, innerR, startAngle, endAngle) {
   const angle = Math.min(endAngle - startAngle, 359.99);
   const end = startAngle + angle;
   const largeArc = angle > 180 ? 1 : 0;
@@ -132,22 +133,22 @@ function monthKey(dateStr) {
   return (dateStr || "").slice(0, 7);
 }
 
-function monthLabel(key) {
+export function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   if (!y || !m) return key;
   return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
-function formatMoney(n) {
+export function formatMoney(n) {
   return `₺${(Number(n) || 0).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function categoryLabel(id) {
+export function categoryLabel(id) {
   return CATEGORIES.find((c) => c.id === id)?.label || id;
 }
 
 function emptyForm() {
-  return { category: "yedekParca", amount: "", vatRate: "20", description: "", date: todayISO() };
+  return { category: "yedekParca", amount: "", description: "", date: todayISO() };
 }
 
 export default function FeeTrackingPage({ feeEntries = [], currentUser, onChanged }) {
@@ -200,6 +201,18 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
 
   const previousMonthKeys = sortedMonthKeys.filter((k) => k !== currentMonthKey);
 
+  // Yazdırma çıktısında seçili ay dışındaki tüm ayları (geçmiş ya da ileri
+  // tarihli) satır satır (ay adı + toplam) listelemek için — ekrandaki
+  // "Önceki Aylar" bloğundan farklı olarak seçili ayın kendisi hariç TÜM
+  // diğer aylar gösterilir.
+  const otherMonthsForPrint = useMemo(
+    () =>
+      sortedMonthKeys
+        .filter((k) => k !== selectedMonth)
+        .map((key) => ({ key, total: monthSummaries.get(key)?.total || 0 })),
+    [sortedMonthKeys, selectedMonth, monthSummaries]
+  );
+
   function startNew() {
     setEditingId(null);
     setForm({ ...emptyForm(), date: selectedMonth === currentMonthKey ? todayISO() : `${selectedMonth}-01` });
@@ -211,7 +224,6 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
     setForm({
       category: entry.category,
       amount: String(entry.amount),
-      vatRate: String(entry.vatRate),
       description: entry.description || "",
       date: entry.date,
     });
@@ -225,8 +237,6 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
   }
 
   const amountNum = Number(form?.amount) || 0;
-  const vatRateNum = Number(form?.vatRate) || 0;
-  const previewTotal = amountNum * (1 + vatRateNum / 100);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -240,7 +250,10 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
       const payload = {
         category: form.category,
         amount: amountNum,
-        vatRate: vatRateNum,
+        // Girilen tutar zaten KDV dahil — ayrıca bir KDV oranı
+        // uygulanmasın diye 0 gönderiliyor (bkz. db.js: totalAmount =
+        // amount * (1 + vatRate/100)).
+        vatRate: 0,
         description: form.description.trim(),
         date: form.date,
         actingUserId: currentUser?.id,
@@ -274,11 +287,20 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
     }
   }
 
+  function handlePrint() {
+    // Liste birden fazla sayfaya taşabiliyor — alt ortada "X / Y" sayfa
+    // numarası göstersin diye (bkz. electron/main.js'teki print:current).
+    window.api.printCurrent({ showPageNumber: true });
+  }
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Ücret Takip — {monthLabel(selectedMonth)}</h2>
         <div style={{ flex: 1 }} />
+        <button type="button" className="secondary" onClick={handlePrint}>
+          Yazdır
+        </button>
         {!form && (
           <button
             type="button"
@@ -324,30 +346,18 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
                 />
               </label>
             </div>
-            <div className="form-row" style={{ marginTop: "0.5rem" }}>
-              <label>
-                Tutar (KDV hariç)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                  autoFocus
-                  placeholder="0,00"
-                />
-              </label>
-              <label>
-                KDV Oranı (%)
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={form.vatRate}
-                  onChange={(e) => setForm((f) => ({ ...f, vatRate: e.target.value }))}
-                />
-              </label>
-            </div>
+            <label style={{ display: "block", marginTop: "0.5rem" }}>
+              Tutar
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                autoFocus
+                placeholder="0,00"
+              />
+            </label>
             <label style={{ display: "block", marginTop: "0.5rem" }}>
               Açıklama (opsiyonel)
               <input
@@ -356,9 +366,6 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
                 placeholder="Örn. müşteri adı, fiş no vb."
               />
             </label>
-            <p style={{ marginTop: "0.5rem", fontWeight: 600 }}>
-              KDV dahil toplam: {formatMoney(previewTotal)}
-            </p>
             {error && <p style={{ color: "var(--danger, #e74c3c)" }}>{error}</p>}
             <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
               <button className="primary" type="submit" disabled={saving}>
@@ -406,9 +413,6 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
               <span style={{ opacity: 0.75, fontSize: "0.85rem" }}>{entry.date}</span>
               {entry.description && <span style={{ opacity: 0.75, fontSize: "0.85rem" }}>{entry.description}</span>}
               <span style={{ flex: 1 }} />
-              <span style={{ opacity: 0.75, fontSize: "0.8rem" }}>
-                {formatMoney(entry.amount)} + %{entry.vatRate} KDV =
-              </span>
               <strong>{formatMoney(entry.totalAmount)}</strong>
               <button type="button" className="icon-btn edit" title="Düzenle" aria-label="Düzenle" onClick={() => startEdit(entry)}>
                 <Pencil size={14} strokeWidth={1.75} />
@@ -464,6 +468,13 @@ export default function FeeTrackingPage({ feeEntries = [], currentUser, onChange
           )}
         </div>
       )}
+
+      <FeeTrackingPrintView
+        monthKey={selectedMonth}
+        summary={selectedSummary}
+        entries={selectedMonthEntries}
+        otherMonths={otherMonthsForPrint}
+      />
     </div>
   );
 }

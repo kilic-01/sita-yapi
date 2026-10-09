@@ -3,6 +3,7 @@ import { Fuel } from "lucide-react";
 import CollapsibleCard from "./CollapsibleCard.jsx";
 import FuelConsumptionChart from "./FuelConsumptionChart.jsx";
 import FuelSyncSection from "./FuelSyncSection.jsx";
+import ManualFuelEntrySection from "./ManualFuelEntrySection.jsx";
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -124,6 +125,16 @@ export default function FuelPage({
               </table>
             </div>
           )}
+        </div>
+
+        <div style={{ marginTop: "1.5rem", paddingTop: "1.5rem", borderTop: "1px solid var(--border)" }}>
+          <ManualFuelEntrySection
+            vehicles={vehicles}
+            fuelDevices={fuelDevices}
+            fuelTransactions={fuelTransactions}
+            currentUser={currentUser}
+            onChanged={onFuelSynced}
+          />
         </div>
 
         {isAdmin && settings && (

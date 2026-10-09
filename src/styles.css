@@ -1590,6 +1590,109 @@ td {
     font-size: 0.75rem;
     color: #555;
   }
+
+  /* Ücret Takip çıktısı — üstte pasta grafik + kategori bazlı özet,
+     altında aynı tipografi hiyerarşisiyle (kalın isim + gri alt satır)
+     seçili ayın kayıt listesi, en altta diğer ayların tek satırlık
+     dökümü (bkz. FeeTrackingPrintView.jsx). */
+  .fee-print-summary {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  .fee-print-donut {
+    position: relative;
+    width: 32mm;
+    height: 32mm;
+    flex-shrink: 0;
+  }
+  .fee-print-donut svg {
+    width: 100%;
+    height: 100%;
+  }
+  .fee-print-donut-center {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 58%;
+    height: 58%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .fee-print-donut-center span {
+    font-size: 0.6rem;
+    color: #555;
+  }
+  .fee-print-donut-center strong {
+    font-size: 0.8rem;
+  }
+  .fee-print-summary-legend {
+    flex: 1;
+  }
+  .fee-print-summary-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    padding: 0.1rem 0;
+  }
+  .fee-print-swatch {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .fee-print-summary-label {
+    flex: 1;
+  }
+  .fee-print-summary-pct {
+    font-size: 0.75rem;
+    color: #666;
+  }
+  .fee-print-summary-row.total {
+    margin-top: 0.2rem;
+    padding-top: 0.2rem;
+    border-top: 0.5px solid #ccc;
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+  .fee-print-row {
+    padding: 0.35rem 0;
+    border-bottom: 0.5px solid #ddd;
+  }
+  .fee-print-row-main {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: 0.9rem;
+    flex-wrap: wrap;
+  }
+  .fee-print-row-total {
+    margin-left: auto;
+    font-weight: 700;
+  }
+  .fee-print-other-months {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #1a1a1a;
+  }
+  .fee-print-other-months h3 {
+    margin: 0 0 0.3rem;
+    font-size: 0.95rem;
+  }
+  .fee-print-other-month-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    padding: 0.15rem 0;
+    border-bottom: 0.5px solid #ddd;
+  }
 }
 
 /* Google Maps InfoWindow'un kendi kapatma (×) düğmesi — Google bunu

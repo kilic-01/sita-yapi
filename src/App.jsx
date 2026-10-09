@@ -79,6 +79,17 @@ export default function App() {
   const [orderAutoSearchedCode, setOrderAutoSearchedCode] = useState(null);
   const [orderAutofillFailed, setOrderAutofillFailed] = useState(null);
   const [orderAutoSearching, setOrderAutoSearching] = useState(false);
+  // Anasayfa aramasındaki "Tedarikçide Ara" butonu — Tedarikçiden Sipariş
+  // sekmesine geçip kodu doldurduktan sonra, kullanıcı orada tekrar aramaya
+  // basmak zorunda kalmasın diye aramayı OTOMATİK tetiklemesi gerektiğini
+  // işaretler (bkz. OrdersPage.jsx'teki pendingAutoSearch efekti).
+  const [orderPendingAutoSearch, setOrderPendingAutoSearch] = useState(false);
+
+  function handleSearchStockAtSuppliers(code) {
+    setOrderQuery(code);
+    setOrderPendingAutoSearch(true);
+    setActiveTab("orders");
+  }
   const [theme, setTheme] = useState(() => localStorage.getItem("theme"));
   // Kullanıcının kendi cihazında seçtiği gezinme düzeni — theme gibi sadece
   // localStorage'da, Supabase'e senkronize edilmiyor (kişisel bir tercih,
@@ -265,6 +276,7 @@ export default function App() {
       pendingParts: () => currentUser && window.api.listPendingParts().then(setPendingParts),
       partCheckouts: () => currentUser && window.api.listPartCheckouts().then(setPartCheckouts),
       feeEntries: () => currentUser && window.api.listFeeEntries().then(setFeeEntries),
+      fuelTransactions: () => currentUser && window.api.listFuelTransactions().then(setFuelTransactions),
       messages: () =>
         currentUser &&
         window.api
@@ -573,6 +585,30 @@ export default function App() {
     patchAppointment(updated);
   }
 
+  // Randevular sekmesindeki liste satırından teknisyen değiştirmek —
+  // RouteBuilder.jsx'in zaten kullandığı aynı uç (reassignAppointment),
+  // aynı local-state yama mekanizması (patchAppointment). Rota Oluştur
+  // sekmesi de randevunun GÜNCEL assignedTechnicianId'sini okuyup varsayılan
+  // seçili teknisyen olarak gösterdiği için, buradan yapılan değişiklik
+  // Rota Oluştur'a otomatik olarak yansır — ayrıca bir "varsayılan" alanı
+  // taşımaya gerek yok.
+  async function handleTechnicianChange(id, technicianId) {
+    // Sunucu yanıtını (stopOrder hesabı için küçük bir sorgu daha gerektiriyor,
+    // bkz. handlers.js reassignAppointment) beklemeden dropdown'u ANINDA
+    // seçilen teknisyene geçiriyoruz — aksi halde seçim bir süre eski
+    // değerde takılı kalıp sonra "zıplıyormuş" gibi görünüyordu. Sunucu
+    // isteği başarısız olursa gerçek (eski) değere geri dönülür.
+    const previous = appointments.find((a) => a.id === id);
+    patchAppointment({ ...previous, assignedTechnicianId: technicianId || null });
+    try {
+      const updated = await window.api.reassignAppointment(id, technicianId || null, currentUser.id);
+      patchAppointment(updated);
+    } catch (err) {
+      if (previous) patchAppointment(previous);
+      showToast("error", err.message || "Teknisyen ataması başarısız oldu.");
+    }
+  }
+
   function handleSaved(appointment, hasIssue) {
     patchAppointment(appointment);
     if (!hasIssue) {
@@ -791,6 +827,7 @@ export default function App() {
             appointments={appointments}
             technicians={technicians}
             stockItems={stockItems}
+            depots={depots}
             quotes={quotes}
             partCheckouts={partCheckouts}
             pendingParts={pendingParts}
@@ -801,6 +838,7 @@ export default function App() {
             onNavigateToIssue={handleNavigateToIssue}
             onEditAppointment={handleEditAppointmentInPlace}
             onOpenStockItem={handleOpenStockItem}
+            onSearchAtSuppliers={handleSearchStockAtSuppliers}
             showToast={showToast}
           />
         )}
@@ -891,6 +929,7 @@ export default function App() {
                   onDelete={handleDelete}
                   onEdit={setEditingAppointment}
                   onStatusChange={handleStatusChange}
+                  onTechnicianChange={handleTechnicianChange}
                   onOpenCustomerProfile={(a) => {
                     setCustomerProfileInitialTab("gecmis");
                     setCustomerProfileAppointment(a);
@@ -936,6 +975,8 @@ export default function App() {
             setAutofillFailed={setOrderAutofillFailed}
             autoSearching={orderAutoSearching}
             setAutoSearching={setOrderAutoSearching}
+            pendingAutoSearch={orderPendingAutoSearch}
+            onAutoSearchHandled={() => setOrderPendingAutoSearch(false)}
           />
         )}
         {activeTab === "incomingOrders" && (
@@ -960,6 +1001,7 @@ export default function App() {
         {activeTab === "partCheckouts" && (
           <PartCheckoutsPage
             stockItems={stockItems}
+            depots={depots}
             technicians={technicians}
             appointments={appointments}
             partCheckouts={partCheckouts}

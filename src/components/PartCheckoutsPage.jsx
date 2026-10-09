@@ -18,6 +18,20 @@ function emptyDraft() {
   return { qtyUsed: "", qtyReturned: "", qtyStoredInVehicle: "", appointmentId: "" };
 }
 
+// "Başka Kişi Ekle" ile birlikte seçilmiş diğer kişilerin id'leri "note"
+// sütununda JSON olarak taşınıyor (bkz. electron/db.js addPartCheckout) —
+// eski/elle girilmiş düz metin notlarla karışmaması için sadece beklenen
+// şekle uyan bir JSON ise ayrıştırılır, aksi halde yok sayılır.
+function companionIdsFromNote(note) {
+  if (!note) return [];
+  try {
+    const parsed = JSON.parse(note);
+    return Array.isArray(parsed?.companionTechnicianIds) ? parsed.companionTechnicianIds : [];
+  } catch {
+    return [];
+  }
+}
+
 // Fiyatlar her yerde KDV DAHİL gösterilir — sadece bilgi amaçlı, stok
 // kaleminin kendi (KDV hariç) `price` alanına hiçbir şekilde yazılmaz.
 function formatPriceWithVat(price) {
@@ -27,11 +41,12 @@ function formatPriceWithVat(price) {
 let rowKeySeq = 0;
 function emptyProductRow() {
   rowKeySeq += 1;
-  return { key: `row-${rowKeySeq}`, search: "", selectedStock: null, qty: "1" };
+  return { key: `row-${rowKeySeq}`, search: "", selectedStock: null, qty: "1", depotId: null, depotOptions: null };
 }
 
 export default function PartCheckoutsPage({
   stockItems = [],
+  depots = [],
   technicians = [],
   appointments = [],
   partCheckouts = [],
@@ -49,6 +64,11 @@ export default function PartCheckoutsPage({
   const [productRows, setProductRows] = useState([emptyProductRow()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Birden fazla kişi seçiliyse "Zimmetle"ye basınca formun yerine bu
+  // seçim ekranı gösterilir (bkz. handleCheckout) — parçalar sadece burada
+  // seçilen TEK kişiye zimmetlenir, diğerleri sadece bilgi amaçlı "birlikte"
+  // olarak kaydedilir.
+  const [recipientChoice, setRecipientChoice] = useState(null);
   const [reconcileDrafts, setReconcileDrafts] = useState({});
   const [expandedTechIds, setExpandedTechIds] = useState(new Set());
   const [editingReconcileId, setEditingReconcileId] = useState(null);
@@ -177,9 +197,19 @@ export default function PartCheckoutsPage({
   // senaryosu: bir teknisyene aldığı tüm parçaları tek tek taratmak).
   function selectStockForRow(row, stock) {
     clearTimeout(productRowSearchTimers.current[row.key]);
-    updateProductRow(row.key, { selectedStock: stock, search: "" });
+    updateProductRow(row.key, { selectedStock: stock, search: "", depotId: null, depotOptions: null });
     const newRow = addProductRow();
     setTimeout(() => productRowInputRefs.current[newRow.key]?.focus(), 0);
+    // Bir ürün birden fazla depoda olabildiği için (bkz. electron/db.js
+    // stockItemDepots) hangi depodan zimmetleneceği net değilse kullanıcı
+    // seçene kadar bekler — tek depoda stoğu varsa otomatik seçilir.
+    window.api.listStockItemDepots(stock.id).then((rows) => {
+      const withStock = rows.filter((r) => Number(r.quantity) > 0);
+      updateProductRow(row.key, {
+        depotOptions: withStock,
+        depotId: withStock.length === 1 ? withStock[0].depotId : null,
+      });
+    });
   }
 
   // Arama kutusuna her yazıldığında (elle ya da barkod okuyucudan) çağrılır —
@@ -287,6 +317,7 @@ export default function PartCheckoutsPage({
     setTechnicianIds([""]);
     setProductRows([emptyProductRow()]);
     setError("");
+    setRecipientChoice(null);
     Object.values(productRowSearchTimers.current).forEach(clearTimeout);
     productRowSearchTimers.current = {};
     setProductRowDebouncedSearch({});
@@ -327,46 +358,55 @@ export default function PartCheckoutsPage({
       setError("En az bir ürün seçip miktar girin.");
       return;
     }
-
-    // Aynı ürün her seçili kişiye AYRI AYRI zimmetleniyor — stoktan da o
-    // kadar kez düşüyor, bu yüzden yetersizlik uyarısı kişi sayısıyla
-    // çarpılmış toplam ihtiyacı göstermeli.
+    const ambiguousDepot = validRows.find((r) => !r.depotId && r.depotOptions && r.depotOptions.length > 1);
+    if (ambiguousDepot) {
+      setError(`${ambiguousDepot.selectedStock.code}: birden fazla depoda var — hangi depodan zimmetleneceğini seçin.`);
+      return;
+    }
     for (const r of validRows) {
-      const totalNeeded = Number(r.qty) * validTechnicianIds.length;
-      if (totalNeeded > Number(r.selectedStock.quantity)) {
+      if (Number(r.qty) > Number(r.selectedStock.quantity)) {
         const proceed = window.confirm(
-          `${r.selectedStock.code}: ${validTechnicianIds.length} kişiye ${r.qty} adet zimmetlemek toplam ${totalNeeded} adet gerektiriyor, stokta sadece ${r.selectedStock.quantity} ${r.selectedStock.unit || "adet"} görünüyor. Yine de zimmetlensin mi?`
+          `${r.selectedStock.code}: ${r.qty} adet zimmetlemek isteniyor, stokta sadece ${r.selectedStock.quantity} ${r.selectedStock.unit || "adet"} görünüyor. Yine de zimmetlensin mi?`
         );
         if (!proceed) return;
       }
     }
 
+    // Birden fazla kişi seçildiyse artık hepsine AYRI AYRI (ve stoktan
+    // katlanarak) zimmetlemiyoruz — ofis çalışanları bunu yanlışlıkla
+    // "parçalar 2 kez zimmetleniyor" diye algılıyordu. Bunun yerine
+    // parçaların kime zimmetleneceği sorulur; diğerleri sadece bilgi amaçlı
+    // "birlikte" olarak not edilir (bkz. submitCheckout).
+    if (validTechnicianIds.length > 1) {
+      setRecipientChoice({ candidates: validTechnicianIds, rows: validRows });
+      return;
+    }
+    await submitCheckout(validTechnicianIds[0], [], validRows);
+  }
+
+  async function submitCheckout(recipientTechId, companionTechIds, validRows) {
     setSaving(true);
-    // Birden fazla kişi seçildiyse (aynı araçla birlikte gidenler) hepsinin
-    // zimmeti ortak bir "groupId" paylaşır ki listede ayrı ayrı değil, tek
-    // bir başlık altında (isimler yan yana) gösterilebilsinler. Tek kişilik
-    // zimmetlerde grup kavramı anlamsız, groupId gönderilmiyor.
-    const groupId = validTechnicianIds.length > 1 ? crypto.randomUUID() : null;
+    setError("");
     try {
       // Ard arda (transaction yok) — bir satır başarısız olursa öncekiler
       // zaten kaydedilmiş olur, onChanged() yine de en güncel durumu getirir.
-      for (const techId of validTechnicianIds) {
-        for (const r of validRows) {
-          await window.api.addPartCheckout({
-            technicianId: techId,
-            stockItemId: r.selectedStock.id,
-            date,
-            qtyTaken: Number(r.qty),
-            actingUserId: currentUser?.id,
-            groupId,
-          });
-        }
+      for (const r of validRows) {
+        await window.api.addPartCheckout({
+          technicianId: recipientTechId,
+          stockItemId: r.selectedStock.id,
+          depotId: r.depotId,
+          date,
+          qtyTaken: Number(r.qty),
+          actingUserId: currentUser?.id,
+          companionTechnicianIds: companionTechIds,
+        });
       }
       resetCheckoutForm();
       setShowCheckoutModal(false);
       onChanged?.();
     } catch (err) {
       setError(err.message);
+      setRecipientChoice(null);
       onChanged?.();
     } finally {
       setSaving(false);
@@ -518,6 +558,12 @@ export default function PartCheckoutsPage({
           // grubun ilk kişisiyle eşleştirir — yeni, ayrı bir zimmet açar,
           // mevcut grubu değiştirmez.
           const primaryTechId = groupTechnicians[0]?.id;
+          // Bu teknisyenin o günkü kalemlerinden (farklı "Zimmetle"
+          // oturumlarında eklenmiş olabilirler) birlikte seçilmiş kişilerin
+          // birleşimi — isim satırında tek seferde gösterilir, her ürün
+          // satırında tekrarlanmaz.
+          const companionIds = [...new Set(rows.flatMap((r) => companionIdsFromNote(r.note)))];
+          const companionNames = companionIds.map((id) => technicians.find((t) => t.id === id)?.name || "—");
           return (
             <div key={groupKey} style={{ marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
@@ -553,6 +599,9 @@ export default function PartCheckoutsPage({
                       : "Bilinmeyen teknisyen"}
                   </h4>
                   <small style={{ opacity: 0.6 }}>({rows.length} kalem)</small>
+                  {companionNames.length > 0 && (
+                    <small style={{ opacity: 0.6 }}>· Birlikte: {companionNames.join(", ")}</small>
+                  )}
                 </button>
                 {apprentices.length > 0 && (
                   <div style={{ position: "relative", flexShrink: 0 }}>
@@ -838,6 +887,49 @@ export default function PartCheckoutsPage({
           maxWidth={560}
         >
           <div className="card">
+            {recipientChoice ? (
+              <>
+                <h3 style={{ marginTop: 0 }}>Bu parçalar kime zimmetlensin?</h3>
+                <p style={{ opacity: 0.75 }}>
+                  Birden fazla kişi seçtiniz — parçalar sadece aşağıda seçeceğiniz TEK kişiye zimmetlenecek
+                  (stoktan bir kez düşülecek), diğerleri sadece "birlikte" olarak not edilecek.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {recipientChoice.candidates.map((techId) => {
+                    const tech = technicians.find((t) => t.id === techId);
+                    const others = recipientChoice.candidates.filter((id) => id !== techId);
+                    return (
+                      <button
+                        key={techId}
+                        type="button"
+                        className="secondary"
+                        style={{ textAlign: "left" }}
+                        disabled={saving}
+                        onClick={() => submitCheckout(techId, others, recipientChoice.rows)}
+                      >
+                        <strong>{tech?.name || "Bilinmeyen"}</strong>
+                        {others.length > 0 && (
+                          <small style={{ display: "block", opacity: 0.7 }}>
+                            Birlikte: {others.map((id) => technicians.find((t) => t.id === id)?.name || "—").join(", ")}
+                          </small>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ marginTop: "1rem" }}
+                  disabled={saving}
+                  onClick={() => setRecipientChoice(null)}
+                >
+                  Vazgeç, listeyi düzenle
+                </button>
+                {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
+              </>
+            ) : (
+            <>
             <h3 style={{ marginTop: 0 }}>Yeni Zimmet</h3>
             <form onSubmit={handleCheckout}>
               {technicianIds.map((id, idx) => (
@@ -938,8 +1030,44 @@ export default function PartCheckoutsPage({
                         min="1"
                         value={row.qty}
                         onChange={(e) => updateProductRow(row.key, { qty: e.target.value })}
+                        // Diğer alanlardaki Enter'lar (bkz. ürün arama kutusu)
+                        // formu tetiklemeyecek şekilde engelleniyor — burada da
+                        // aynı koruma yoksa, miktarı girip Enter'a basmak
+                        // dispatcher henüz tüm ürünleri eklemeyi bitirmeden
+                        // zimmeti erken (ve eksik) kaydedip modalı kapatıyordu.
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.preventDefault();
+                        }}
                       />
                     </label>
+                    {row.selectedStock && (
+                      <label style={{ maxWidth: 140, marginBottom: 0 }}>
+                        {idx === 0 ? "Depo" : ""}
+                        {!row.depotOptions ? (
+                          <small style={{ display: "block", opacity: 0.5, marginTop: "0.4rem" }}>Yükleniyor…</small>
+                        ) : row.depotOptions.length === 0 ? (
+                          <small style={{ display: "block", color: "var(--danger, #e74c3c)", marginTop: "0.4rem" }}>
+                            Stokta yok
+                          </small>
+                        ) : row.depotOptions.length === 1 ? (
+                          <small style={{ display: "block", opacity: 0.75, marginTop: "0.4rem" }}>
+                            {depots.find((d) => d.id === row.depotOptions[0].depotId)?.name || "—"}
+                          </small>
+                        ) : (
+                          <select
+                            value={row.depotId || ""}
+                            onChange={(e) => updateProductRow(row.key, { depotId: e.target.value })}
+                          >
+                            <option value="">Seçin…</option>
+                            {row.depotOptions.map((r) => (
+                              <option key={r.depotId} value={r.depotId}>
+                                {depots.find((d) => d.id === r.depotId)?.name || "—"} ({r.quantity})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </label>
+                    )}
                     <button
                       type="button"
                       className="icon-btn delete"
@@ -982,6 +1110,8 @@ export default function PartCheckoutsPage({
                 </button>
               </div>
             </form>
+            </>
+            )}
           </div>
         </Modal>
       )}

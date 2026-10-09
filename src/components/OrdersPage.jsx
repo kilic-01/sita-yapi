@@ -61,6 +61,8 @@ export default function OrdersPage({
   setAutofillFailed,
   autoSearching,
   setAutoSearching,
+  pendingAutoSearch,
+  onAutoSearchHandled,
 }) {
   const containerRef = useRef(null);
 
@@ -128,6 +130,16 @@ export default function OrdersPage({
       setAutoSearching(false);
     }
   }
+
+  // Anasayfadaki "Tedarikçide Ara" butonundan geldiyse (bkz. App.jsx
+  // handleSearchStockAtSuppliers) kullanıcı burada tekrar aramaya basmak
+  // zorunda kalmasın diye aramayı otomatik tetikler.
+  useEffect(() => {
+    if (pendingAutoSearch && code) {
+      runAutoSearch();
+      onAutoSearchHandled?.();
+    }
+  }, [pendingAutoSearch, code]);
 
   function closeViewer() {
     setActiveOffer(null);
