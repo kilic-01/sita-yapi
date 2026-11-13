@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import { v4 as uuid } from "uuid";
 import crypto from "node:crypto";
+import os from "node:os";
 import { SUPABASE_URL, SUPABASE_SERVICE_KEY } from "./config.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 
@@ -419,6 +420,8 @@ async function sendToTv(content, actingUserId, entityType, activityText) {
     ...content,
     target: tvTarget,
     sentBy: await actorDisplayName(actingUserId),
+    // TV'deki ürün ekranında küçük "Yayınlayan: …" yazısı (macOS'taki ".local" eki atılır).
+    sentFrom: os.hostname().replace(/\.local$/i, ""),
     sentAt: new Date().toISOString(),
   };
   await sendTvEvent("show", payload);
