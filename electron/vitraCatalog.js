@@ -76,12 +76,24 @@ function decodeEntities(text) {
 }
 
 function parseFeatures(html) {
-  const features = [];
+  // 1) Tüm listelerdeki maddeler sırayla; tekrarlar (aynı listeler mobil ve
+  //    masaüstü için iki kez var) atılır.
+  const raw = [];
   for (const [, list] of html.matchAll(/<ul class="text-\[var\(--color-sandstone-90\)\][^"]*">([\s\S]*?)<\/ul>/g)) {
     for (const [, li] of list.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)) {
       const text = decodeEntities(li.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
-      if (text && !features.includes(text)) features.push(text);
+      if (text && !raw.includes(text)) raw.push(text);
     }
+  }
+  // 2) Sitede bazen tek cümle iki maddeye — hatta açık liste ile "devamını gör"
+  //    listesi arasına — bölünmüş ("Algılama mesafesini" / "montaj anında …
+  //    sensör"): noktalamasız biten maddenin ardından küçük harfle başlayan
+  //    madde öncekine eklenir.
+  const features = [];
+  for (const text of raw) {
+    const prev = features[features.length - 1];
+    if (prev && !/[.!?:;)”"’]$/.test(prev) && /^\p{Ll}/u.test(text)) features[features.length - 1] = `${prev} ${text}`;
+    else features.push(text);
   }
   return features.slice(0, MAX_FEATURES);
 }

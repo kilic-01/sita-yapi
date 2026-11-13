@@ -1228,7 +1228,19 @@ function shortCustomerName(name) {
 
 // TV'de adres yerine yalnız mahalle/ilçe. Sokak, apartman, numara ASLA
 // gönderilmez: çıkarılamıyorsa boş döner.
+// "ETİLER" → "Etiler": adres bileşenleri büyük harfle geliyor; TV'de küçük
+// boyutta BÜYÜK HARF zor okunduğu için her kelime Türkçe kurala göre baş harfi büyük yazılır.
+function trTitleCase(text) {
+  return String(text || "")
+    .toLocaleLowerCase("tr")
+    .replace(/(^|[\s,(/-])(\p{L})/gu, (_, sep, ch) => sep + ch.toLocaleUpperCase("tr"));
+}
+
 function appointmentArea(a) {
+  return trTitleCase(rawAppointmentArea(a));
+}
+
+function rawAppointmentArea(a) {
   const d = a.addressDetail || {};
   if (d.ilce || d.mahalle) return [d.mahalle, d.ilce].filter(Boolean).join(", ");
   // Eski randevularda adres tek bir serbest metin ("Kültür Mah.İpek Sok.No:3 …"):
