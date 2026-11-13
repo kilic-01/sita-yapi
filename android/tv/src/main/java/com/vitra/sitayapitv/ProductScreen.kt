@@ -86,7 +86,7 @@ private val Separator = Color(0x290E2A3B)
 private val SecondaryFill = Color(0x1F0E2A3B)
 
 // Ultra ince materyal: arka plan güçlü bulanıklık + açık ton.
-private val MaterialTint = Color(0x8CF5F7F8)
+private val MaterialTint = FrostTint
 
 private fun captionStyle(color: Color = LabelSecondary) =
     TextStyle(fontFamily = Poppins, color = color, fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
@@ -209,7 +209,7 @@ fun ProductScreen(product: TvProduct) {
                         contentDescription = null,
                         modifier = Modifier
                             .align(Alignment.End)
-                            .width(59.dp)
+                            .width(95.dp)
                             .onSizeChanged { logoHeight = with(density) { it.height.toDp() } },
                     )
                 }
@@ -261,12 +261,15 @@ private fun ProductInfo(product: TvProduct, modifier: Modifier = Modifier) {
 // sütunda kalan yüksekliğe [budget] bir sayfa sığacak en büyük adım
 // (FEATURE_SIZES) seçilir — uzun ürün adı ya da iki satırlık maddelerde küçülür.
 private const val FEATURES_PER_PAGE = 6
+// Uzun madde (ör. "…sıcaklık ayarı ve emniyet kontrolü üniteden yapılmaktadır.") en fazla 3 satır.
+private const val FEATURE_MAX_LINES = 3
 private const val FEATURE_PAGE_SECONDS = 8
 private val FeatureGap = 18.dp
 private val FeatureMargin = 24.dp
 private val FeatureBullet = 4.dp
 private val FeatureBulletGap = 10.dp
 private val FeaturePagerHeight = 26.dp // "1 / 2" satırı + üstündeki boşluk
+private val FeatureSafety = 6.dp
 
 /** Yazı boyutu adımları: (yazı, satır yüksekliği, maddeler arası boşluk). */
 private data class FeatureSize(val font: Float, val line: Float, val spacing: Dp)
@@ -290,8 +293,6 @@ private fun FeatureArea(features: List<String>, width: Dp, budget: Dp) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val layout = remember(features, width, budget) {
-        val pages = features.chunked(FEATURES_PER_PAGE)
-        val pager = if (pages.size > 1) FeaturePagerHeight else 0.dp
         val textWidth = with(density) { (width - FeatureBullet - FeatureBulletGap).roundToPx() }.coerceAtLeast(1)
         fun pageHeight(page: List<String>, size: FeatureSize): Dp {
             val style = featureStyle(size)
@@ -299,7 +300,7 @@ private fun FeatureArea(features: List<String>, width: Dp, budget: Dp) {
                 val h = measurer.measure(
                     feature,
                     style = style,
-                    maxLines = 2,
+                    maxLines = FEATURE_MAX_LINES,
                     overflow = TextOverflow.Ellipsis,
                     constraints = Constraints(maxWidth = textWidth),
                 ).size.height
@@ -307,11 +308,25 @@ private fun FeatureArea(features: List<String>, width: Dp, budget: Dp) {
             }
             return items + size.spacing * (page.size - 1)
         }
-        // Bir sayfa (göstergesiyle) sığana kadar yazı küçülür; en küçük adımda kalınır.
-        val chosen = FEATURE_SIZES.firstOrNull { size -> pages.all { pageHeight(it, size) + pager <= budget } }
-            ?: FEATURE_SIZES.last()
-        // Sayfa değişirken logo/başlık kıpırdamasın: alan en uzun sayfa kadar sabit.
-        FeatureLayout(pages, chosen, pages.maxOf { pageHeight(it, chosen) })
+        // Ölçüm/yuvarlama farklarına karşı küçük pay: sayfa göstergesi asla kesilmesin.
+        val room = budget - FeatureSafety
+        // Önce sayfa başına 6 maddeyle, sayfalar (göstergesiyle) sığana kadar yazı
+        // küçülür. En küçük yazıda da sığmazsa sayfa başına madde sayısı azalır
+        // (uzun ürün adı + iki satırlık maddeler).
+        var result: FeatureLayout? = null
+        for (perPage in FEATURES_PER_PAGE downTo 1) {
+            val pages = features.chunked(perPage)
+            val pager = if (pages.size > 1) FeaturePagerHeight else 0.dp
+            val size = FEATURE_SIZES.firstOrNull { sz -> pages.all { pageHeight(it, sz) + pager <= room } }
+            if (size != null) {
+                // Sayfa değişirken logo/başlık kıpırdamasın: alan en uzun sayfa kadar sabit.
+                result = FeatureLayout(pages, size, pages.maxOf { pageHeight(it, size) })
+                break
+            }
+        }
+        result ?: features.chunked(1).let { pages ->
+            FeatureLayout(pages, FEATURE_SIZES.last(), pages.maxOf { pageHeight(it, FEATURE_SIZES.last()) })
+        }
     }
     var page by remember(layout) { mutableStateOf(0) }
     LaunchedEffect(layout) {
@@ -337,7 +352,7 @@ private fun FeatureArea(features: List<String>, width: Dp, budget: Dp) {
     }
 }
 
-/** Madde imli liste: ikincil renkte; uzun madde en fazla iki satır. */
+/** Madde imli liste: ikincil renkte; uzun madde en fazla FEATURE_MAX_LINES satır. */
 @Composable
 private fun FeatureList(features: List<String>, size: FeatureSize) {
     val style = featureStyle(size)
@@ -354,7 +369,7 @@ private fun FeatureList(features: List<String>, size: FeatureSize) {
                         .background(LabelSecondary),
                 )
                 Spacer(Modifier.width(FeatureBulletGap))
-                Text(feature, style = style, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(feature, style = style, maxLines = FEATURE_MAX_LINES, overflow = TextOverflow.Ellipsis)
             }
         }
     }

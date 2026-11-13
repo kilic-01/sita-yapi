@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -296,8 +297,7 @@ fun WeatherSlide(weather: Weather) {
         }
 
         // Alt satır: solda fotoğraf künyesi, sağda logo. Logo boşluksuz kesilmiş
-        // sürüm (logo_white_tight); görünen boyutu önceki 96 dp'lik logo_white ile
-        // aynı (96 × 734/1000 ≈ 70 dp), alt kenarı künyenin taban çizgisine hizalı.
+        // sürüm (logo_white_tight), 95 dp; alt kenarı künyenin taban çizgisine hizalı.
         Row(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = TvSafeSide, end = TvSafeSide, bottom = TvSafeVertical),
             verticalAlignment = Alignment.Bottom,
@@ -308,14 +308,18 @@ fun WeatherSlide(weather: Weather) {
                     // görünüm silik ve küçük; lisansın şart koştuğu atıf yine okunabilir.
                     "Fotoğraf: ${it.artist} · ${it.license} · Wikimedia Commons",
                     style = TextStyle(fontFamily = Poppins, color = White50, fontSize = 6.sp, letterSpacing = 0.3.sp),
-                    modifier = Modifier.alignByBaseline(),
+                    // Her durumda tek satır: uzun künye gün kartlarının üstüne taşmasın.
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // Kalan genişliğin tamamı künyenin: logo, künyenin uzunluğundan
+                    // bağımsız olarak hep sağ kenarda kalır.
+                    modifier = Modifier.alignByBaseline().weight(1f).padding(end = 16.dp),
                 )
-            }
-            Spacer(Modifier.weight(1f))
+            } ?: Spacer(Modifier.weight(1f))
             Image(
                 painter = painterResource(R.drawable.logo_white_tight),
                 contentDescription = "Sita Yapı",
-                modifier = Modifier.width(70.dp).alignBy { it.measuredHeight },
+                modifier = Modifier.width(95.dp).alignBy { it.measuredHeight },
             )
         }
     }

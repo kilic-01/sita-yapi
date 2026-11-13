@@ -39,7 +39,7 @@ import coil.compose.AsyncImage
 // yayındayken veriyi dakikada bir tazeler.
 
 private val DashSecondary = Color(0x990E2A3B)
-private val DashTint = Color(0x8CF5F7F8)
+private val DashTint = FrostTint
 private val DashCard = Color(0x99FFFFFF)
 private val DashTrack = Color(0x1F0E2A3B)
 private val DashUrgent = Color(0xFFD9534F)

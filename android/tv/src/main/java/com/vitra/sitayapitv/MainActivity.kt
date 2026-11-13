@@ -1,7 +1,8 @@
 package com.vitra.sitayapitv
 
 import android.view.KeyEvent
-import androidx.compose.ui.layout.LastBaseline
+import kotlin.math.roundToInt
+import androidx.compose.ui.layout.FirstBaseline
 import kotlinx.coroutines.launch
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.setValue
@@ -103,7 +104,18 @@ internal val TvSafeVertical = 30.dp
 internal val TvCaption1 = 12.5.sp  // 25 pt
 internal val TvCaption2 = 11.5.sp  // 23 pt — en küçük
 internal val TvBody = 14.5.sp      // 29 pt
-internal val TvCallout = 15.5.sp   // 31 pt
+internal val TvCallout = 15.5.sp
+
+// Bekleme ekranı saati ve Poppins'te rakam yüksekliğinin yazı boyutuna oranı
+// (logo, rakamların dikey ortasına hizalanır).
+private val CLOCK_SIZE = 52.sp
+private const val POPPINS_DIGIT_HEIGHT = 0.70f
+
+// Buzlu cam zemini: bulanık fotoğraf + açık ton. Modifier.blur yalnız Android
+// 12+ (API 31) çalışır; daha eski cihazlarda (ör. eski Mi Box) fotoğraf keskin
+// kalacağından ton koyulaştırılır ki yazılar okunur kalsın.
+internal val FrostTint: Color =
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) Color(0x8CF5F7F8) else Color(0xE6F5F7F8)   // 31 pt
 
 // Uygulamadaki tüm yazılar Poppins (Google Fonts, OFL — android/tv/FONT-LICENSE-Poppins-OFL.txt).
 internal val Poppins = FontFamily(
@@ -157,7 +169,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { IstanbulPhotos.warmUp(applicationContext) }
         setContent {
             val ch = channel
-            if (ch == null) {
+            if (intent.getBooleanExtra("screenTest", false)) {
+                // Kurulumda TV'nin görüntüyü kırpıp kırpmadığını görmek için (ScreenFitTest.kt).
+                FixedCanvas { ScreenFitTest() }
+            } else if (ch == null) {
                 MissingConfigScreen()
             } else {
                 TvApp(
@@ -356,14 +371,15 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(end = TvSafeSide, bottom = TvSafeVertical)
-                                .width(110.dp),
+                                .width(139.dp),
                         )
                     }
                     else -> IdleScreen(weatherPinned)
                 }
             }
             if (BuildConfig.SUPABASE_KEY.startsWith("sb_secret_")) {
-                StatusPill("Geliştirme anahtarı", Danger, Modifier.align(Alignment.TopCenter).padding(12.dp))
+                // Üst kenardan TV'lerin kırptığı şeridin (%2–3) dışında dursun.
+                StatusPill("Geliştirme anahtarı", Danger, Modifier.align(Alignment.TopCenter).padding(top = 20.dp))
             }
             if (screen == null) {
                 val text = when (val u = update) {
@@ -374,7 +390,7 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
                     UpdateState.None -> null
                 }
                 if (text != null) {
-                    StatusPill(text, if (update is UpdateState.Failed) Danger else Accent, Modifier.align(Alignment.TopCenter).padding(top = 48.dp))
+                    StatusPill(text, if (update is UpdateState.Failed) Danger else Accent, Modifier.align(Alignment.TopCenter).padding(top = 54.dp))
                 }
             }
             AnimatedVisibility(visible = menuOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
@@ -387,7 +403,7 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
                 StatusPill(
                     if (connection == ConnectionState.CONNECTING) "Bağlanıyor" else "Bağlantı yok",
                     if (connection == ConnectionState.CONNECTING) Warning else Danger,
-                    Modifier.align(Alignment.TopEnd).padding(16.dp),
+                    Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = TvSafeSide),
                 )
             }
         }
@@ -572,9 +588,11 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                         .align(Alignment.BottomCenter)
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))),
                 )
-                // Alt satır: solda logo, sağda saat + tarih. Logo boşluksuz sürüm
-                // (görünen boyutu önceki 190 dp'lik logo_white ile aynı) — sol
-                // güvenli alan çizgisine oturur, alt kenarı tarihin taban çizgisinde.
+                // Alt satır: solda logo, sağda saat + tarih. Logo boşluksuz sürüm,
+                // sol güvenli alan çizgisinde; dikey ortası saat rakamlarının dikey
+                // ortasında (saatin taban çizgisi − rakam yüksekliğinin yarısı).
+                val density = LocalDensity.current
+                val clockDigitTop = with(density) { (CLOCK_SIZE * POPPINS_DIGIT_HEIGHT).toPx() }.roundToInt()
                 Row(
                     Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = TvSafeSide, vertical = TvSafeVertical),
                     verticalAlignment = Alignment.Bottom,
@@ -582,16 +600,16 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 Image(
                     painter = painterResource(R.drawable.logo_white_tight),
                     contentDescription = "Sita Yapı",
-                    modifier = Modifier.width(139.dp).alignBy { it.measuredHeight },
+                    modifier = Modifier.width(220.dp).alignBy { it.measuredHeight / 2 + clockDigitTop / 2 },
                 )
                 Spacer(Modifier.weight(1f))
                 Column(
-                    Modifier.alignBy(LastBaseline),
+                    Modifier.alignBy(FirstBaseline),
                     horizontalAlignment = Alignment.End,
                 ) {
                     Text(
                         now.format(DateTimeFormatter.ofPattern("HH:mm", turkish)),
-                        style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Normal, letterSpacing = 1.sp),
+                        style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = CLOCK_SIZE, fontWeight = FontWeight.Normal, letterSpacing = 1.sp),
                     )
                     val date = now.format(DateTimeFormatter.ofPattern("d MMMM yyyy  ·  EEEE", turkish))
                     Text(

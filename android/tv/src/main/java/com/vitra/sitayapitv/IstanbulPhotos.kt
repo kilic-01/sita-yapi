@@ -163,7 +163,7 @@ object IstanbulPhotos {
                     fun metaValue(key: String) =
                         ((meta?.get(key) as? JsonObject)?.get("value")?.jsonPrimitive?.content).orEmpty()
                     if (!isCityView(title, metaValue("Categories"))) return@forEach
-                    val artist = metaValue("Artist").replace(Regex("<[^>]+>"), "").replace(" (Flickr)", "").trim()
+                    val artist = shortArtist(metaValue("Artist"))
                     result[title] = IstanbulPhoto(thumb, artist.ifBlank { "Bilinmiyor" }, metaValue("LicenseShortName"))
                 }
                 val next = root["continue"] as? JsonObject ?: break
@@ -179,9 +179,25 @@ object IstanbulPhotos {
             val o = it.jsonObject
             IstanbulPhoto(
                 url = "file:///android_asset/istanbul/" + o["file"]!!.jsonPrimitive.content,
-                artist = o["artist"]?.jsonPrimitive?.content.orEmpty(),
+                artist = shortArtist(o["artist"]?.jsonPrimitive?.content.orEmpty()),
                 license = o["license"]?.jsonPrimitive?.content.orEmpty(),
             )
         }
     }.getOrDefault(emptyList())
 }
+
+/**
+ * Commons'taki "Artist" alanı bazen paragraf: "This Photo was taken by Wolfgang
+ * Moroder. Feel free to use my photos…". Künyede yalnız ad gösterilir:
+ * "taken/photographed by X" kalıbından X, yoksa ilk cümle; en fazla 40 karakter.
+ */
+internal fun shortArtist(raw: String): String {
+    val text = raw.replace(Regex("<[^>]+>"), " ")
+        .replace("&amp;", "&").replace("&nbsp;", " ").replace("&#39;", "'").replace("&quot;", "\"")
+        .replace(" (Flickr)", "")
+        .replace(Regex("\\s+"), " ").trim()
+    val by = Regex("(?:taken|photographed|photo|made) by ([^.,;:(|]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.trim()
+    val name = by ?: text.split(Regex("[.;|\\n]")).first().trim()
+    return if (name.length <= 40) name else name.take(39).trimEnd() + "…"
+}
+

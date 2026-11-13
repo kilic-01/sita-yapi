@@ -108,7 +108,8 @@ object Updater {
         val app = context.applicationContext
         // "Bilinmeyen uygulamaları yükle" izni yoksa ayar sayfası açılır (kurulumda
         // "adb shell appops set com.vitra.sitayapitv REQUEST_INSTALL_PACKAGES allow" ile de verilebilir).
-        if (!app.packageManager.canRequestPackageInstalls()) {
+        // İzin denetimi Android 8 (API 26) ile geldi; Android 7'de bu ayar yok.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !app.packageManager.canRequestPackageInstalls()) {
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

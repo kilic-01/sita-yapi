@@ -15,6 +15,9 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.UserAgentMetadata
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -34,14 +37,53 @@ private const val VITRA_PLAYLIST = "UULF2Sx8rluV2hdSLs5UnIqs_A"
 // her video başladığında oynatıcının bildirdiği süreye bakılarak yapılır.
 private const val MAX_VIDEO_SECONDS = 5 * 60
 
-// Ofiste müşteriyle konuşurken sürekli ses rahatsız etmesin diye sessiz.
-// Sesli istenirse false yapılması yeterli.
-private const val VIDEO_MUTED = true
+// Videolar sesli oynar; ses istenmezse TV kumandasından kısılır. Sessiz
+// istenirse true yapılması yeterli (hem döngü hem ürün videosu).
+private const val VIDEO_MUTED = false
 
 // YouTube gömülü oynatıcısı, sayfanın geçerli bir https kökeni (Referer)
 // olmasını istiyor; yoksa "Hata 153" veriyor. Sayfa yerelde üretildiği için
 // sabit bir köken veriliyor.
 private const val PAGE_ORIGIN = "https://tv.sitayapi.local"
+
+/**
+ * YouTube, Android WebView'e mobil oynatıcıyı veriyor; o da controls=0'a rağmen
+ * kanal adı, paylaş, "Diğer videolar" ve ortadaki oynat/geç düğmelerini
+ * ekranın kenarlarında gösteriyor (Mi Box'ta görüldü). WebView, hem kimlik
+ * metni hem de istemci ipuçları (Sec-CH-UA-Mobile/Platform) ile masaüstü Linux
+ * Chrome olarak tanıtılır; masaüstü oynatıcı controls=0'ı uygular.
+ */
+private const val DESKTOP_CHROME_VERSION = "138.0.7204.179"
+private const val DESKTOP_USER_AGENT =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+
+private fun useDesktopPlayer(view: WebView) {
+    view.settings.userAgentString = DESKTOP_USER_AGENT
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+        fun brand(name: String, full: String) =
+            UserAgentMetadata.BrandVersion.Builder().setBrand(name).setMajorVersion(full.substringBefore('.')).setFullVersion(full).build()
+        WebSettingsCompat.setUserAgentMetadata(
+            view.settings,
+            UserAgentMetadata.Builder()
+                .setBrandVersionList(
+                    listOf(
+                        brand("Not)A;Brand", "8.0.0.0"),
+                        brand("Chromium", DESKTOP_CHROME_VERSION),
+                        brand("Google Chrome", DESKTOP_CHROME_VERSION),
+                    ),
+                )
+                .setFullVersion(DESKTOP_CHROME_VERSION)
+                .setPlatform("Linux")
+                .setPlatformVersion("6.1.0")
+                .setArchitecture("x86")
+                .setBitness(64)
+                .setModel("")
+                .setMobile(false)
+                .build(),
+        )
+    }
+}
+
 
 /**
  * Bekleme ekranında belirli süre kalındığında gösterilen tam ekran video
@@ -62,8 +104,8 @@ fun VideoScreen(onFailed: () -> Unit) {
             if (RemoteKeys.menuOpen) return@collect
             val js = when (key) {
                 RemoteKey.PLAY_PAUSE -> "player && (player.getPlayerState() === YT.PlayerState.PLAYING ? player.pauseVideo() : player.playVideo())"
-                RemoteKey.RIGHT -> "player && player.nextVideo()"
-                RemoteKey.LEFT -> "player && player.previousVideo()"
+                RemoteKey.RIGHT -> "step(1)"
+                RemoteKey.LEFT -> "step(-1)"
                 else -> return@collect
             }
             view.evaluateJavascript(js, null)
@@ -77,6 +119,7 @@ fun VideoScreen(onFailed: () -> Unit) {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
+                useDesktopPlayer(this)
                 // Kumandayla odaklanıp oynatıcı kontrollerine girilmesin.
                 isFocusable = false
                 isFocusableInTouchMode = false
@@ -127,8 +170,27 @@ private fun playerHtml(): String = """
   var skipped = 0;
   var checkedId = null;
   var player;
-  // Sessiz oynatılan videolarda YouTube otomatik altyazıyı ("[Music]") kendiliğinden
+  var REVEAL_DELAY_MS = 2500;
+  // Listede ileri/geri. nextVideo()/previousVideo() kullanılmıyor: YouTube'un mobil
+  // oynatıcısı onlarla geçilen videoda başlık/kontrolleri kalıcı gösteriyor
+  // (Mi Box'ta görüldü); playVideoAt() ile açılan videoda yalnız ilk ~1 sn.
+  function step(delta) {
+    if (!player) return;
+    var list = player.getPlaylist() || [];
+    if (!list.length) return;
+    var i = player.getPlaylistIndex();
+    // Sesli başlayan videoda mobil oynatıcı kontrolleri kalıcı gösteriyor — her
+    // geçişte sessize alınır, oynamaya başlayınca ses açılır (unmuteIfWanted).
+    player.mute();
+    player.playVideoAt(((i < 0 ? 0 : i) + delta + list.length) % list.length);
+  }
+  // YouTube bazen otomatik altyazıyı ("[Music]") kendiliğinden
   // açabiliyor; vitrinde altyazı istenmiyor — her video başladığında kapatılır.
+  // Sessiz başlayan videonun sesi, oynatma başladıktan sonra açılır (VIDEO_MUTED değilse).
+  function unmuteIfWanted() {
+    if (${if (VIDEO_MUTED) "true" else "false"}) return;
+    try { if (player.isMuted()) { player.unMute(); player.setVolume(100); } } catch (e) {}
+  }
   function hideCaptions() {
     try { player.unloadModule('captions'); player.unloadModule('cc'); } catch (e) {}
   }
@@ -148,12 +210,15 @@ private fun playerHtml(): String = """
       var total = (player.getPlaylist() || []).length;
       // Listedeki her video uzun çıktıysa sonsuz atlamaya girmeden vazgeç.
       if (total && skipped > total) { fail(); return; }
-      player.nextVideo();
+      step(1);
       return;
     }
     skipped = 0;
     checkedId = (player.getVideoData() || {}).video_id;
-    show(true);
+    // YouTube başlık/kontrolleri videonun ilk ~1–2 sn'sinde gösteriyor; o sürede
+    // oynatıcı gizli kalır (altta siyah zemin + logo).
+    var shownId = checkedId;
+    setTimeout(function () { if ((player.getVideoData() || {}).video_id === shownId) show(true); }, REVEAL_DELAY_MS);
   }
   // YouTube API'si hiç yüklenemezse (internet yok) beklemede kalmasın.
   var loadTimeout = setTimeout(fail, 20000);
@@ -165,7 +230,9 @@ private fun playerHtml(): String = """
         listType: 'playlist',
         list: '$VITRA_PLAYLIST',
         autoplay: 1,
-        mute: ${if (VIDEO_MUTED) 1 else 0},
+        // Hep sessiz başlar, oynamaya geçince ses açılır (unmuteIfWanted): YouTube'un
+        // mobil oynatıcısı sesli otomatik oynatmada kontrolleri/başlığı ekranda tutuyor.
+        mute: 1,
         controls: 0,
         rel: 0,
         iv_load_policy: 3,
@@ -187,8 +254,11 @@ private fun playerHtml(): String = """
         },
         onStateChange: function (e) {
           if (e.data === YT.PlayerState.UNSTARTED || e.data === YT.PlayerState.ENDED) show(false);
+          // Liste kendiliğinden sıradakine geçecek: o da sessiz başlasın.
+          if (e.data === YT.PlayerState.ENDED) player.mute();
           if (e.data === YT.PlayerState.PLAYING) {
             hideCaptions();
+            unmuteIfWanted();
             errors = 0;
             var id = (player.getVideoData() || {}).video_id;
             if (id !== checkedId) { show(false); checkDuration(0); }
@@ -197,7 +267,7 @@ private fun playerHtml(): String = """
         onError: function (e) {
           errors++;
           if (errors >= MAX_CONSECUTIVE_ERRORS) { fail(); return; }
-          e.target.nextVideo();
+          step(1);
         }
       }
     });
@@ -210,7 +280,7 @@ private fun playerHtml(): String = """
 
 /**
  * Ürün ekranındaki tek video slaytı (VitrA kanalındaki seri tanıtım videosu).
- * Sessiz, kontrolsüz oynar; bitince, açılamazsa ya da MAX_VIDEO_SECONDS'tan
+ * Kontrolsüz oynar (ses VIDEO_MUTED'a göre); bitince, açılamazsa ya da MAX_VIDEO_SECONDS'tan
  * uzunsa [onEnded] çağrılır ve sıradaki slayta geçilir.
  */
 @SuppressLint("SetJavaScriptEnabled")
@@ -225,6 +295,7 @@ fun ProductVideo(videoId: String, onEnded: () -> Unit, modifier: Modifier = Modi
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
+                useDesktopPlayer(this)
                 isFocusable = false
                 isFocusableInTouchMode = false
                 webChromeClient = WebChromeClient()
@@ -260,8 +331,14 @@ private fun singleVideoHtml(videoId: String): String = """
 <div id="player"></div>
 <script>
   var player;
-  // Sessiz oynatılan videolarda YouTube otomatik altyazıyı ("[Music]") kendiliğinden
+  var REVEAL_DELAY_MS = 2500;
+  // YouTube bazen otomatik altyazıyı ("[Music]") kendiliğinden
   // açabiliyor; vitrinde altyazı istenmiyor — her video başladığında kapatılır.
+  // Sessiz başlayan videonun sesi, oynatma başladıktan sonra açılır (VIDEO_MUTED değilse).
+  function unmuteIfWanted() {
+    if (${if (VIDEO_MUTED) "true" else "false"}) return;
+    try { if (player.isMuted()) { player.unMute(); player.setVolume(100); } } catch (e) {}
+  }
   function hideCaptions() {
     try { player.unloadModule('captions'); player.unloadModule('cc'); } catch (e) {}
   }
@@ -271,7 +348,7 @@ private fun singleVideoHtml(videoId: String): String = """
     var d = player.getDuration();
     if (!d && attempt < 10) { setTimeout(function () { checkDuration(attempt + 1); }, 300); return; }
     if (d > $MAX_VIDEO_SECONDS) { done(); return; }
-    document.getElementById('player').classList.add('visible');
+    setTimeout(function () { document.getElementById('player').classList.add('visible'); }, REVEAL_DELAY_MS);
   }
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -282,7 +359,7 @@ private fun singleVideoHtml(videoId: String): String = """
       events: {
         onReady: function (e) { clearTimeout(loadTimeout); e.target.playVideo(); },
         onStateChange: function (e) {
-          if (e.data === YT.PlayerState.PLAYING) { hideCaptions(); checkDuration(0); }
+          if (e.data === YT.PlayerState.PLAYING) { hideCaptions(); unmuteIfWanted(); checkDuration(0); }
           if (e.data === YT.PlayerState.ENDED) done();
         },
         onError: done
