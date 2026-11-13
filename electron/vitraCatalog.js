@@ -195,7 +195,7 @@ export async function lookupVitraCollection(slug) {
     .filter((u) => /banner/i.test(u) && !/nav node|mobile/i.test(u))
     .map((u) => u.replace(/ /g, "%20"));
   const products = [...new Set([...html.matchAll(/https:\/\/img-salsify\.mncdn\.com\/mnpadding\/\d+\/\d+\/FFFFFF\/images\/q_auto:low\/([^"' )]+?\.(?:jpg|jpeg|png))/gi)].map((m) => m[1]))]
-    .slice(0, 4)
+    .slice(0, 12)
     .map((p) => `https://img-salsify.mncdn.com/mnpadding/600/600/FFFFFF/images/q_auto:good/${p}`);
   if (banners.length === 0) throw new Error(`${name}: koleksiyon görseli bulunamadı.`);
   return { slug, name, description: paragraph ? shortDescription(paragraph) : "", images: banners, products, url };

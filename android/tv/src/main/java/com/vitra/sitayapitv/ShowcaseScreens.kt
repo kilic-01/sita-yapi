@@ -1,5 +1,8 @@
 package com.vitra.sitayapitv
 
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -23,14 +26,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,7 +50,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.ColorUtils
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 // Bekleme ekranının vitrin sayfaları (bkz. Showcase.kt). Diğer ekranlarla aynı
 // dil: güvenli alan, Poppins, tvOS yazı boyutları; koleksiyon sayfası bekleme
@@ -52,24 +64,50 @@ private val White70 = Color(0xB3FFFFFF)
 /** Koleksiyon tanıtımı: VitrA'nın tanıtım görseli tam ekran, solda ad + açıklama + birkaç ürün. */
 @Composable
 fun CollectionSlide(collection: TvCollection, seconds: Int) {
+    val context = LocalContext.current
     val image = remember(collection) { collection.images.randomOrNull() }
+    // Zemin ve geçiş rengi görselin baskın renginden türetilir (koyulaştırılmış);
+    // görsel yüklenene kadar nötr koyu renk.
+    var tint by remember(collection) { mutableStateOf(CollectionInk) }
+    val ink by animateColorAsState(tint, tween(900), label = "collection-ink")
     val zoom = remember(collection) { Animatable(1f) }
     LaunchedEffect(collection) { zoom.animateTo(1.06f, tween((seconds + 2) * 1_000, easing = LinearEasing)) }
-    Box(Modifier.fillMaxSize().background(Ink)) {
-        AsyncImage(
-            model = image,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value },
-        )
-        // Soldan sağa karartma: yazılar her görselde okunsun, görselin sağı açık kalsın.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(0f to Color(0xCC000000), 0.55f to Color(0x66000000), 1f to Color.Transparent),
-            ),
-        )
+    // Netflix tarzı: görsel sağa yaslı, sol kenarı koyu zemine doğru erir.
+    // VitrA çekimlerinde ürün kadrajın ortasında; görsel sağa kayınca ürün
+    // yazıların ve küçük resimlerin altında kalmıyor.
+    Box(Modifier.fillMaxSize().background(ink)) {
+        Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.8f).clip(RectangleShape)) {
+            AsyncImage(
+                // Pikselleri okuyabilmek için donanım bitmap'i kullanılmaz.
+                model = remember(image) { ImageRequest.Builder(context).data(image).allowHardware(false).build() },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onSuccess = { state -> (state.result.drawable as? BitmapDrawable)?.bitmap?.let { tint = dominantInk(it) } },
+                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value },
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.horizontalGradient(0f to ink, 0.12f to ink.copy(alpha = 0.85f), 0.45f to Color.Transparent),
+                ),
+            )
+            // Altta hafif karartma: sağ alttaki logo açık görsellerde de okunsun.
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(0.7f to Color.Transparent, 1f to ink.copy(alpha = 0.55f)),
+                ),
+            )
+        }
+        // Ürünler 3 satırı dolduruyorsa son satır silikleşir ve blok alta yaslanır
+        // (liste aşağıda devam ediyormuş gibi); yetmiyorsa metin ve ürünler
+        // bir bütün olarak dikeyde ortalanır, efekt kullanılmaz.
+        val rows = remember(collection) { collection.products.take(12).chunked(4) }
+        val scrollLook = rows.size == 3
         Column(
-            Modifier.align(Alignment.CenterStart).padding(horizontal = TvSafeSide).fillMaxWidth(0.5f),
+            if (scrollLook) {
+                Modifier.align(Alignment.BottomStart).padding(start = TvSafeSide, end = TvSafeSide, bottom = TileGap)
+            } else {
+                Modifier.align(Alignment.CenterStart).padding(horizontal = TvSafeSide)
+            }.fillMaxWidth(0.5f),
         ) {
             Text(
                 "VitrA Koleksiyonu",
@@ -93,13 +131,23 @@ fun CollectionSlide(collection: TvCollection, seconds: Int) {
             }
             if (collection.products.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    collection.products.take(4).forEach { url ->
-                        Box(
-                            Modifier.size(78.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(6.dp),
-                            contentAlignment = Alignment.Center,
+                // En fazla 3 satır × 4 ürün; silik son satır "koleksiyonda sadece
+                // bu kadar ürün mü var" izlenimi vermesin diye.
+                Column(verticalArrangement = Arrangement.spacedBy(TileGap)) {
+                    rows.forEachIndexed { r, row ->
+                        val fade = scrollLook && r == rows.lastIndex
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(TileGap),
+                            modifier = if (fade) Modifier.fadeDown() else Modifier,
                         ) {
-                            AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                            row.forEach { url ->
+                                Box(
+                                    Modifier.size(78.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                                }
+                            }
                         }
                     }
                 }
@@ -112,6 +160,42 @@ fun CollectionSlide(collection: TvCollection, seconds: Int) {
         )
     }
 }
+
+private val CollectionInk = Color(0xFF0C0E11)
+
+// Ürün kutuları arası boşluk; 3 satırlık blok alt kenara da bu kadar uzak durur.
+private val TileGap = 10.dp
+
+/**
+ * Görselin en baskın rengi: küçültülmüş görselde renkler kabaca gruplanır,
+ * en kalabalık grubun ortalaması alınır. Beyaz yazı okunsun diye ton korunup
+ * koyulaştırılır, aşırı doygunluk kırpılır.
+ */
+private fun dominantInk(bitmap: Bitmap): Color {
+    val small = Bitmap.createScaledBitmap(bitmap, 48, 27, true)
+    val buckets = HashMap<Int, IntArray>()
+    for (y in 0 until small.height) for (x in 0 until small.width) {
+        val c = small.getPixel(x, y)
+        val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF
+        val key = (r shr 5 shl 6) or (g shr 5 shl 3) or (b shr 5)
+        val acc = buckets.getOrPut(key) { IntArray(4) }
+        acc[0]++; acc[1] += r; acc[2] += g; acc[3] += b
+    }
+    if (small !== bitmap) small.recycle()
+    val top = buckets.values.maxByOrNull { it[0] } ?: return CollectionInk
+    val hsl = FloatArray(3)
+    ColorUtils.RGBToHSL(top[1] / top[0], top[2] / top[0], top[3] / top[0], hsl)
+    hsl[1] = hsl[1].coerceAtMost(0.45f)
+    hsl[2] = 0.14f
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
+/** İçeriği yukarıdan aşağıya saydamlaştırır (üstte tam görünür, altta görünmez). */
+private fun Modifier.fadeDown() = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+    }
 
 /**
  * Hizmetlerimiz — dergi sayfası düzeni: solda tam yükseklik VitrA ortam
