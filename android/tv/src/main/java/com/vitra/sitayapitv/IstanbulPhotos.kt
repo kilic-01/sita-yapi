@@ -18,14 +18,21 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-data class IstanbulPhoto(val url: String, val artist: String, val license: String)
+data class IstanbulPhoto(val url: String, val artist: String, val license: String, val source: String = "Wikimedia Commons") {
+    /** Fotoğrafın altındaki künye: "Fotoğraf: X · CC BY-SA 4.0 · Wikimedia Commons" / "Fotoğraf: X · Unsplash". */
+    val credit: String get() = listOf("Fotoğraf: $artist", license, source).filter { it.isNotBlank() }.joinToString(" · ")
+}
 
 /**
- * Hava durumu sayfasının arkasında dönen İstanbul fotoğrafları — Wikimedia
- * Commons'taki "öne çıkan" ve "kaliteli" İstanbul fotoğraf kategorilerinden
- * çalışırken çekilir (yüzlerce fotoğraf; uygulamaya gömmek yerine). Liste
- * günde bir yenilenir. Commons'a ulaşılamazsa uygulamadaki birkaç fotoğraf
- * (assets/istanbul) yedek olarak kullanılır.
+ * Hava durumu sayfasının arkasında dönen İstanbul fotoğrafları — çalışırken
+ * üç kaynaktan çekilip karışık sıralanır (yüzlerce fotoğraf):
+ *  • Wikimedia Commons: öne çıkan/kaliteli/değerli İstanbul fotoğrafları,
+ *    silüetler, gece Boğaz
+ *  • Unsplash ve Pexels: "İstanbul", "Boğaz", "Galata"… aramaları (yalnız
+ *    tv/photo-api.properties'te API anahtarı varsa; yoksa atlanır)
+ * Kaynaklardan biri hata verirse (ör. Commons'ın istek sınırı) diğerleriyle
+ * devam edilir. Liste günde bir yenilenir; hiçbirine ulaşılamazsa uygulamadaki
+ * birkaç fotoğraf (assets/istanbul) yedek olarak kullanılır.
  *
  * Sıra uygulama boyunca korunur: hava durumu sayfası her açıldığında kaldığı
  * fotoğraftan devam eder, aynı fotoğraf ancak liste bitince tekrar gelir.
@@ -37,6 +44,22 @@ object IstanbulPhotos {
     private val CATEGORIES = listOf(
         "Category:Featured_pictures_of_Istanbul",
         "Category:Quality_images_of_Istanbul",
+        "Category:Valued_images_of_Istanbul",
+        "Category:Skylines_of_Istanbul",
+        "Category:Bosphorus_at_night",
+        // "Views_of_Istanbul" (472 dosya) bilerek yok: seçilmemiş kareler (önü park
+        // etmiş araba dolu cadde, sur duvarı…) vitrine uygun değil.
+    )
+    // Unsplash/Pexels aramaları: çeşitli manzaralar (her biri tek sayfa).
+    private val STOCK_QUERIES = listOf(
+        "istanbul skyline", "bosphorus istanbul", "galata tower", "istanbul sunset",
+        "istanbul mosque view", "maiden's tower istanbul", "istanbul night", "ortakoy mosque",
+    )
+    // Stok sitelerinde kişi/iç mekân/yemek odaklı karelerin elenmesi (açıklamaya göre).
+    private val STOCK_EXCLUDE = Regex(
+        "\\b(man|woman|men|women|girl|boy|person|people|portrait|selfie|couple|child|cat|dog|food|tea|coffee|" +
+            "interior|inside|indoor|bazaar|shop|market|street art|car)\\b",
+        RegexOption.IGNORE_CASE,
     )
     private const val THUMB_WIDTH = 1920
     private const val REFRESH_MS = 24 * 60 * 60 * 1_000L
@@ -106,7 +129,7 @@ object IstanbulPhotos {
     private suspend fun ensureLoaded(context: Context): List<IstanbulPhoto> {
         val stale = System.currentTimeMillis() - loadedAt > REFRESH_MS
         if (photos.isEmpty() || stale) {
-            val fresh = runCatching { fetchFromCommons() }.getOrDefault(emptyList())
+            val fresh = fetchAll()
             when {
                 fresh.isNotEmpty() -> {
                     photos = fresh.shuffled()
@@ -127,7 +150,7 @@ object IstanbulPhotos {
 
     private suspend fun fetchFromCommons(): List<IstanbulPhoto> = withContext(Dispatchers.IO) {
         val result = LinkedHashMap<String, IstanbulPhoto>()
-        for (category in CATEGORIES) {
+        for (category in CATEGORIES) runCatching {
             var cont: Map<String, String> = emptyMap()
             while (true) {
                 val url = "https://commons.wikimedia.org/w/api.php".toHttpUrl().newBuilder().apply {
@@ -168,10 +191,82 @@ object IstanbulPhotos {
                 }
                 val next = root["continue"] as? JsonObject ?: break
                 cont = next.mapValues { it.value.jsonPrimitive.content }
+                kotlinx.coroutines.delay(500) // Commons'ın istek sınırına takılmamak için
             }
-        }
+        }.onFailure { android.util.Log.w("SitaTv", "Commons $category: ${it.message}") }
         result.values.toList()
     }
+
+    /** Üç kaynak paralel değil sırayla; her biri kendi içinde karıştırılıp dönüşümlü birleştirilir. */
+    private suspend fun fetchAll(): List<IstanbulPhoto> {
+        val sources = listOf(
+            runCatching { fetchFromCommons() }.getOrDefault(emptyList()),
+            runCatching { fetchUnsplash() }.onFailure { android.util.Log.w("SitaTv", "Unsplash: ${it.message}") }.getOrDefault(emptyList()),
+            runCatching { fetchPexels() }.onFailure { android.util.Log.w("SitaTv", "Pexels: ${it.message}") }.getOrDefault(emptyList()),
+        ).map { it.distinctBy { p -> p.url }.shuffled() }
+        // Dönüşümlü: Commons, Unsplash, Pexels, Commons… — aynı kaynaktan art arda gelmesin.
+        val mixed = mutableListOf<IstanbulPhoto>()
+        val max = sources.maxOf { it.size }
+        for (i in 0 until max) sources.forEach { list -> list.getOrNull(i)?.let(mixed::add) }
+        return mixed
+    }
+
+    private fun getJson(url: String, vararg headers: Pair<String, String>): JsonObject {
+        val req = Request.Builder().url(url).apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+        return client.newCall(req).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code}" }
+            Json.parseToJsonElement(resp.body!!.string()).jsonObject
+        }
+    }
+
+    // Unsplash: görsel Unsplash'in sunucusundan (hotlink) yüklenir, künyede
+    // "Fotoğraf: <ad> · Unsplash" — Unsplash API kuralları.
+    private suspend fun fetchUnsplash(): List<IstanbulPhoto> = withContext(Dispatchers.IO) {
+        val key = BuildConfig.UNSPLASH_KEY
+        if (key.isBlank()) return@withContext emptyList()
+        STOCK_QUERIES.flatMap { q ->
+            val url = "https://api.unsplash.com/search/photos".toHttpUrl().newBuilder()
+                .addQueryParameter("query", q).addQueryParameter("orientation", "landscape")
+                .addQueryParameter("per_page", "30").addQueryParameter("content_filter", "high").build().toString()
+            val root = runCatching { getJson(url, "Authorization" to "Client-ID $key", "Accept-Version" to "v1") }.getOrNull()
+                ?: return@flatMap emptyList()
+            root["results"]?.jsonArray.orEmpty().mapNotNull { el ->
+                val o = el.jsonObject
+                val w = o["width"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val h = o["height"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                if (w < THUMB_WIDTH || w.toFloat() / h !in 1.3f..2.4f) return@mapNotNull null
+                val desc = listOf("alt_description", "description").joinToString(" ") { k -> o[k]?.jsonPrimitive?.contentOrNullSafe().orEmpty() }
+                if (STOCK_EXCLUDE.containsMatchIn(desc)) return@mapNotNull null
+                val raw = o["urls"]?.jsonObject?.get("raw")?.jsonPrimitive?.content ?: return@mapNotNull null
+                val name = o["user"]?.jsonObject?.get("name")?.jsonPrimitive?.content.orEmpty()
+                IstanbulPhoto("$raw&w=$THUMB_WIDTH&q=80&fm=jpg&fit=max", shortArtist(name), "", "Unsplash")
+            }
+        }
+    }
+
+    // Pexels: künyede "Fotoğraf: <ad> · Pexels".
+    private suspend fun fetchPexels(): List<IstanbulPhoto> = withContext(Dispatchers.IO) {
+        val key = BuildConfig.PEXELS_KEY
+        if (key.isBlank()) return@withContext emptyList()
+        STOCK_QUERIES.flatMap { q ->
+            val url = "https://api.pexels.com/v1/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", q).addQueryParameter("orientation", "landscape")
+                .addQueryParameter("per_page", "40").build().toString()
+            val root = runCatching { getJson(url, "Authorization" to key) }.getOrNull() ?: return@flatMap emptyList()
+            root["photos"]?.jsonArray.orEmpty().mapNotNull { el ->
+                val o = el.jsonObject
+                val w = o["width"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                val h = o["height"]?.jsonPrimitive?.int ?: return@mapNotNull null
+                if (w < THUMB_WIDTH || w.toFloat() / h !in 1.3f..2.4f) return@mapNotNull null
+                if (STOCK_EXCLUDE.containsMatchIn(o["alt"]?.jsonPrimitive?.contentOrNullSafe().orEmpty())) return@mapNotNull null
+                val original = o["src"]?.jsonObject?.get("original")?.jsonPrimitive?.content ?: return@mapNotNull null
+                val name = o["photographer"]?.jsonPrimitive?.content.orEmpty()
+                IstanbulPhoto("$original?auto=compress&cs=tinysrgb&w=$THUMB_WIDTH", shortArtist(name), "", "Pexels")
+            }
+        }
+    }
+
+    private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? = if (isString) content else null
 
     private fun bundled(context: Context): List<IstanbulPhoto> = runCatching {
         val text = context.assets.open("istanbul/credits.json").bufferedReader().use { it.readText() }

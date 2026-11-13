@@ -306,7 +306,7 @@ fun WeatherSlide(weather: Weather) {
                 Text(
                     // Künye bilerek tvOS'un en küçük yazı boyutunun altında: istenen
                     // görünüm silik ve küçük; lisansın şart koştuğu atıf yine okunabilir.
-                    "Fotoğraf: ${it.artist} · ${it.license} · Wikimedia Commons",
+                    it.credit,
                     style = TextStyle(fontFamily = Poppins, color = White50, fontSize = 6.sp, letterSpacing = 0.3.sp),
                     // Her durumda tek satır: uzun künye gün kartlarının üstüne taşmasın.
                     maxLines = 1,

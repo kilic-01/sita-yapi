@@ -76,6 +76,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.imageLoader
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.time.LocalDateTime
@@ -481,10 +483,14 @@ private fun IdleScreen(pinWeather: Boolean = false) {
     val context = LocalContext.current
     // Döngü: fotoğraflar, her WEATHER_EVERY fotoğrafta bir araya giren
     // haftalık hava durumu sayfası (listede null). Hava durumu henüz
-    // alınamadıysa o sayfa atlanır.
-    val slides: List<String?> = remember {
-        val photos = runCatching { context.assets.list(BACKGROUND_DIR)?.filter { it.endsWith(".jpg") }?.shuffled() }
-            .getOrNull().orEmpty()
+    // alınamadıysa o sayfa atlanır. Fotoğraflar: uygulamadaki VitrA
+    // fotoğrafları + vitra.com.tr'den gelen ortam fotoğrafları (VitraBackgrounds), karışık.
+    val remote by VitraBackgrounds.urls.collectAsState()
+    LaunchedEffect(Unit) { VitraBackgrounds.refresh() }
+    val slides: List<String?> = remember(remote.isNotEmpty()) {
+        val bundled = runCatching { context.assets.list(BACKGROUND_DIR)?.filter { it.endsWith(".jpg") } }
+            .getOrNull().orEmpty().map { "file:///android_asset/$BACKGROUND_DIR/$it" }
+        val photos = (bundled + VitraBackgrounds.urls.value).shuffled()
         buildList {
             photos.forEachIndexed { i, photo ->
                 add(photo)
@@ -505,6 +511,8 @@ private fun IdleScreen(pinWeather: Boolean = false) {
             var next = (index + 1) % slides.size
             if (slides[next] == null && latestWeather == null) next = (next + 1) % slides.size
             index = next
+            // Sıradaki uzak fotoğrafı önceden indir: geçişte boş kare görünmesin.
+            slides.getOrNull((index + 1) % slides.size)?.let { context.imageLoader.enqueue(ImageRequest.Builder(context).data(it).build()) }
         }
     }
     if (pinWeather && weather != null) {
@@ -528,9 +536,17 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 zoom.animateTo(1.08f, tween((BACKGROUND_SECONDS + 2) * 1_000, easing = LinearEasing))
             }
             AsyncImage(
-                model = "file:///android_asset/$BACKGROUND_DIR/$photo",
+                model = photo,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // Dikey fotoğraf tam ekranda kötü kırpılır: listeden düşür, hemen sıradakine geç.
+                onSuccess = { state ->
+                    val d = state.result.drawable
+                    if (!photo.startsWith("file:") && d.intrinsicHeight > d.intrinsicWidth) {
+                        VitraBackgrounds.markPortrait(photo)
+                        if (index == i) index = (i + 1) % slides.size
+                    }
+                },
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     scaleX = zoom.value
                     scaleY = zoom.value
@@ -609,12 +625,12 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 ) {
                     Text(
                         now.format(DateTimeFormatter.ofPattern("HH:mm", turkish)),
-                        style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = CLOCK_SIZE, fontWeight = FontWeight.Normal, letterSpacing = 1.sp),
+                        style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = CLOCK_SIZE, fontWeight = FontWeight.Light, letterSpacing = 1.sp),
                     )
                     val date = now.format(DateTimeFormatter.ofPattern("d MMMM yyyy  ·  EEEE", turkish))
                     Text(
                         date.uppercase(turkish),
-                        style = TextStyle(fontFamily = Poppins, color = Color(0xD9FFFFFF), fontSize = TvCaption1, fontWeight = FontWeight.Normal, letterSpacing = 1.5.sp),
+                        style = TextStyle(fontFamily = Poppins, color = Color(0xD9FFFFFF), fontSize = TvCaption1, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp),
                     )
                 }
                 }

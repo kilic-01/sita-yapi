@@ -1,0 +1,6 @@
+# Bu dosyayı "photo-api.properties" adıyla kopyalayıp doldurun (git'e girmez).
+# Hava durumu sayfasının İstanbul fotoğrafları için; boş bırakılan kaynak atlanır.
+# Unsplash: unsplash.com/developers > New Application > "Access Key"
+unsplash=
+# Pexels: pexels.com/api > "Your API Key"
+pexels=

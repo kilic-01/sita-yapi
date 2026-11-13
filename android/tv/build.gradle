@@ -14,6 +14,13 @@ if (supabasePropsFile.exists()) supabasePropsFile.withInputStream { supabaseProp
 def supabaseUrl = supabaseProps.getProperty('url', '')
 def supabaseKey = supabaseProps.getProperty('key', '')
 
+// Hava durumu sayfası fotoğrafları için Unsplash/Pexels API anahtarları (git'e
+// girmeyen tv/photo-api.properties; bkz. photo-api.properties.example). Boşsa
+// o kaynak atlanır, yalnız Wikimedia Commons kullanılır.
+def photoProps = new Properties()
+def photoPropsFile = file('photo-api.properties')
+if (photoPropsFile.exists()) photoPropsFile.withInputStream { photoProps.load(it) }
+
 gradle.taskGraph.whenReady { graph ->
     if (graph.allTasks.any { it.path.startsWith(':tv:') && it.name.toLowerCase().contains('release') } && supabaseKey.startsWith('sb_secret_')) {
         throw new GradleException("tv/supabase.properties içinde gizli (sb_secret_) anahtar var — TV'ye publishable anahtar konmalı.")
@@ -31,6 +38,8 @@ android {
         versionName "1.0"
         buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
         buildConfigField "String", "SUPABASE_KEY", "\"${supabaseKey}\""
+        buildConfigField "String", "UNSPLASH_KEY", "\"${photoProps.getProperty('unsplash', '')}\""
+        buildConfigField "String", "PEXELS_KEY", "\"${photoProps.getProperty('pexels', '')}\""
     }
     buildTypes {
         release {
