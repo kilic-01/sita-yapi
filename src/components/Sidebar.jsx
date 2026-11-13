@@ -27,6 +27,7 @@ export default function Sidebar({
   onDismissPartReminder,
   partCheckouts,
   onDismissCheckoutReminder,
+  onDismissAllReminders,
   technicians,
   collapsed,
   onToggleCollapsed,
@@ -173,6 +174,20 @@ export default function Sidebar({
             </button>
             {showReminders && (
               <div className="sidebar-flyout">
+                <div className="sidebar-flyout-row" style={{ justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setShowReminders(false);
+                      onDismissAllReminders?.({ orders: dueReminders, parts: duePartReminders, checkouts: overdueCheckouts });
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.6rem", fontSize: "0.8rem", color: "var(--danger)" }}
+                  >
+                    <Trash2 size={14} strokeWidth={1.75} />
+                    Tümünü sil
+                  </button>
+                </div>
                 {dueReminders.map((o) => (
                   <div key={o.id} className="sidebar-flyout-row">
                     <div className="sidebar-flyout-main" style={{ cursor: "default" }}>

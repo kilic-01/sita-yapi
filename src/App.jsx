@@ -33,6 +33,7 @@ import Toast from "./components/Toast.jsx";
 import TvBroadcastBar from "./components/TvBroadcastBar.jsx";
 import VitraTvCard from "./components/VitraTvCard.jsx";
 import TvLiveRefresh from "./components/TvLiveRefresh.jsx";
+import { featuredAgeDays, isFeaturedStale } from "./lib/featuredReminder.js";
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -219,6 +220,32 @@ export default function App() {
   useEffect(() => {
     if (currentUser) window.api.warmSuppliers();
   }, [currentUser]);
+
+  // Haftanın ürünü uzun süredir değişmediyse adminlere günde bir kez hatırlat.
+  useEffect(() => {
+    if (currentUser?.role !== "admin" || !window.api?.getTvShowcase) return;
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      if (localStorage.getItem("featuredReminderDay") === today) return;
+    } catch {
+      // depolama yoksa yine de hatırlat
+    }
+    window.api
+      .getTvShowcase(currentUser.id)
+      .then((cfg) => {
+        if (!isFeaturedStale(cfg)) return;
+        showToast(
+          "warning",
+          `Haftanın ürünü ${featuredAgeDays(cfg)} gündür değişmedi — Ayarlar > TV Vitrin Sayfaları'ndan güncelleyebilirsiniz.`
+        );
+        try {
+          localStorage.setItem("featuredReminderDay", today);
+        } catch {
+          // önemsiz
+        }
+      })
+      .catch(() => {});
+  }, [currentUser?.id, currentUser?.role]);
 
   // Başka bir bilgisayarda veri değiştiğinde (Supabase Realtime), sadece
   // etkilenen koleksiyonu yeniden çekip ekranı güncel tutar.
@@ -744,6 +771,20 @@ export default function App() {
     });
   }
 
+  // Hatırlatmalar menüsündeki "Tümünü sil": listedeki her hatırlatma tek tek
+  // silinmiş gibi kapatılır (parça hatırlatmaları yine ertelenir).
+  async function handleDismissAllReminders({ orders = [], parts = [], checkouts = [] }) {
+    try {
+      await Promise.all([
+        ...orders.map((o) => handleDismissReminder(o.id)),
+        ...parts.map((p) => handleDismissPartReminder(p.id)),
+        ...checkouts.map((c) => handleDismissCheckoutReminder(c.id)),
+      ]);
+    } catch (err) {
+      showToast("error", err.message || "Hatırlatmalar silinemedi.");
+    }
+  }
+
   if (showSplash || users === null) {
     return <Splash isDark={isDark} />;
   }
@@ -794,6 +835,7 @@ export default function App() {
           onDismissPartReminder={handleDismissPartReminder}
           partCheckouts={partCheckouts}
           onDismissCheckoutReminder={handleDismissCheckoutReminder}
+          onDismissAllReminders={handleDismissAllReminders}
           technicians={technicians}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={toggleSidebarCollapsed}
@@ -817,6 +859,7 @@ export default function App() {
           onDismissPartReminder={handleDismissPartReminder}
           partCheckouts={partCheckouts}
           onDismissCheckoutReminder={handleDismissCheckoutReminder}
+          onDismissAllReminders={handleDismissAllReminders}
           technicians={technicians}
           onNavStyleChange={setNavStyle}
           syncingCount={syncingCount}

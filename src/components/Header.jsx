@@ -73,6 +73,7 @@ export default function Header({
   onDismissPartReminder,
   partCheckouts,
   onDismissCheckoutReminder,
+  onDismissAllReminders,
   technicians,
   onNavStyleChange,
   syncingCount = 0,
@@ -238,6 +239,27 @@ export default function Header({
                 overflow: "hidden",
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  borderBottom: "1px solid var(--border)",
+                  padding: "0.4rem 0.6rem",
+                }}
+              >
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setShowReminders(false);
+                    onDismissAllReminders?.({ orders: dueReminders, parts: duePartReminders, checkouts: overdueCheckouts });
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.6rem", fontSize: "0.8rem", color: "var(--danger)" }}
+                >
+                  <Trash2 size={14} strokeWidth={1.75} />
+                  Tümünü sil
+                </button>
+              </div>
               {dueReminders.map((o) => (
                 <div
                   key={o.id}

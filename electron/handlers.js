@@ -1335,7 +1335,46 @@ export function listTvCollections() {
 
 export async function getTvShowcase(actingUserId) {
   await db.requireAdmin(actingUserId, "TV vitrin ayarlarını görüntüleme");
-  return (await db.getTvShowcase()).config || {};
+  const { config = {}, payload } = await db.getTvShowcase();
+  // Eski kayıtlarda ürün bilgileri yalnız payload'da (koddan derlenmiş) —
+  // forma elle düzenlenebilir alanlar olarak taşınır.
+  const f = payload?.featured;
+  if (f && !config.featuredName) {
+    return {
+      ...config,
+      featuredName: f.name || "",
+      featuredCategory: f.category || "",
+      featuredFeatures: f.features || [],
+      featuredImages: f.images || [],
+      featuredSince: config.featuredSince || payload.updatedAt || null,
+    };
+  }
+  return config;
+}
+
+// Haftanın ürünü formunda kod girilince alanları doldurmak için: önce
+// vitra.com.tr, bulunamazsa stoktaki aynı kodlu ürün. Hiçbiri yoksa null —
+// bilgiler elle girilir.
+export async function lookupTvFeatured(code, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV vitrin ayarlarını değiştirme");
+  const term = String(code || "").trim();
+  if (!term) return null;
+  try {
+    const p = await lookupVitraProduct(term);
+    return { source: "vitra", code: p.code, name: p.name, category: p.category || "", features: p.features || [], images: p.images || [] };
+  } catch {
+    const items = await listStockItems();
+    const it = items.find((i) => normalizeCode(i.code) === normalizeCode(term));
+    if (!it) return null;
+    return { source: "stock", code: it.code, name: it.name || "", category: it.category || "", features: [], images: it.imageUrl ? [it.imageUrl] : [] };
+  }
+}
+
+// Haftanın ürünü için bilgisayardan eklenen görsel: Storage'a yüklenir, TV
+// herkese açık adresinden indirir.
+export async function uploadTvImage(dataUrl, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV vitrin ayarlarını değiştirme");
+  return db.uploadTvImage(dataUrl);
 }
 
 // Ayarlar > TV Vitrin Sayfaları "Kaydet": içerik siteden derlenip TV'ye
@@ -1345,6 +1384,15 @@ export async function saveTvShowcase(config, actingUserId) {
   const clean = (v, max) => String(v || "").trim().slice(0, max);
   const cfg = {
     featuredCode: clean(config?.featuredCode, 60),
+    featuredName: clean(config?.featuredName, 120),
+    featuredCategory: clean(config?.featuredCategory, 60),
+    featuredFeatures: (Array.isArray(config?.featuredFeatures) ? config.featuredFeatures : [])
+      .map((t) => clean(t, 300))
+      .filter(Boolean)
+      .slice(0, 16),
+    featuredImages: (Array.isArray(config?.featuredImages) ? config.featuredImages : [])
+      .filter((u) => /^https:\/\//i.test(String(u || "")))
+      .slice(0, 8),
     featuredNote: clean(config?.featuredNote, 80),
     // Haftanın ürünü fiyatı (KDV dahil, TL) ve indirim oranı — TV'de fiyat
     // gösterilen TEK yer; boşsa fiyat gösterilmez.
@@ -1358,22 +1406,39 @@ export async function saveTvShowcase(config, actingUserId) {
         .slice(0, 6),
     },
   };
+  // Ürün VitrA dışından da olabilir: bilgiler formdan gelir (kod girilince
+  // form siteden/stoktan doldurur, bkz. lookupTvFeatured). Ad yoksa sayfa yok.
+  const previous = (await db.getTvShowcase()).config || {};
   let featured = null;
-  if (cfg.featuredCode) {
-    const p = await lookupVitraProduct(cfg.featuredCode);
+  if (cfg.featuredName) {
     featured = {
-      id: p.code,
-      code: p.code,
-      name: p.name,
-      category: p.category,
-      imageUrl: p.images[0],
-      images: p.images,
-      features: p.features,
+      id: cfg.featuredCode || cfg.featuredName,
+      code: cfg.featuredCode,
+      name: cfg.featuredName,
+      category: cfg.featuredCategory,
+      imageUrl: cfg.featuredImages[0] || "",
+      images: cfg.featuredImages,
+      features: cfg.featuredFeatures,
       unit: "",
       note: cfg.featuredNote,
       priceIncVat: cfg.featuredPrice,
       discountRate: cfg.featuredPrice ? cfg.featuredDiscount : 0,
     };
+    // "7 gündür değişmedi" hatırlatması için: ürün değişince sayaç sıfırlanır.
+    const same = previous.featuredName === cfg.featuredName && (previous.featuredCode || "") === cfg.featuredCode;
+    cfg.featuredSince = (same && previous.featuredSince) || new Date().toISOString();
+  } else {
+    // Ad yoksa haftanın ürünü kaldırılmış sayılır: kalan bilgiler de silinir.
+    Object.assign(cfg, {
+      featuredCode: "",
+      featuredCategory: "",
+      featuredFeatures: [],
+      featuredImages: [],
+      featuredNote: "",
+      featuredPrice: null,
+      featuredDiscount: 0,
+      featuredSince: null,
+    });
   }
   const collections = [];
   for (const slug of cfg.collections) {

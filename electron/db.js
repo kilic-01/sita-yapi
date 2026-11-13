@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import { v4 as uuid } from "uuid";
+import crypto from "node:crypto";
 import { SUPABASE_URL, SUPABASE_SERVICE_KEY } from "./config.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 
@@ -284,6 +285,30 @@ export async function getTvShowcase() {
 export async function saveTvShowcase(value, actingUserId) {
   await updateSettings({ tvShowcase: JSON.stringify(value) }, actingUserId);
   await sendShowcase();
+}
+
+// Haftanın ürünü görselleri: herkese açık "tv-media" kovasına içerik
+// özetiyle adlandırılarak yüklenir (aynı görsel iki kez yer kaplamaz). Kova
+// yoksa ilk yüklemede oluşturulur.
+const TV_MEDIA_BUCKET = "tv-media";
+const TV_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+
+export async function uploadTvImage(dataUrl) {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(String(dataUrl || ""));
+  if (!m) throw new Error("Görsel okunamadı (JPEG, PNG ya da WebP olmalı).");
+  const buffer = Buffer.from(m[2], "base64");
+  if (buffer.length > TV_IMAGE_MAX_BYTES) throw new Error("Görsel çok büyük (3 MB üstü).");
+  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[m[1]];
+  const path = `featured/${crypto.createHash("sha1").update(buffer).digest("hex")}.${ext}`;
+  const upload = () => supabase.storage.from(TV_MEDIA_BUCKET).upload(path, buffer, { contentType: m[1], upsert: true });
+  let { error } = await upload();
+  if (error && /not found/i.test(error.message)) {
+    const created = await supabase.storage.createBucket(TV_MEDIA_BUCKET, { public: true });
+    if (created.error && !/already exists/i.test(created.error.message)) throw new Error(created.error.message);
+    ({ error } = await upload());
+  }
+  if (error) throw new Error(`Görsel yüklenemedi: ${error.message}`);
+  return supabase.storage.from(TV_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
 async function sendShowcase() {

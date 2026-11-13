@@ -189,6 +189,8 @@ contextBridge.exposeInMainWorld("api", {
   listTvCollections: () => ipcRenderer.invoke("tv:collections"),
   getTvShowcase: (actingUserId) => ipcRenderer.invoke("tv:getShowcase", actingUserId),
   saveTvShowcase: (config, actingUserId) => ipcRenderer.invoke("tv:saveShowcase", { config, actingUserId }),
+  lookupTvFeatured: (code, actingUserId) => ipcRenderer.invoke("tv:lookupFeatured", { code, actingUserId }),
+  uploadTvImage: (dataUrl, actingUserId) => ipcRenderer.invoke("tv:uploadImage", { dataUrl, actingUserId }),
   refreshRoutesOnTv: (input) => ipcRenderer.invoke("tv:refreshRoutes", input),
   refreshQuoteOnTv: (quote, totals) => ipcRenderer.invoke("tv:refreshQuote", { quote, totals }),
   requestTvUpdateCheck: (actingUserId) => ipcRenderer.invoke("tv:checkUpdate", actingUserId),

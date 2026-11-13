@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ImagePlus, X } from "lucide-react";
+import { FEATURED_STALE_DAYS, featuredAgeDays } from "../lib/featuredReminder.js";
 
 // Ayarlar > TV Vitrin Sayfaları — bekleme ekranında fotoğrafların arasında
 // dönen "Haftanın Ürünü", koleksiyon tanıtımları ve "Hizmetlerimiz" sayfaları.
-// Kaydedince içerik vitra.com.tr'den derlenip TV'ye gönderilir (bkz.
-// electron/handlers.js saveTvShowcase); TV saklar, masaüstü kapalıyken de gösterir.
+// Kaydedince TV'ye gönderilir (bkz. electron/handlers.js saveTvShowcase); TV
+// saklar, masaüstü kapalıyken de gösterir. Haftanın ürünü VitrA dışından da
+// olabilir: bilgiler elle girilir, kod yazılınca eşleşen ürün varsa doldurulur.
 const DEFAULT_COLLECTIONS = ["metropole-k", "origin-k", "sento-k", "v-care-k", "root-k", "plural-k"];
 const EMPTY_SERVICE = { title: "", text: "", icon: "auto" };
 // TV'deki ServiceIcons ile aynı adlar; "Otomatik" başlıktan seçer.
@@ -31,7 +34,37 @@ const SERVICE_EXAMPLES = [
 // altında listeler; tıklayarak ya da ↑/↓ + Enter ile seçilir.
 const SUGGESTION_LIMIT = 8;
 
-function ProductCodeInput({ value, onChange, stockItems }) {
+const MAX_FEATURED_IMAGES = 8;
+// Yüklenen görsel TV için küçültülür: 55" ekranda yeterli, Storage'da az yer.
+const UPLOAD_MAX_SIDE = 1600;
+
+// Bilgisayardan seçilen görseli küçültüp JPEG data URL'ine çevirir.
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, UPLOAD_MAX_SIDE / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      // Saydam PNG'ler siyaha dönmesin: ürün sayfası beyaz zeminli.
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.86));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`${file.name} açılamadı.`));
+    };
+    img.src = url;
+  });
+}
+
+function ProductCodeInput({ value, onChange, onChoose, onBlur, stockItems }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const boxRef = useRef(null);
@@ -59,6 +92,7 @@ function ProductCodeInput({ value, onChange, stockItems }) {
   function choose(item) {
     onChange(item.code);
     setOpen(false);
+    onChoose?.(item.code);
   }
 
   return (
@@ -71,6 +105,7 @@ function ProductCodeInput({ value, onChange, stockItems }) {
           setActive(0);
         }}
         onFocus={() => setOpen(true)}
+        onBlur={() => onBlur?.(value)}
         onKeyDown={(e) => {
           if (!open || matches.length === 0) return;
           if (e.key === "ArrowDown") {
@@ -86,7 +121,7 @@ function ProductCodeInput({ value, onChange, stockItems }) {
             setOpen(false);
           }
         }}
-        placeholder="Kod ya da ürün adı yazın (boş bırakılırsa gösterilmez)"
+        placeholder="Kod ya da ürün adı yazın"
         autoComplete="off"
       />
       {open && matches.length > 0 && (
@@ -138,14 +173,23 @@ export default function TvShowcaseSection({ currentUser, stockItems = [], onNoti
   const [collections, setCollections] = useState([]);
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [lookup, setLookup] = useState({ status: "idle", code: "" }); // idle | loading | vitra | stock | none
+  const [uploading, setUploading] = useState(0);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     window.api.getTvShowcase(currentUser?.id).then((cfg) => {
       const services = cfg.services || {};
       const items = [...(services.items || [])];
       while (items.length < 4) items.push({ ...EMPTY_SERVICE });
+      setLookup({ status: "idle", code: cfg.featuredCode || "" });
       setConfig({
         featuredCode: cfg.featuredCode || "",
+        featuredName: cfg.featuredName || "",
+        featuredCategory: cfg.featuredCategory || "",
+        featuredFeatures: (cfg.featuredFeatures || []).join("\n"),
+        featuredImages: cfg.featuredImages || [],
+        featuredSince: cfg.featuredSince || null,
         featuredNote: cfg.featuredNote || "",
         featuredPrice: cfg.featuredPrice ?? "",
         featuredDiscount: cfg.featuredDiscount || "",
@@ -167,10 +211,74 @@ export default function TvShowcaseSection({ currentUser, stockItems = [], onNoti
       collections: c.collections.includes(slug) ? c.collections.filter((s) => s !== slug) : [...c.collections, slug],
     }));
 
+  // Kod seçilince / alandan çıkınca: VitrA'da ya da stokta eşleşen ürün varsa
+  // ad, kategori, özellikler ve görseller doldurulur (sonra elle düzenlenebilir).
+  async function fillFromCode(code) {
+    const term = String(code || "").trim();
+    if (!term || term === lookup.code) return;
+    setLookup({ status: "loading", code: term });
+    try {
+      const found = await window.api.lookupTvFeatured(term, currentUser?.id);
+      if (!found) {
+        setLookup({ status: "none", code: term });
+        return;
+      }
+      setConfig((c) => ({
+        ...c,
+        featuredCode: found.code || c.featuredCode,
+        featuredName: found.name || c.featuredName,
+        featuredCategory: found.category || "",
+        featuredFeatures: found.features.length ? found.features.join("\n") : "",
+        featuredImages: found.images.slice(0, MAX_FEATURED_IMAGES),
+      }));
+      setLookup({ status: found.source, code: found.code || term });
+    } catch {
+      setLookup({ status: "none", code: term });
+    }
+  }
+
+  async function addImages(files) {
+    const room = MAX_FEATURED_IMAGES - config.featuredImages.length;
+    const list = [...files].slice(0, Math.max(0, room));
+    for (const file of list) {
+      setUploading((n) => n + 1);
+      try {
+        const url = await window.api.uploadTvImage(await resizeImage(file), currentUser?.id);
+        setConfig((c) =>
+          c.featuredImages.includes(url) ? c : { ...c, featuredImages: [...c.featuredImages, url].slice(0, MAX_FEATURED_IMAGES) }
+        );
+      } catch (err) {
+        onNotify?.("error", (err.message || "Görsel yüklenemedi.").replace(/^.*Error: /, ""));
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  }
+
+  const setImages = (featuredImages) => setConfig((c) => ({ ...c, featuredImages }));
+
   async function save() {
     setSaving(true);
     try {
-      const { summary } = await window.api.saveTvShowcase(config, currentUser?.id);
+      const { config: saved, summary } = await window.api.saveTvShowcase(
+        { ...config, featuredFeatures: config.featuredFeatures.split("\n") },
+        currentUser?.id
+      );
+      // Ürün adı boşsa sunucu haftanın ürününün tüm bilgilerini siler; form da
+      // kaydedilen hâle döner.
+      setConfig((c) => ({
+        ...c,
+        featuredCode: saved.featuredCode,
+        featuredName: saved.featuredName,
+        featuredCategory: saved.featuredCategory,
+        featuredFeatures: saved.featuredFeatures.join("\n"),
+        featuredImages: saved.featuredImages,
+        featuredNote: saved.featuredNote,
+        featuredPrice: saved.featuredPrice ?? "",
+        featuredDiscount: saved.featuredDiscount || "",
+        featuredSince: saved.featuredSince || null,
+      }));
+      if (!saved.featuredName) setLookup({ status: "idle", code: "" });
       const parts = [
         summary.featured && `haftanın ürünü: ${summary.featured}`,
         summary.collections.length > 0 && `${summary.collections.length} koleksiyon`,
@@ -187,21 +295,189 @@ export default function TvShowcaseSection({ currentUser, stockItems = [], onNoti
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <p style={{ margin: 0 }}>
-        Bu sayfalar bekleme ekranında fotoğrafların arasında sırayla döner. Ürün ve koleksiyon bilgileri
-        vitra.com.tr'den alınır; TV'de fiyat gösterilmez.
+        Bu sayfalar bekleme ekranında fotoğrafların arasında sırayla döner. Koleksiyon bilgileri
+        vitra.com.tr'den alınır; fiyat yalnız haftanın ürününde gösterilir.
       </p>
 
       <section>
         <h4 style={{ margin: "0 0 0.5rem" }}>Haftanın Ürünü</h4>
+        {featuredAgeDays(config) >= FEATURED_STALE_DAYS && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              margin: "0 0 0.75rem",
+              padding: "0.55rem 0.8rem",
+              borderRadius: 10,
+              border: "1px solid #d97706",
+              background: "color-mix(in srgb, #d97706 12%, var(--card-bg))",
+              color: "#d97706",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+            }}
+          >
+            <AlertTriangle size={16} strokeWidth={1.75} />
+            Bu ürün {featuredAgeDays(config)} gündür TV'de — yeni bir haftanın ürünü seçmek isteyebilirsiniz.
+          </div>
+        )}
+        <p style={{ margin: "0 0 0.5rem", opacity: 0.75 }}>
+          VitrA dışı bir ürün de olabilir. Kod yazıp seçince VitrA'da ya da stokta eşleşen ürün varsa bilgiler
+          doldurulur; hepsini değiştirebilirsiniz. Ürün adı boşsa sayfa TV'de gösterilmez.
+        </p>
         <div className="form-row" style={{ alignItems: "flex-end" }}>
-          <label>
+          <label style={{ maxWidth: 260 }}>
             Ürün kodu
             <ProductCodeInput
               value={config.featuredCode}
               onChange={(featuredCode) => setConfig((c) => ({ ...c, featuredCode }))}
+              onChoose={fillFromCode}
+              onBlur={fillFromCode}
               stockItems={stockItems}
             />
           </label>
+          <label>
+            Ürün adı
+            <input
+              value={config.featuredName}
+              onChange={(e) => setConfig({ ...config, featuredName: e.target.value })}
+              maxLength={120}
+              placeholder="Örn. Origin lavabo bataryası"
+            />
+          </label>
+          <label style={{ maxWidth: 220 }}>
+            Kategori (isteğe bağlı)
+            <input
+              value={config.featuredCategory}
+              onChange={(e) => setConfig({ ...config, featuredCategory: e.target.value })}
+              maxLength={60}
+              placeholder="Örn. Armatür"
+            />
+          </label>
+        </div>
+        {lookup.status !== "idle" && (
+          <small style={{ display: "block", margin: "-0.25rem 0 0.6rem", opacity: 0.75 }}>
+            {
+              {
+                loading: "Ürün aranıyor…",
+                vitra: "Bilgiler vitra.com.tr'den dolduruldu.",
+                stock: "Bilgiler stoktaki üründen dolduruldu.",
+                none: "Eşleşen ürün bulunamadı — bilgileri elle girin.",
+              }[lookup.status]
+            }
+          </small>
+        )}
+        <label>
+          Özellikler (her satır bir madde, isteğe bağlı)
+          <textarea
+            rows={5}
+            value={config.featuredFeatures}
+            onChange={(e) => setConfig({ ...config, featuredFeatures: e.target.value })}
+            placeholder={"Örn. Kolay temizlenen yüzey\nSessiz kapanan kapak"}
+          />
+        </label>
+        <div style={{ margin: "0.75rem 0" }}>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+            Görseller{" "}
+            <span style={{ fontWeight: 400, opacity: 0.7 }}>
+              (ilki kapak; en fazla {MAX_FEATURED_IMAGES})
+            </span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {config.featuredImages.map((url, i) => (
+              <div
+                key={url}
+                style={{
+                  position: "relative",
+                  width: 92,
+                  height: 92,
+                  borderRadius: 10,
+                  border: `1px solid ${i === 0 ? "var(--accent)" : "var(--border)"}`,
+                  background: "#fff",
+                  overflow: "hidden",
+                }}
+              >
+                <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                <button
+                  type="button"
+                  title="Kaldır"
+                  aria-label="Görseli kaldır"
+                  onClick={() => setImages(config.featuredImages.filter((u) => u !== url))}
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 22,
+                    height: 22,
+                    padding: 0,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    background: "rgba(0,0,0,0.55)",
+                    color: "#fff",
+                    border: "none",
+                  }}
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setImages([url, ...config.featuredImages.filter((u) => u !== url)])}
+                    style={{
+                      position: "absolute",
+                      left: 4,
+                      bottom: 4,
+                      padding: "1px 6px",
+                      fontSize: "0.7rem",
+                      borderRadius: 6,
+                      background: "rgba(0,0,0,0.55)",
+                      color: "#fff",
+                      border: "none",
+                    }}
+                  >
+                    Kapak yap
+                  </button>
+                )}
+              </div>
+            ))}
+            {config.featuredImages.length < MAX_FEATURED_IMAGES && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading > 0}
+                style={{
+                  width: 92,
+                  height: 92,
+                  borderRadius: 10,
+                  borderStyle: "dashed",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.3rem",
+                  fontSize: "0.75rem",
+                }}
+              >
+                <ImagePlus size={20} strokeWidth={1.75} />
+                {uploading > 0 ? "Yükleniyor…" : "Görsel ekle"}
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                addImages(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
+        <div className="form-row" style={{ alignItems: "flex-end" }}>
           <label>
             Kampanya yazısı (isteğe bağlı)
             <input
