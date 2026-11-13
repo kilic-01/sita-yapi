@@ -11,6 +11,7 @@ import {
   History,
   PanelLeft,
   PanelTop,
+  Tv,
 } from "lucide-react";
 import CollapsibleCard from "./CollapsibleCard.jsx";
 import EmployeesSection from "./EmployeesSection.jsx";
@@ -24,6 +25,7 @@ import SecuritySettingsSection from "./SecuritySettingsSection.jsx";
 import CameraSettingsSection from "./CameraSettingsSection.jsx";
 import ActivityLogSection from "./ActivityLogSection.jsx";
 import MyProfileSection from "./MyProfileSection.jsx";
+import TvDevicesSection from "./TvDevicesSection.jsx";
 import { UserCircle } from "lucide-react";
 
 // "Ayarlar" artık herkese açık (bkz. navTabs.jsx) ama içindeki bölümler ayni
@@ -170,6 +172,11 @@ export default function SettingsPage({
             onTestScreensaver={onTestScreensaver}
             onNotify={onNotify}
           />
+        </CollapsibleCard>
+      )}
+      {currentUser?.role === "admin" && (
+        <CollapsibleCard title="TV Ekranları" icon={<Tv size={18} strokeWidth={1.75} />}>
+          <TvDevicesSection currentUser={currentUser} onNotify={onNotify} />
         </CollapsibleCard>
       )}
       {!currentUser?.hiddenTabs?.includes("cameras") && (

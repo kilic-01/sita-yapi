@@ -1,7 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Airplay } from "lucide-react";
 import PrintView from "./PrintView.jsx";
 import GeocodeIssueNotice from "./GeocodeIssueNotice.jsx";
 import { STATUS_LABELS, toLocalISODate, isOnLeave, holidayOnDate } from "../lib/format.js";
+import { colorForTechnician } from "../lib/techColors.js";
+import { routesTvInput } from "../lib/tvRoutes.js";
 
 function tomorrowISO() {
   const d = new Date();
@@ -9,7 +12,7 @@ function tomorrowISO() {
   return toLocalISODate(d);
 }
 
-export default function RouteBuilder({ appointments, technicians, holidays, onAppointmentPatch, actingUserId }) {
+export default function RouteBuilder({ appointments, technicians, holidays, onAppointmentPatch, actingUserId, showToast }) {
   const [scheduledDate, setScheduledDate] = useState(tomorrowISO());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -116,6 +119,56 @@ export default function RouteBuilder({ appointments, technicians, holidays, onAp
     window.api.printCurrent({ landscape: true });
   }
 
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [sendingSummary, setSendingSummary] = useState(false);
+  const [tvMenuOpen, setTvMenuOpen] = useState(false);
+  const tvMenuRef = useRef(null);
+
+  // Açılır TV menüsü: dışarı tıklanınca ya da Esc'e basılınca kapanır.
+  useEffect(() => {
+    if (!tvMenuOpen) return undefined;
+    function handleClickOutside(e) {
+      if (tvMenuRef.current && !tvMenuRef.current.contains(e.target)) setTvMenuOpen(false);
+    }
+    function handleKey(e) {
+      if (e.key === "Escape") setTvMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [tvMenuOpen]);
+
+  // Bugünün özetini (servis sayıları, teknisyen ilerlemesi) ofis modundaki
+  // TV'ye gönderir; yayında kaldıkça ana süreç dakikada bir tazeler.
+  async function handleBroadcastSummary() {
+    setSendingSummary(true);
+    try {
+      await window.api.broadcastDashboardToTv(actingUserId);
+      showToast?.("success", "Günlük özet TV'de yayınlandı.");
+    } catch (err) {
+      showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
+    } finally {
+      setSendingSummary(false);
+    }
+  }
+
+  // Günün rotalarını ofisteki TV'ye gönderir. Kişisel veri ana süreçte
+  // sınırlandırılır (bkz. electron/handlers.js broadcastRoutesToTv).
+  async function handleBroadcast() {
+    setBroadcasting(true);
+    try {
+      await window.api.broadcastRoutesToTv(routesTvInput(scheduledDate, appointments, technicians), actingUserId);
+      showToast?.("success", "Rotalar TV'de yayınlandı.");
+    } catch (err) {
+      showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
+    } finally {
+      setBroadcasting(false);
+    }
+  }
+
   return (
     <div>
       <div className="card">
@@ -134,6 +187,7 @@ export default function RouteBuilder({ appointments, technicians, holidays, onAp
             )}
           </label>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <button className="primary" onClick={handleBuild} disabled={loading}>
           {loading
             ? "Rotalar hesaplanıyor…"
@@ -142,14 +196,74 @@ export default function RouteBuilder({ appointments, technicians, holidays, onAp
             : "Rotaları Oluştur"}
         </button>
         {hasRoutes && (
-          <button
-            className="secondary"
-            style={{ marginLeft: "0.75rem" }}
-            onClick={handlePrint}
-          >
+          <button className="secondary" onClick={handlePrint}>
             Yazdır
           </button>
         )}
+        {window.api?.broadcastRoutesToTv && (
+          // TV menüsü: sağa hizalı ikon; açılır listede rotalar / günlük özet.
+          <div ref={tvMenuRef} style={{ position: "relative", marginLeft: "auto" }}>
+            <button
+              type="button"
+              className="secondary"
+              title="TV'de yayınla"
+              aria-label="TV'de yayınla"
+              aria-haspopup="menu"
+              aria-expanded={tvMenuOpen}
+              onClick={() => setTvMenuOpen((open) => !open)}
+              disabled={broadcasting || sendingSummary}
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0.5rem 0.6rem" }}
+            >
+              <Airplay size={17} strokeWidth={1.75} />
+            </button>
+            {tvMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  right: 0,
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  boxShadow: "var(--shadow)",
+                  minWidth: 210,
+                  zIndex: 20,
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  disabled={!hasRoutes}
+                  title={hasRoutes ? undefined : "Önce bu gün için rotaları oluşturun."}
+                  style={hasRoutes ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+                  onClick={() => {
+                    setTvMenuOpen(false);
+                    handleBroadcast();
+                  }}
+                >
+                  TV'de Yayınla
+                </button>
+                {window.api?.broadcastDashboardToTv && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="dropdown-item"
+                    onClick={() => {
+                      setTvMenuOpen(false);
+                      handleBroadcastSummary();
+                    }}
+                  >
+                    Günlük Özeti Yayınla
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
         {error && <div className="error">{error}</div>}
         {unresolvedIssue.length > 0 && (
           <div className="error">

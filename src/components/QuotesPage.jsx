@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Printer, FileDown, Mail, Trash2, Pencil, Search, X } from "lucide-react";
+import { Plus, Printer, FileDown, Mail, Trash2, Pencil, Search, X, Airplay } from "lucide-react";
 import QuoteForm from "./QuoteForm.jsx";
 import QuotePrintView, { QuoteHeader, ItemTable, QuoteFooter, PRINT_CONTENT_STYLE } from "./QuotePrintView.jsx";
 import { EmptyStateIllustration } from "./illustrations.jsx";
@@ -35,7 +35,7 @@ function QuotePreviewContent({ quote }) {
   );
 }
 
-export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUser }) {
+export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUser, showToast }) {
   const [view, setView] = useState("list"); // "list" | "form"
   const [editingQuote, setEditingQuote] = useState(null);
   const [previewQuote, setPreviewQuote] = useState(null);
@@ -60,6 +60,22 @@ export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUs
     onSaved(quote);
     setView("list");
     setEditingQuote(null);
+  }
+
+  const [broadcastingId, setBroadcastingId] = useState(null);
+
+  // Teklifi ofisteki TV'ye (Mi Stick) gönderir — kalemler, toplamlar ve
+  // müşteri adı; iletişim bilgileri gönderilmez (bkz. electron/handlers.js).
+  async function handleBroadcast(quote) {
+    setBroadcastingId(quote.id);
+    try {
+      await window.api.broadcastQuoteToTv(quote, computeTotals(quote.items || [], quote.discountRate), currentUser?.id);
+      showToast?.("success", `Teklif TV'de yayınlandı: ${quote.quoteNo}`);
+    } catch (err) {
+      showToast?.("error", err.message || "TV'ye gönderilemedi.");
+    } finally {
+      setBroadcastingId(null);
+    }
   }
 
   async function handleDelete(quote) {
@@ -250,6 +266,16 @@ export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUs
                   </button>
                   <button
                     type="button"
+                    className="icon-btn"
+                    title="TV'de Yayınla"
+                    aria-label="TV'de Yayınla"
+                    disabled={broadcastingId === quote.id}
+                    onClick={() => handleBroadcast(quote)}
+                  >
+                    <Airplay size={15} strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
                     className="icon-btn edit"
                     title="Düzenle"
                     aria-label="Düzenle"
@@ -328,6 +354,16 @@ export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUs
               <strong style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {selectedQuote.quoteNo} — {selectedQuote.customerName}
               </strong>
+              <button
+                type="button"
+                className="icon-btn"
+                title="TV'de Yayınla"
+                aria-label="TV'de Yayınla"
+                disabled={broadcastingId === selectedQuote.id}
+                onClick={() => handleBroadcast(selectedQuote)}
+              >
+                <Airplay size={15} strokeWidth={1.75} />
+              </button>
               <button
                 type="button"
                 className="icon-btn edit"

@@ -11,6 +11,35 @@ import SuggestionDropdown from "./SuggestionDropdown.jsx";
 // İndirim Oranı" satırlara yayma deseni) BİREBİR aynı şekilde kullanılıyor —
 // burada yeniden icat edilmedi.
 
+// App Store/Google Pay'deki ödeme onayı gibi kısa, pozitif bir "ding" sesi —
+// ayrı bir ses dosyası gömmeye gerek kalmadan Web Audio API ile anlık üretilir
+// (iki kısa, yükselen nota). Satış gerçekten kaydedildiğinde çalınır.
+function playSaleConfirmSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [880, 1318.5]; // A5 -> E6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.2, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.24);
+    });
+    setTimeout(() => ctx.close(), 500);
+  } catch {
+    // Ses çalınamazsa (ör. tarayıcı kısıtlaması) satış akışı hiç etkilenmesin.
+  }
+}
+
 function emptyItem() {
   return {
     code: "",
@@ -52,6 +81,11 @@ export default function QuickSaleModal({ stockItems = [], depots = [], currentUs
     return depots.find((d) => d.id === id)?.name || "Bilinmeyen depo";
   }
 
+  // Satışlar normalde dükkanda yapılıyor — depo seçimi varsayılan olarak
+  // hep "Dükkan" olmalı, orada stok yoksa kayıtlı olduğu depodan düşülüp
+  // kullanıcı satış sonrası uyarılır (bkz. handleComplete).
+  const shopDepotId = depots.find((d) => d.name === "Dükkan")?.id;
+
   async function pickStockItem(idx, stockItem) {
     setItem(idx, {
       code: stockItem.code,
@@ -63,11 +97,14 @@ export default function QuickSaleModal({ stockItems = [], depots = [], currentUs
     });
     setSuggestFor(null);
     const rows = (await window.api.listStockItemDepots(stockItem.id)).filter((r) => Number(r.quantity) > 0);
+    // Dükkanda stok varsa SORU SORMADAN dükkan seçilir. Dükkanda yoksa,
+    // stoğu olan TEK bir başka depo varsa oradan düşülür; birden fazla
+    // başka depoda varsa aşağıdaki seçiciden kullanıcı kendisi seçer.
+    const shopRow = shopDepotId && rows.find((r) => r.depotId === shopDepotId);
+    const resolvedDepotId = shopRow ? shopDepotId : rows.length === 1 ? rows[0].depotId : null;
     setItem(idx, {
       depotOptions: rows,
-      // Stoğu tek depoda varsa soru sormadan otomatik seçilir — birden
-      // fazla depoda varsa kullanıcı aşağıdaki seçiciden kendisi seçer.
-      depotId: rows.length === 1 ? rows[0].depotId : null,
+      depotId: resolvedDepotId,
     });
   }
 
@@ -124,6 +161,19 @@ export default function QuickSaleModal({ stockItems = [], depots = [], currentUs
         deductedFromStock: deduct,
         actingUserId: currentUser?.id,
       });
+      playSaleConfirmSound();
+      // Satışlar normalde dükkanda yapılıyor — bir satır dükkan DIŞINDA bir
+      // depodan düşüldüyse (dükkanda stoğu yoktu) kullanıcıyı açıkça
+      // uyarıyoruz, yanlışlıkla fark edilmeyip dükkandaki rafın boşalmasına
+      // rağmen "stok var" sanılmasın.
+      if (deduct) {
+        const warnings = validItems
+          .filter((it) => it.depotId && it.depotId !== shopDepotId)
+          .map((it) => `"${it.code}" ürününün stoğu dükkanda yok, ${depotName(it.depotId)} deposundaki stoktan düşüldü.`);
+        if (warnings.length > 0) {
+          window.alert(warnings.join("\n") + "\n\nKontrol edin.");
+        }
+      }
       onSaved?.();
       onClose();
     } catch (err) {

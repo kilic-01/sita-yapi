@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PencilIcon, TrashIcon } from "./icons.jsx";
-import { Search, Plus, QrCode } from "lucide-react";
+import { Search, Plus, QrCode, ArrowLeftRight, Info, Airplay } from "lucide-react";
 import { EmptyStateIllustration } from "./illustrations.jsx";
 import Modal from "./Modal.jsx";
 import { isLowStock, DEFAULT_LOW_STOCK_THRESHOLD } from "../lib/format.js";
@@ -81,7 +81,71 @@ function CategoryPicker({ value, onChange, categories, style }) {
   );
 }
 
-export default function StockPage({ stockItems, onSaved, depots = [], initialSearch = "", currentUser }) {
+// Bir ürün birden fazla depoda farklı miktarlarda durabiliyor — bu satır
+// listesi editörü hem "Yeni Ürün Ekle" formunda (ilk girişte doğrudan birden
+// fazla depoya dağıtılabilsin diye) hem de "Düzenle" penceresinde aynı
+// şekilde kullanılıyor, kopya JSX'ten kaçınmak için tek bir bileşende.
+function DepotRowsEditor({ rows, ops, depots, unit, loading }) {
+  if (loading) {
+    return <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Yükleniyor…</p>;
+  }
+  return (
+    <>
+      {rows.map((row, i) => (
+        <div key={row.depotId || i} className="form-row" style={{ marginBottom: "0.4rem", alignItems: "center" }}>
+          <select
+            value={row.depotId || ""}
+            onChange={(e) => ops.update(i, { depotId: e.target.value })}
+            style={{ flex: 1 }}
+          >
+            <option value="">Seçin…</option>
+            {depots.map((d) => (
+              <option key={d.id} value={d.id} disabled={rows.some((r, j) => j !== i && r.depotId === d.id)}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="0"
+            value={row.quantity}
+            onChange={(e) => ops.update(i, { quantity: e.target.value })}
+            style={{ width: 90 }}
+          />
+          <button type="button" className="icon-btn delete" title="Kaldır" aria-label="Kaldır" onClick={() => ops.remove(i)}>
+            <TrashIcon />
+          </button>
+        </div>
+      ))}
+      {rows.length < depots.length && (
+        <button type="button" className="secondary" onClick={ops.add} style={{ fontSize: "0.82rem" }}>
+          + Depo Ekle
+        </button>
+      )}
+      {depots.length === 0 && <p style={{ fontSize: "0.82rem", opacity: 0.7 }}>Henüz depo tanımlanmamış.</p>}
+      <p style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+        Toplam: <strong>{rows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)} {unit || "adet"}</strong>
+      </p>
+    </>
+  );
+}
+
+// editDepotRows/newDepotRows gibi bir satır listesini ekleme/güncelleme/
+// kaldırma mantığı aynı — hangi state'i değiştireceğini parametre olarak alan
+// küçük bir fabrika, iki yerde (ekle formu + düzenle penceresi) tekrarlanmasın.
+function makeDepotRowOps(setRows, depots) {
+  return {
+    add: () =>
+      setRows((rows) => {
+        const unused = depots.find((d) => !rows.some((r) => r.depotId === d.id));
+        return unused ? [...rows, { depotId: unused.id, quantity: 0 }] : rows;
+      }),
+    update: (index, patch) => setRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r))),
+    remove: (index) => setRows((rows) => rows.filter((_, i) => i !== index)),
+  };
+}
+
+export default function StockPage({ stockItems, onSaved, depots = [], initialSearch = "", currentUser, showToast }) {
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   useEffect(() => {
@@ -94,14 +158,16 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
   const [newItem, setNewItem] = useState({
     code: "",
     name: "",
-    quantity: "",
     unit: "adet",
-    depotId: "",
     category: "",
     price: "",
     imageUrl: "",
     barcode: "",
   });
+  // Yeni ürün de ilk eklenişte birden fazla depoya dağıtılabilsin diye
+  // (ör. hem dükkan hem şantiye), tek bir "depotId"/"quantity" alanı
+  // yerine Düzenle penceresiyle aynı satır listesi editörü kullanılıyor.
+  const [newDepotRows, setNewDepotRows] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   // Bir ürün birden fazla depoda farklı miktarlarda durabiliyor (bkz.
   // electron/db.js stockItemDepots) — Düzenle penceresi açılınca o ürünün
@@ -111,6 +177,37 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
   const [originalDepotRows, setOriginalDepotRows] = useState([]);
   const [loadingDepotRows, setLoadingDepotRows] = useState(false);
   const [zoomImage, setZoomImage] = useState(null); // { url, label }
+  const [broadcastingId, setBroadcastingId] = useState(null);
+
+  // Ofisteki TV'ye (Mi Stick) bu ürünü gönderir — satıcının ekranı değil,
+  // sadece ürün kartı yansır; bkz. electron/db.js TV Yayını.
+  async function broadcastToTv(item) {
+    setBroadcastingId(item.id);
+    try {
+      await window.api.broadcastToTv(item, currentUser?.id);
+      showToast?.("success", `TV'de yayınlandı: ${item.code}`);
+    } catch (err) {
+      showToast?.("error", err.message || "TV'ye gönderilemedi.");
+    } finally {
+      setBroadcastingId(null);
+    }
+  }
+
+  // ---------- Depo Transferi (stok kaydırma — ör. depodan dükkana getirme) ----------
+  const [transferTarget, setTransferTarget] = useState(null); // stok kalemi
+  const [transferRows, setTransferRows] = useState([]); // o ürünün depo dağılımı
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferFrom, setTransferFrom] = useState("");
+  const [transferTo, setTransferTo] = useState("");
+  const [transferQty, setTransferQty] = useState("");
+  const [transferError, setTransferError] = useState("");
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+
+  // ---------- Stok Geçmişi (info butonu) ----------
+  const [historyItem, setHistoryItem] = useState(null);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   // Binlerce satırlı stok listesinde bu türetilmiş diziler useMemo OLMADAN
   // her render'da (ör. arama kutusuna her harf girildiğinde) baştan
@@ -124,6 +221,23 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
   );
 
   const depotName = (id) => depots.find((d) => d.id === id)?.name || "";
+  const editDepotOps = makeDepotRowOps(setEditDepotRows, depots);
+  const newDepotOps = makeDepotRowOps(setNewDepotRows, depots);
+
+  // Ürün sayfasında "Son işlem" artık AÇIK göstermiyoruz — kullanıcı bunu
+  // gürültülü buldu, yerine bir info butonu + detaylı geçmiş penceresi var.
+  async function openHistory(item) {
+    setHistoryItem(item);
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      setHistoryEntries(await window.api.getStockItemActivity(item.id));
+    } catch (err) {
+      setHistoryError(err?.message || "Geçmiş yüklenemedi.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   // Binlerce satırlı bu tabloda her tekil değişiklikte TÜM listeyi ağa
   // göndermemek için satır bazlı uçlar (addStockItem/updateStockItem/
@@ -185,20 +299,6 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
     setOriginalDepotRows([]);
   }
 
-  function addDepotRow() {
-    const unused = depots.find((d) => !editDepotRows.some((r) => r.depotId === d.id));
-    if (!unused) return;
-    setEditDepotRows((rows) => [...rows, { depotId: unused.id, quantity: 0 }]);
-  }
-
-  function updateDepotRow(index, patch) {
-    setEditDepotRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  }
-
-  function removeDepotRow(index) {
-    setEditDepotRows((rows) => rows.filter((_, i) => i !== index));
-  }
-
   async function handleAddItem(e) {
     e.preventDefault();
     if (!newItem.code.trim()) return;
@@ -206,9 +306,10 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
       {
         code: newItem.code.trim(),
         name: newItem.name.trim(),
-        quantity: Number(newItem.quantity) || 0,
         unit: newItem.unit.trim() || "adet",
-        depotId: newItem.depotId || null,
+        depots: newDepotRows
+          .filter((r) => r.depotId && Number(r.quantity) > 0)
+          .map((r) => ({ depotId: r.depotId, quantity: Number(r.quantity) })),
         category: newItem.category.trim(),
         price: newItem.price !== "" ? Number(newItem.price) : null,
         imageUrl: newItem.imageUrl.trim(),
@@ -220,14 +321,56 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
     setNewItem({
       code: "",
       name: "",
-      quantity: "",
       unit: "adet",
-      depotId: newItem.depotId,
       category: newItem.category,
       price: "",
       imageUrl: "",
       barcode: "",
     });
+    // Depo dağılımı bilerek SIFIRLANMIYOR — aynı depo(lar)a art arda ürün
+    // eklerken her seferinde yeniden seçmek gerekmesin.
+  }
+
+  function openTransfer(item) {
+    setTransferTarget(item);
+    setTransferLoading(true);
+    setTransferError("");
+    setTransferQty("");
+    window.api.listStockItemDepots(item.id).then((rows) => {
+      setTransferRows(rows);
+      const firstWithStock = rows.find((r) => Number(r.quantity) > 0);
+      setTransferFrom(firstWithStock?.depotId || "");
+      setTransferTo(depots.find((d) => d.id !== firstWithStock?.depotId)?.id || "");
+      setTransferLoading(false);
+    });
+  }
+
+  function closeTransfer() {
+    setTransferTarget(null);
+    setTransferRows([]);
+  }
+
+  async function submitTransfer(e) {
+    e.preventDefault();
+    if (!transferTarget || !transferFrom || !transferTo || !(Number(transferQty) > 0)) return;
+    setTransferSubmitting(true);
+    setTransferError("");
+    try {
+      await window.api.transferStockItemDepot(
+        transferTarget.id,
+        transferFrom,
+        transferTo,
+        Number(transferQty),
+        currentUser?.id
+      );
+      const fresh = await window.api.listStockItems();
+      onSaved(fresh);
+      closeTransfer();
+    } catch (err) {
+      setTransferError(err?.message || "Depo transferi kaydedilemedi.");
+    } finally {
+      setTransferSubmitting(false);
+    }
   }
 
   const term = debouncedSearch.trim().toLowerCase();
@@ -342,6 +485,29 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
           <strong>{item.quantity ?? 0}</strong>
           <small style={{ opacity: 0.75 }}>{item.unit || "adet"}</small>
         </div>
+        {window.api?.broadcastToTv && (
+          <button
+            type="button"
+            className="icon-btn"
+            title="TV'de Yayınla"
+            aria-label="TV'de Yayınla"
+            disabled={broadcastingId === item.id}
+            onClick={() => broadcastToTv(item)}
+          >
+            <Airplay size={16} strokeWidth={1.75} />
+          </button>
+        )}
+        {depots.length >= 2 && (
+          <button
+            type="button"
+            className="icon-btn"
+            title="Depo Transferi"
+            aria-label="Depo Transferi"
+            onClick={() => openTransfer(item)}
+          >
+            <ArrowLeftRight size={16} strokeWidth={1.75} />
+          </button>
+        )}
         <button
           type="button"
           className="icon-btn edit"
@@ -422,36 +588,12 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
               />
             </label>
             <label>
-              Miktar
-              <input
-                type="number"
-                min="0"
-                value={newItem.quantity}
-                onChange={(e) => setNewItem((n) => ({ ...n, quantity: e.target.value }))}
-                style={{ width: 70 }}
-              />
-            </label>
-            <label>
               Birim
               <input
                 value={newItem.unit}
                 onChange={(e) => setNewItem((n) => ({ ...n, unit: e.target.value }))}
                 style={{ width: 80 }}
               />
-            </label>
-            <label>
-              Depo
-              <select
-                value={newItem.depotId}
-                onChange={(e) => setNewItem((n) => ({ ...n, depotId: e.target.value }))}
-              >
-                <option value="">Belirtilmemiş</option>
-                {depots.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
             </label>
             <label>
               Kategori
@@ -489,6 +631,14 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
                 style={{ width: 160 }}
               />
             </label>
+            <div style={{ width: "100%", marginTop: "0.5rem" }}>
+              <strong style={{ fontSize: "0.85rem" }}>Depo Dağılımı</strong>
+              <p style={{ margin: "0.2rem 0 0.5rem", fontSize: "0.78rem", opacity: 0.7 }}>
+                Bu ürünü ilk eklerken birden fazla depoya dağıtabilirsiniz — her depo için ayrı
+                bir miktar girin. Hiç depo seçmezseniz ürün 0 miktarla eklenir.
+              </p>
+              <DepotRowsEditor rows={newDepotRows} ops={newDepotOps} depots={depots} unit={newItem.unit} />
+            </div>
             <button className="primary" type="submit">
               Ekle
             </button>
@@ -579,7 +729,18 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
               saveEdit();
             }}
           >
-            <h3>Ürünü Düzenle</h3>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h3 style={{ margin: 0 }}>Ürünü Düzenle</h3>
+              <button
+                type="button"
+                className="icon-btn"
+                title="Stok Geçmişi"
+                aria-label="Stok Geçmişi"
+                onClick={() => openHistory(editDraft)}
+              >
+                <Info size={18} strokeWidth={1.75} />
+              </button>
+            </div>
             <div className="form-row">
               <label>
                 Kod
@@ -621,56 +782,13 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
                 Bu ürün birden fazla depoda farklı miktarlarda durabilir — her depo için ayrı bir
                 miktar girin.
               </p>
-              {loadingDepotRows ? (
-                <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Yükleniyor…</p>
-              ) : (
-                <>
-                  {editDepotRows.map((row, i) => (
-                    <div key={row.depotId || i} className="form-row" style={{ marginBottom: "0.4rem" }}>
-                      <select
-                        value={row.depotId || ""}
-                        onChange={(e) => updateDepotRow(i, { depotId: e.target.value })}
-                        style={{ flex: 1 }}
-                      >
-                        <option value="">Seçin…</option>
-                        {depots.map((d) => (
-                          <option
-                            key={d.id}
-                            value={d.id}
-                            disabled={editDepotRows.some((r, j) => j !== i && r.depotId === d.id)}
-                          >
-                            {d.name}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        value={row.quantity}
-                        onChange={(e) => updateDepotRow(i, { quantity: e.target.value })}
-                        style={{ width: 90 }}
-                      />
-                      <button type="button" className="icon-btn delete" title="Kaldır" aria-label="Kaldır" onClick={() => removeDepotRow(i)}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  ))}
-                  {editDepotRows.length < depots.length && (
-                    <button type="button" className="secondary" onClick={addDepotRow} style={{ fontSize: "0.82rem" }}>
-                      + Depo Ekle
-                    </button>
-                  )}
-                  {depots.length === 0 && (
-                    <p style={{ fontSize: "0.82rem", opacity: 0.7 }}>Henüz depo tanımlanmamış.</p>
-                  )}
-                  <p style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-                    Toplam:{" "}
-                    <strong>
-                      {editDepotRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)} {editDraft.unit || "adet"}
-                    </strong>
-                  </p>
-                </>
-              )}
+              <DepotRowsEditor
+                rows={editDepotRows}
+                ops={editDepotOps}
+                depots={depots}
+                unit={editDraft.unit}
+                loading={loadingDepotRows}
+              />
             </div>
             <div className="form-row">
               <label>
@@ -731,6 +849,122 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
               Vazgeç
             </button>
           </form>
+        </Modal>
+      )}
+
+      {transferTarget && (
+        <Modal onClose={closeTransfer}>
+          <form className="card" onSubmit={submitTransfer}>
+            <h3>Depo Transferi</h3>
+            <p style={{ fontSize: "0.82rem", opacity: 0.7, margin: "0 0 0.75rem" }}>
+              <strong>{transferTarget.code}</strong>
+              {transferTarget.name && <> — {transferTarget.name}</>} için bir depodan diğerine stok
+              kaydırın (ör. depodaki bir ürünü dükkana teşhir/satış için getirme).
+            </p>
+            {transferLoading ? (
+              <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Yükleniyor…</p>
+            ) : (
+              <>
+                <div className="form-row">
+                  <label style={{ flex: 1 }}>
+                    Kaynak Depo
+                    <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value)}>
+                      <option value="">Seçin…</option>
+                      {transferRows
+                        .filter((r) => Number(r.quantity) > 0)
+                        .map((r) => (
+                          <option key={r.depotId} value={r.depotId}>
+                            {depotName(r.depotId) || "Bilinmeyen depo"} ({r.quantity} adet)
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label style={{ flex: 1 }}>
+                    Hedef Depo
+                    <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)}>
+                      <option value="">Seçin…</option>
+                      {depots
+                        .filter((d) => d.id !== transferFrom)
+                        .map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  Miktar
+                  <input
+                    type="number"
+                    min="1"
+                    max={transferRows.find((r) => r.depotId === transferFrom)?.quantity || undefined}
+                    value={transferQty}
+                    onChange={(e) => setTransferQty(e.target.value)}
+                    style={{ width: 100 }}
+                  />
+                </label>
+                {transferRows.filter((r) => Number(r.quantity) > 0).length === 0 && (
+                  <p style={{ fontSize: "0.82rem", opacity: 0.7 }}>
+                    Bu ürün hiçbir depoda stokta değil — transfer edilecek bir şey yok.
+                  </p>
+                )}
+              </>
+            )}
+            {transferError && <div className="error">{transferError}</div>}
+            <div style={{ marginTop: "1rem" }}>
+              <button
+                className="primary"
+                type="submit"
+                disabled={!transferFrom || !transferTo || !(Number(transferQty) > 0) || transferSubmitting}
+              >
+                {transferSubmitting ? "Kaydediliyor…" : "Transferi Kaydet"}
+              </button>
+              <button type="button" className="secondary" style={{ marginLeft: "0.6rem" }} onClick={closeTransfer}>
+                Vazgeç
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {historyItem && (
+        <Modal onClose={() => setHistoryItem(null)}>
+          <div className="card">
+            <h3>Stok Geçmişi</h3>
+            <p style={{ fontSize: "0.82rem", opacity: 0.7, margin: "0 0 0.75rem" }}>
+              <strong>{historyItem.code}</strong>
+              {historyItem.name && <> — {historyItem.name}</>}
+            </p>
+            {historyLoading ? (
+              <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Yükleniyor…</p>
+            ) : historyError ? (
+              <div className="error">{historyError}</div>
+            ) : historyEntries.length === 0 ? (
+              <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>Bu ürün için kayıtlı bir işlem yok.</p>
+            ) : (
+              <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                {historyEntries.map((entry) => (
+                  <div key={entry.id} style={{ borderBottom: "1px solid var(--border)", padding: "0.5rem 0" }}>
+                    <div style={{ fontSize: "0.85rem" }}>{entry.description}</div>
+                    <small style={{ opacity: 0.6 }}>
+                      {entry.createdAt
+                        ? new Date(entry.createdAt).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })
+                        : ""}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              style={{ marginTop: "1rem" }}
+              onClick={() => setHistoryItem(null)}
+            >
+              Kapat
+            </button>
+          </div>
         </Modal>
       )}
 

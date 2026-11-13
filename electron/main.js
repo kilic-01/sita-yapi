@@ -150,6 +150,17 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("sync:status", { status });
   });
 
+  // Header'daki "TV'de yayında" göstergesi için — bu bilgisayarın yayını
+  // başladığında, durduğunda ya da başka bir bilgisayar devraldığında.
+  db.onTvStateChange((payload) => {
+    mainWindow?.webContents.send("tv:state", { payload });
+  });
+
+  // Bağlı TV'ler (çalışma durumu göstergesi, hedef TV seçimi).
+  db.onTvPresenceChange((online) => {
+    mainWindow?.webContents.send("tv:presence", { online });
+  });
+
   // Laptop uyku modundan çıktığında mevcut Realtime WebSocket'i sunucu
   // tarafında zaten kopmuş olabilir — kütüphanenin kendi hata algılamasını
   // beklemeden bağlantıyı hemen tazeliyoruz (bkz. db.js'teki
@@ -522,6 +533,30 @@ ipcMain.handle("stock:depots:set", (_e, { stockItemId, depotId, quantity, acting
 ipcMain.handle("stock:depots:remove", (_e, { stockItemId, depotId, actingUserId }) =>
   handlers.removeStockItemDepot(stockItemId, depotId, actingUserId)
 );
+ipcMain.handle("stock:activity", (_e, stockItemId) => handlers.getStockItemActivity(stockItemId));
+ipcMain.handle("stock:depots:transfer", (_e, { stockItemId, fromDepotId, toDepotId, qty, actingUserId }) =>
+  handlers.transferStockItemDepot(stockItemId, fromDepotId, toDepotId, qty, actingUserId)
+);
+
+ipcMain.handle("tv:broadcast", (_e, { item, actingUserId }) => handlers.broadcastToTv(item, actingUserId));
+ipcMain.handle("tv:broadcastQuote", (_e, { quote, totals, actingUserId }) =>
+  handlers.broadcastQuoteToTv(quote, totals, actingUserId)
+);
+ipcMain.handle("tv:broadcastVitra", (_e, { input, actingUserId }) =>
+  handlers.broadcastVitraProductToTv(input, actingUserId)
+);
+ipcMain.handle("tv:broadcastRoutes", (_e, { routes, actingUserId }) => handlers.broadcastRoutesToTv(routes, actingUserId));
+ipcMain.handle("tv:clear", () => handlers.clearTv());
+ipcMain.handle("tv:devices", () => handlers.listTvDevices());
+ipcMain.handle("tv:broadcastDashboard", (_e, actingUserId) => handlers.broadcastDashboardToTv(actingUserId));
+ipcMain.handle("tv:saveDevice", (_e, { tvId, cfg, actingUserId }) => handlers.saveTvDevice(tvId, cfg, actingUserId));
+ipcMain.handle("tv:setTarget", (_e, tvId) => handlers.setTvTarget(tvId));
+ipcMain.handle("tv:getTarget", () => handlers.getTvTarget());
+ipcMain.handle("tv:refreshRoutes", (_e, input) => handlers.refreshRoutesOnTv(input));
+ipcMain.handle("tv:refreshQuote", (_e, { quote, totals }) => handlers.refreshQuoteOnTv(quote, totals));
+ipcMain.handle("tv:checkUpdate", (_e, actingUserId) => handlers.requestTvUpdateCheck(actingUserId));
+ipcMain.handle("stock:syncVitraImages", (_e, actingUserId) => handlers.syncVitraStockImages(actingUserId));
+ipcMain.handle("tv:current", () => handlers.getCurrentTvPayload());
 
 ipcMain.handle("suppliers:list", () => handlers.listSuppliers());
 

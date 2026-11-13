@@ -7,6 +7,7 @@ import { geocodeAddress } from "./googleMaps.js";
 import { buildGeocodeAttempts } from "./geocodeQuery.js";
 import { estimateJobDurationMinutes } from "./gemini.js";
 import { getRandomFeaturedImage } from "./wikimedia.js";
+import { lookupVitraProduct, loadFirstImagesByCode, normalizeCode, isConfidentImageMatch, findVitraVideo } from "./vitraCatalog.js";
 import { assignToTechnicians, orderTechnicianStops, isOnLeave, haversineDistance } from "./routing.js";
 import { GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, FILOTIM_API_KEY, SHOP_LOCATION } from "./config.js";
 import { fetchFuelPurchases, fetchFuelDevices, fetchFleetSummary } from "./filotimSync.js";
@@ -725,7 +726,9 @@ export async function addSale(input) {
       // kullanıcıya soruluyor). Belirtilmemişse (ör. eski/güncellenmemiş
       // bir istemci) o satır sessizce atlanır, satış kaydı yine oluşur.
       if (!item.depotId) continue;
-      await db.deductStockItemDepotQuantity(item.stockItemId, item.depotId, Number(item.qty), input.actingUserId);
+      await db.deductStockItemDepotQuantity(item.stockItemId, item.depotId, Number(item.qty), input.actingUserId, {
+        reason: "satıldı",
+      });
     }
   }
   return db.addSale(input);
@@ -889,6 +892,14 @@ export function removeStockItemDepot(stockItemId, depotId, actingUserId) {
   return db.removeStockItemDepot(stockItemId, depotId, actingUserId);
 }
 
+export function getStockItemActivity(stockItemId) {
+  return db.getStockItemActivity(stockItemId);
+}
+
+export function transferStockItemDepot(stockItemId, fromDepotId, toDepotId, qty, actingUserId) {
+  return db.transferStockItemDepot(stockItemId, fromDepotId, toDepotId, qty, actingUserId);
+}
+
 export function listUsers() {
   return db.getUsers();
 }
@@ -1010,4 +1021,328 @@ export function markMessagesRead(currentUserId, otherUserId) {
 
 export function deleteMessage(id, actingUserId) {
   return db.deleteMessage(id, actingUserId);
+}
+
+// ---------- TV Yayını ----------
+// Masaüstündeki "Yayınla" butonu — bkz. db.js'teki broadcastToTv açıklaması.
+// TV'ye sadece gösterilecek alanlar gönderilir (stok miktarı, depo, tedarik
+// bilgisi gibi iç veriler müşterinin gördüğü ekrana gitmez). Ürün kodu
+// vitra.com.tr'de bulunursa sitedeki TÜM fotoğraflar gönderilir (TV'de slider);
+// bulunamazsa ya da site açılmazsa stoktaki tek fotoğrafla yayınlanır.
+export async function broadcastToTv(item, actingUserId) {
+  if (!item?.code && !item?.name) throw new Error("Yayınlanacak ürün seçilmedi.");
+  const { images: siteImages, code: vitraCode, url: vitraUrl, name: vitraName, features } = await vitraImagesForStockItem(item);
+  // Ürün videosu yalnız VitrA'da eşleşen ürünlerde aranır (yedek parçalarda değil).
+  const video = vitraCode ? await findVitraVideo(`${vitraName || item.name || ""} ${vitraUrl}`) : null;
+  const product = {
+    id: item.id || null,
+    code: item.code || "",
+    name: item.name || "",
+    category: item.category || "",
+    imageUrl: siteImages[0] || item.imageUrl || "",
+    // TV'de slider olarak döner.
+    images: siteImages.length > 0 ? siteImages : Array.isArray(item.images) ? item.images.filter(Boolean) : [],
+    unit: item.unit || "adet",
+    videoId: video?.id || "",
+    // vitra.com.tr'deki kısa özellik maddeleri (ürün ekranında madde madde).
+    features: features || [],
+    // TV'de fiyat gösterilmiyor (müşteriye gösterilen vitrin ekranı).
+    priceExVat: null,
+    priceIncVat: null,
+  };
+  return db.broadcastToTv(product, actingUserId);
+}
+
+// Fiyat teklifini TV'ye gönderir. Toplamlar renderer'da (src/lib/orderTotals.js
+// computeTotals — yazdırma/PDF ile aynı hesap) hesaplanıp gelir. Müşterinin
+// telefon/e-posta/adres bilgisi bilerek gönderilmez: ekran ofisteki herkese açık.
+export async function broadcastQuoteToTv(quote, totals, actingUserId) {
+  return db.broadcastQuoteToTv(await buildQuotePayload(quote, totals), actingUserId);
+}
+
+// Yayındaki teklif düzenlenince (bkz. src/components/TvLiveRefresh.jsx).
+export async function refreshQuoteOnTv(quote, totals) {
+  const payload = await buildQuotePayload(quote, totals);
+  return db.refreshTvContent("quote", (cur) => cur?.quoteNo === payload.quoteNo, payload);
+}
+
+async function buildQuotePayload(quote, totals) {
+  if (!quote?.quoteNo) throw new Error("Yayınlanacak teklif seçilmedi.");
+  const items = quote.items || [];
+  const images = await db.getStockImagesByCodes(items.map((it) => (it.code || "").trim()));
+  const num = (v) => Number(v) || 0;
+  return {
+    quoteNo: quote.quoteNo,
+    customerName: quote.customerName || "",
+    quoteDate: quote.quoteDate || "",
+    validityDays: quote.validityDays ?? null,
+    currency: quote.currency || "TRY",
+    items: items.map((it) => {
+      const lineNet = num(it.qty) * num(it.unitPrice) * (1 - num(it.discountRate) / 100);
+      return {
+        code: it.code || "",
+        description: it.description || "",
+        qty: num(it.qty),
+        unit: it.unit || "Adet",
+        unitPrice: num(it.unitPrice),
+        discountRate: num(it.discountRate),
+        lineTotal: Math.round(lineNet * 100) / 100,
+        imageUrl: images[(it.code || "").trim()] || "",
+      };
+    }),
+    totals: {
+      subtotal: num(totals?.araToplam),
+      discount: num(totals?.indirimTutari),
+      vat: num(totals?.kdvToplami),
+      total: num(totals?.genelToplam),
+    },
+  };
+}
+
+// Vitrin ürünü: ürün kodu ya da vitra.com.tr linkiyle, ad/kategori/tüm
+// fotoğraflar siteden alınır (bkz. vitraCatalog.js). Sitedeki fiyat VitrA'nın
+// önerdiği son kullanıcı fiyatı olduğu için TV'de fiyat gösterilmez.
+// Stok kaleminin vitra.com.tr'deki tüm fotoğrafları. Stok fotoğrafı
+// eşlemesindeki aynı şüphe kontrolü uygulanır (bkz. isConfidentImageMatch):
+// kod eşleşse de ürünle örtüşmeyebilecek fotoğraflar TV'ye de gönderilmez.
+// Kod sitede yoksa ya da site o an açılmıyorsa boş liste döner — yayın yine
+// stoktaki fotoğrafla yapılır, hata gösterilmez.
+async function vitraImagesForStockItem(item) {
+  if (!item?.code) return { images: [], code: "", url: "" };
+  try {
+    const p = await lookupVitraProduct(item.code);
+    const slug = (/\/([a-z0-9-]+)-p-[a-z0-9-]+$/i.exec(p.url) || [])[1] || "";
+    const fileName = String(p.images[0] || "").split("/").pop();
+    if (!isConfidentImageMatch(item.code, item.name, { slug, fileName })) return { images: [], code: "", url: "" };
+    return { images: p.images, code: p.code, url: p.url, name: p.name, features: p.features };
+  } catch {
+    return { images: [], code: "", url: "" };
+  }
+}
+
+export async function broadcastVitraProductToTv(input, actingUserId) {
+  const p = await lookupVitraProduct(input);
+  const video = await findVitraVideo(`${p.name} ${p.url}`);
+  return db.broadcastToTv(
+    {
+      id: p.code,
+      code: p.code,
+      name: p.name,
+      category: p.category,
+      imageUrl: p.images[0],
+      images: p.images,
+      videoId: video?.id || "",
+      features: p.features,
+      unit: "",
+      priceExVat: null,
+      priceIncVat: null,
+    },
+    actingUserId
+  );
+}
+
+// ---------- Günlük özet panosu (TV, yalnız ofis modu) ----------
+// src/lib/techColors.js ile aynı palet/sıra — renderer klasörü paketlenmediği
+// için main process'te kopyası.
+const TECH_COLORS = ["#3eaca7", "#c0392b", "#8e44ad", "#2980b9", "#d35400", "#27ae60", "#f39c12", "#16a085", "#c2185b", "#5d4037"];
+const DASHBOARD_REFRESH_MS = 60 * 1000;
+let dashboardTimer = null;
+
+function localIsoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+async function buildDashboard() {
+  const now = new Date();
+  const today = localIsoDate(now);
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(now.getDate() + 1);
+  const tomorrow = localIsoDate(tomorrowDate);
+  const [appointments, technicians, pendingParts] = await Promise.all([
+    db.getAppointmentsByDate(today),
+    db.getTechnicians(),
+    db.getPendingParts(),
+  ]);
+  const tomorrowAppointments = await db.getAppointmentsByDate(tomorrow);
+  const techRows = technicians
+    .map((t, i) => {
+      const mine = appointments.filter((a) => a.assignedTechnicianId === t.id);
+      return {
+        name: t.name,
+        color: TECH_COLORS[i % TECH_COLORS.length],
+        total: mine.length,
+        completed: mine.filter((a) => a.status === "completed").length,
+        onLeave: isOnLeave(t, today),
+        assignable: t.assignable !== false,
+      };
+    })
+    // Bugün işi olan ya da sahaya çıkan (atanabilir) teknisyenler; izinliler "İzinli" görünür.
+    .filter((t) => t.total > 0 || t.assignable)
+    .map(({ assignable, ...rest }) => rest);
+  return {
+    date: today,
+    appointmentsToday: appointments.length,
+    completedToday: appointments.filter((a) => a.status === "completed").length,
+    urgentToday: appointments.filter((a) => a.urgency === "acil" && a.status !== "completed").length,
+    unassignedToday: appointments.filter((a) => !a.assignedTechnicianId && a.status !== "completed").length,
+    appointmentsTomorrow: tomorrowAppointments.length,
+    pendingParts: pendingParts.filter((p) => p.status === "bekleniyor").length,
+    partsArrived: pendingParts.filter((p) => p.status === "geldi").length,
+    technicians: techRows,
+  };
+}
+
+export async function broadcastDashboardToTv(actingUserId) {
+  const payload = await db.broadcastDashboardToTv(await buildDashboard(), actingUserId);
+  // Pano yayında kaldıkça veriyi tazele; başka yayın gelince kendiliğinden durur.
+  clearInterval(dashboardTimer);
+  let last = JSON.stringify(payload.dashboard);
+  dashboardTimer = setInterval(async () => {
+    if (db.getCurrentTvPayload()?.kind !== "dashboard") {
+      clearInterval(dashboardTimer);
+      dashboardTimer = null;
+      return;
+    }
+    try {
+      const next = await buildDashboard();
+      const json = JSON.stringify(next);
+      if (json !== last && (await db.refreshTvContent("dashboard", () => true, next))) last = json;
+    } catch {
+      // geçici ağ hatası — bir sonraki turda tekrar denenir
+    }
+  }, DASHBOARD_REFRESH_MS);
+  return payload;
+}
+
+// Rota Oluştur ekranındaki "TV'de Yayınla". TV ofiste müşterilerin de
+// görebileceği bir yerde durduğu için kişisel veri sınırlı gönderilir:
+// müşteri adı kısaltılır ("Emre K."), adres yerine yalnız mahalle/ilçe,
+// telefon ve açık adres hiç gönderilmez (KVKK).
+function shortCustomerName(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "Müşteri";
+  if (parts.length === 1) return parts[0];
+  const last = parts[parts.length - 1];
+  return `${parts.slice(0, -1).join(" ")} ${last.charAt(0).toLocaleUpperCase("tr")}.`;
+}
+
+// TV'de adres yerine yalnız mahalle/ilçe. Sokak, apartman, numara ASLA
+// gönderilmez: çıkarılamıyorsa boş döner.
+function appointmentArea(a) {
+  const d = a.addressDetail || {};
+  if (d.ilce || d.mahalle) return [d.mahalle, d.ilce].filter(Boolean).join(", ");
+  // Eski randevularda adres tek bir serbest metin ("Kültür Mah.İpek Sok.No:3 …"):
+  // yalnız "… Mah." / "… Mahallesi" kısmı ve varsa "İlçe/İl" içindeki ilçe alınır.
+  const text = String(a.address || "");
+  const L = "A-Za-zÇĞİÖŞÜçğıöşü";
+  const mahalle = new RegExp(`([${L}]+(?:\\s[${L}]+)?)\\s*Mah(?:alle(?:si)?)?\\b\\.?`, "i").exec(text);
+  const ilce = new RegExp(`([${L}]+)\\s*/\\s*[${L}]+`).exec(text);
+  const parts = [mahalle && `${mahalle[1].trim()} Mah.`, ilce && ilce[1]].filter(Boolean);
+  if (parts.length > 0) return parts.join(", ");
+  // Sadece kısa bir yer adı yazılmışsa ("Zekeriyaköy") o gösterilir; rakam
+  // içeren (kapı/daire no) ya da uzun metinler gösterilmez.
+  const plain = text.trim();
+  return plain && !/\d/.test(plain) && plain.split(/\s+/).length <= 2 && plain.length <= 24 ? plain : "";
+}
+
+function buildRoutesPayload({ date, technicians }) {
+  if (!date || !Array.isArray(technicians)) throw new Error("Yayınlanacak rota yok.");
+  return {
+    date,
+    technicians: technicians
+      .filter((t) => (t.stops || []).length > 0)
+      .map((t) => ({
+        name: t.name || "",
+        color: t.color || "",
+        onLeave: Boolean(t.onLeave),
+        stops: t.stops.map((s, i) => ({
+          order: i + 1,
+          customer: shortCustomerName(s.customerName),
+          area: appointmentArea(s),
+          urgent: s.urgency === "acil",
+          completed: s.status === "completed",
+          minutes: Number(s.estimatedDurationMinutes) || null,
+        })),
+      })),
+  };
+}
+
+export function broadcastRoutesToTv(input, actingUserId) {
+  const routes = buildRoutesPayload(input);
+  if (routes.technicians.length === 0) throw new Error("Bu gün için oluşturulmuş rota yok.");
+  return db.broadcastRoutesToTv(routes, actingUserId);
+}
+
+// Yayındaki rotaların günü için randevular değişince (bkz. src/components/TvLiveRefresh.jsx).
+export function refreshRoutesOnTv(input) {
+  const routes = buildRoutesPayload(input);
+  return db.refreshTvContent("routes", (cur) => cur?.date === routes.date, routes);
+}
+
+// ---------- TV Ekranları (Ayarlar) ----------
+export function listTvDevices() {
+  return db.listTvDevices();
+}
+
+export async function saveTvDevice(tvId, cfg, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV ayarlarını değiştirme");
+  if (!tvId) throw new Error("TV seçilmedi.");
+  const clean = {
+    name: String(cfg?.name || "TV").trim().slice(0, 40) || "TV",
+    mode: cfg?.mode === "office" ? "office" : "customer",
+    workStart: /^\d{2}:\d{2}$/.test(cfg?.workStart) ? cfg.workStart : "08:30",
+    workEnd: /^\d{2}:\d{2}$/.test(cfg?.workEnd) ? cfg.workEnd : "19:00",
+    dimOutside: cfg?.dimOutside !== false,
+  };
+  return db.saveTvDevice(tvId, clean, actingUserId);
+}
+
+export async function requestTvUpdateCheck(actingUserId) {
+  await db.requireAdmin(actingUserId, "TV güncellemesi");
+  return db.requestTvUpdateCheck();
+}
+
+export function setTvTarget(tvId) {
+  db.setTvTarget(tvId);
+}
+
+export function getTvTarget() {
+  return db.getTvTarget();
+}
+
+export function clearTv() {
+  return db.clearTv();
+}
+
+export function getCurrentTvPayload() {
+  return db.getCurrentTvPayload();
+}
+
+// Ayarlar > Stok CSV'deki "VitrA fotoğraflarını eşle": kodu vitra.com.tr'de
+// bulunan ve fotoğraf alanı BOŞ olan stok kalemlerine sitedeki ilk fotoğrafın
+// linki yazılır (elle girilmiş fotoğraflara dokunulmaz). Şüpheli eşleşmeler
+// (bkz. vitraCatalog.isConfidentImageMatch) atlanır. Sitede yeni ürün
+// çıktıkça tekrar çalıştırılabilir.
+export async function syncVitraStockImages(actingUserId) {
+  await db.requireAdmin(actingUserId, "VitrA fotoğraflarını eşleme");
+  const images = await loadFirstImagesByCode();
+  const items = await db.getStockItems();
+  const updates = [];
+  let alreadyHasImage = 0;
+  let skippedUncertain = 0;
+  for (const item of items) {
+    const entry = images.get(normalizeCode(item.code));
+    if (!entry) continue;
+    if (item.imageUrl) {
+      alreadyHasImage++;
+      continue;
+    }
+    if (!isConfidentImageMatch(item.code, item.name, entry)) {
+      skippedUncertain++;
+      continue;
+    }
+    updates.push({ id: item.id, imageUrl: entry.imageUrl });
+  }
+  const result = updates.length > 0 ? await db.setStockImageUrls(updates, actingUserId) : { updated: 0, failed: 0 };
+  return { ...result, matched: updates.length + alreadyHasImage + skippedUncertain, alreadyHasImage, skippedUncertain, total: items.length };
 }

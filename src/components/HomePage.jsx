@@ -11,6 +11,7 @@ import {
   QrCode,
   CalendarPlus,
   BadgeTurkishLira,
+  Airplay,
 } from "lucide-react";
 import GridLayout, { useContainerWidth } from "react-grid-layout";
 import { UserAvatar } from "../lib/avatars.jsx";
@@ -128,6 +129,21 @@ export default function HomePage({
       )
       .slice(0, SEARCH_RESULT_LIMIT);
   }, [appointments, term, phoneTerm]);
+
+  // Arama sonucundaki ürünü ofisteki TV'de yayınlar (Stok sayfasındaki TV butonuyla aynı).
+  // Arama açık kalır ki başka bir ürün de hemen gösterilebilsin.
+  const [broadcastingCode, setBroadcastingCode] = useState(null);
+  async function broadcastToTv(item) {
+    setBroadcastingCode(item.code);
+    try {
+      await window.api.broadcastToTv(item, currentUser?.id);
+      showToast?.("success", `TV'de yayınlandı: ${item.code}`);
+    } catch (err) {
+      showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
+    } finally {
+      setBroadcastingCode(null);
+    }
+  }
 
   const matchingStock = useMemo(() => {
     if (!term) return [];
@@ -359,6 +375,19 @@ export default function HomePage({
                     >
                       <Search size={13} strokeWidth={1.75} />
                       Tedarikçide Ara
+                    </button>
+                  )}
+                  {window.api?.broadcastToTv && (
+                    <button
+                      type="button"
+                      title="TV'de Yayınla"
+                      aria-label="TV'de Yayınla"
+                      disabled={broadcastingCode === s.code}
+                      onClick={() => broadcastToTv(s)}
+                      className="secondary"
+                      style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0.3rem 0.5rem" }}
+                    >
+                      <Airplay size={14} strokeWidth={1.75} />
                     </button>
                   )}
                 </div>

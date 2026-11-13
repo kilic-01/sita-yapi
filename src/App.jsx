@@ -30,6 +30,9 @@ import WhatsAppDock from "./components/WhatsAppDock.jsx";
 import CamerasPage from "./components/CamerasPage.jsx";
 import PipPlayer from "./components/PipPlayer.jsx";
 import Toast from "./components/Toast.jsx";
+import TvBroadcastBar from "./components/TvBroadcastBar.jsx";
+import VitraTvCard from "./components/VitraTvCard.jsx";
+import TvLiveRefresh from "./components/TvLiveRefresh.jsx";
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -763,6 +766,8 @@ export default function App() {
         <ScreensaverLock onWake={handleIdleWake} messages={messages} users={users} currentUser={currentUser} />
       )}
       <Toast toast={toast} />
+      <TvBroadcastBar showToast={showToast} />
+      <TvLiveRefresh appointments={appointments} technicians={technicians} quotes={quotes} />
       <PipPlayer ref={pipPlayerRef} />
       <MessagesDock
         messages={messages}
@@ -946,6 +951,7 @@ export default function App() {
             holidays={holidays}
             onAppointmentPatch={patchAppointment}
             actingUserId={currentUser.id}
+            showToast={showToast}
           />
         )}
         {activeTab === "map" && (
@@ -989,6 +995,8 @@ export default function App() {
           />
         )}
         {activeTab === "stock" && (
+          <>
+          <VitraTvCard currentUser={currentUser} showToast={showToast} />
           <StockPage
             stockItems={stockItems}
             onSaved={setStockItems}
@@ -996,7 +1004,9 @@ export default function App() {
             onDepotsSaved={setDepots}
             initialSearch={pendingStockSearch}
             currentUser={currentUser}
+            showToast={showToast}
           />
+          </>
         )}
         {activeTab === "partCheckouts" && (
           <PartCheckoutsPage
@@ -1006,9 +1016,15 @@ export default function App() {
             appointments={appointments}
             partCheckouts={partCheckouts}
             currentUser={currentUser}
-            onChanged={() => {
+            onChanged={(updatedItems) => {
               window.api.listPartCheckouts().then(setPartCheckouts);
-              window.api.listStockItems().then(setStockItems);
+              if (updatedItems?.length) {
+                setStockItems((prev) =>
+                  prev.map((it) => updatedItems.find((u) => u.id === it.id) || it)
+                );
+              } else {
+                window.api.listStockItems().then(setStockItems);
+              }
             }}
           />
         )}
@@ -1026,6 +1042,7 @@ export default function App() {
             onSaved={handleQuoteSaved}
             stockItems={stockItems}
             currentUser={currentUser}
+            showToast={showToast}
           />
         )}
         {activeTab === "feeTracking" && (

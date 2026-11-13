@@ -3,6 +3,7 @@ import { TrashIcon } from "./icons.jsx";
 import Modal from "./Modal.jsx";
 import ToggleSwitch from "./ToggleSwitch.jsx";
 import { VacationIllustration } from "./illustrations.jsx";
+import { OFFICIAL_HOLIDAYS, nextOccurrence } from "../lib/officialHolidays.js";
 
 function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, onNotify }) {
   const isNew = !holiday;
@@ -12,6 +13,21 @@ function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, on
   const [recurring, setRecurring] = useState(holiday?.recurring || false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Hazır listeden seçilen resmi tatil adı ve (sabit tarihliyse) tarihi doldurur.
+  function pickOfficial(index) {
+    const preset = OFFICIAL_HOLIDAYS[index];
+    if (!preset) return;
+    setName(preset.name);
+    if (preset.month) {
+      const date = nextOccurrence(preset);
+      setStartDate(date);
+      setEndDate(date);
+      setRecurring(true);
+    } else {
+      setRecurring(false);
+    }
+  }
 
   async function handleSave(e) {
     e.preventDefault();
@@ -49,6 +65,22 @@ function EditHolidayModal({ holiday, holidays, currentUser, onClose, onSaved, on
         <h3 style={{ marginTop: 0 }}>{isNew ? "Yeni Tatil" : "Tatili Düzenle"}</h3>
         {error && <div className="error">{error}</div>}
         <form onSubmit={handleSave}>
+          {isNew && (
+            <label>
+              Resmi tatil seç
+              <select defaultValue="" onChange={(e) => pickOfficial(Number(e.target.value))}>
+                <option value="" disabled>
+                  Listeden seçin ya da aşağıya kendiniz yazın
+                </option>
+                {OFFICIAL_HOLIDAYS.map((h, i) => (
+                  <option key={h.name} value={i}>
+                    {h.name}
+                    {h.month ? ` (${h.day}.${String(h.month).padStart(2, "0")})` : " (tarihi her yıl değişir)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="form-row">
             <label>
               Ad

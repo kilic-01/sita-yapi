@@ -43,6 +43,7 @@ export async function initDb(_userDataPath) {
     global: { fetch: fetchWithRetry },
   });
   subscribeToRealtime();
+  subscribeToTvChannel();
 }
 
 // Herhangi bir tabloda (başka bir bilgisayardan dahil) değişiklik olduğunda
@@ -121,7 +122,300 @@ function subscribeToRealtime() {
 // hiç tetiklenmeyebilir. main.js'teki powerMonitor "resume" olayı bunu
 // beklemeden bağlantıyı hemen tazeler.
 export function forceReconnectRealtime() {
-  if (supabase) subscribeToRealtime();
+  if (supabase) {
+    subscribeToRealtime();
+    subscribeToTvChannel();
+  }
+}
+
+// ---------- TV Yayını (ofisteki Mi Stick'e bağlı TV) ----------
+// "Yayınla" butonu ürün bilgisini veritabanına YAZMADAN, Supabase Realtime'ın
+// "broadcast" kanalı üzerinden TV uygulamasına (android/tv) iletir — TV hiçbir
+// tabloyu okumaz, göstereceği her şey mesajın içinde gelir. Broadcast
+// mesajları kalıcı değil: TV sonradan açılır/yeniden bağlanırsa "hello"
+// gönderir, o an yayın yapan bilgisayar son ürünü tekrar yollar. Başka bir
+// bilgisayar yayını devraldığında (ya da durdurduğunda) bu bilgisayarın
+// "şu an yayındayım" durumu temizlenir ki iki bilgisayar aynı anda cevap vermesin.
+const TV_CHANNEL = "tv-yayin";
+let tvChannel = null;
+let tvReconnectTimer = null;
+let currentTvPayload = null;
+let onTvStateCallback = null;
+// Birden fazla TV: yayınlar seçilen TV'ye (kimliği) ya da hepsine (null) gider.
+let tvTarget = null;
+// Bağlı TV'ler (Supabase presence): [{ tvId, name, mode, version }]
+let onlineTvs = [];
+let onTvPresenceCallback = null;
+// Kişisel veri içeren, yalnız "ofis" modundaki TV'lerde gösterilen yayınlar.
+const OFFICE_ONLY_KINDS = new Set(["routes", "dashboard"]);
+
+export function onTvStateChange(callback) {
+  onTvStateCallback = callback;
+}
+
+export function onTvPresenceChange(callback) {
+  onTvPresenceCallback = callback;
+}
+
+export function getOnlineTvs() {
+  return onlineTvs;
+}
+
+export function setTvTarget(tvId) {
+  tvTarget = tvId || null;
+}
+
+export function getTvTarget() {
+  return tvTarget;
+}
+
+// Ayarlar > TV Ekranları — settings tablosunda "tvDevices" anahtarı altında
+// { [tvId]: { name, mode, workStart, workEnd, dimOutside } }.
+async function getTvDevices() {
+  const settings = await getSettings();
+  // settings.value metin sütunu — nesne JSON olarak saklanır.
+  try {
+    const raw = settings.tvDevices;
+    return (typeof raw === "string" ? JSON.parse(raw) : raw) || {};
+  } catch {
+    return {};
+  }
+}
+
+async function sendTvConfigTo(tvId) {
+  const devices = await getTvDevices();
+  const cfg = devices[tvId];
+  if (!cfg || !tvChannel) return;
+  await tvChannel.send({ type: "broadcast", event: "config", payload: { tvId, ...cfg } });
+}
+
+// ---------- Özel gün mesajları ----------
+// Tatil listesindeki (Ayarlar > Resmi ve Dini Tatiller) günler + sabit/
+// hesaplanan özel günler; önümüzdeki bir yıl gönderilir, TV cihazda saklar.
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Ayın n. pazarı (Anneler Günü: Mayıs'ın 2., Babalar Günü: Haziran'ın 3. pazarı).
+function nthSunday(year, month, n) {
+  const d = new Date(year, month, 1);
+  d.setDate(1 + ((7 - d.getDay()) % 7) + (n - 1) * 7);
+  return d;
+}
+
+// TV'de mesajın yanında Türk bayrağı gösterilen resmi günler: milli bayramlar,
+// 1 Mayıs ve 15 Temmuz. Dini bayramlar ve Yılbaşı hariç.
+const FLAG_DAYS =
+  /ulusal egemenlik|gençlik ve spor|zafer bayram|cumhuriyet bayram|emek ve dayanışma|işçi bayram|1 mayıs|demokrasi ve milli birlik|15 temmuz/i;
+
+// Mesajın gövdesi — TV'de önüne günün tarihi eklenir: "30 Ağustos Zafer
+// Bayramımız Kutlu Olsun." (10 Kasım, 24 Kasım, 1 Ocak, Anneler/Babalar
+// Günü hariç — bkz. buildSpecialDays). Bayramlar "-ımız" (hepimizin), kişilere hitap eden
+// günler (Öğretmenler, Anneler…) "Gününüz"; anma günleri kutlanmaz.
+function holidayGreeting(name) {
+  const clean = String(name || "").replace(/^\d+\s+\S+\s+/, "").trim() || String(name || "").trim();
+  if (/arife/i.test(clean)) return "";
+  if (/yılbaşı/i.test(clean)) return "Yeni Yılınız Kutlu Olsun.";
+  if (/demokrasi ve milli birlik/i.test(clean)) return "Şehitlerimizi Rahmetle Anıyoruz.";
+  if (/Bayramı$/.test(clean)) return `${clean.replace(/Bayramı$/, "Bayramımız")} Kutlu Olsun.`;
+  if (/Günü$/.test(clean)) return `${clean.replace(/Günü$/, "Gününüz")} Kutlu Olsun.`;
+  return `${clean} Kutlu Olsun.`;
+}
+
+const dayMonth = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long" });
+
+export async function buildSpecialDays() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const until = new Date(today);
+  until.setFullYear(until.getFullYear() + 1);
+  const days = new Map();
+  const add = (date, text, flag = false, withDate = true) => {
+    if (text && date >= today && date < until && !days.has(isoDate(date))) days.set(isoDate(date), { text, flag, withDate });
+  };
+  for (const h of await getHolidays()) {
+    if (!h.startDate) continue;
+    const text = holidayGreeting(h.name);
+    const flag = FLAG_DAYS.test(h.name || "");
+    // Tekrarlanan (her yıl aynı gün) tatiller bu yıla ve gelecek yıla taşınır.
+    const shifts = h.recurring ? [today.getFullYear(), today.getFullYear() + 1] : [null];
+    for (const year of shifts) {
+      const start = new Date(`${h.startDate}T00:00:00`);
+      const end = new Date(`${h.endDate || h.startDate}T00:00:00`);
+      if (year !== null) {
+        const span = end.getFullYear() - start.getFullYear();
+        start.setFullYear(year);
+        end.setFullYear(year + span);
+      }
+      const withDate = !/yılbaşı/i.test(h.name || "");
+      for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) add(new Date(d), text, flag, withDate);
+    }
+  }
+  for (const y of [today.getFullYear(), today.getFullYear() + 1]) {
+    add(new Date(y, 0, 1), "Yeni Yılınız Kutlu Olsun.", false, false);
+    add(new Date(y, 2, 8), "Dünya Kadınlar Gününüz Kutlu Olsun.");
+    add(nthSunday(y, 4, 2), "Anneler Gününüz Kutlu Olsun.", false, false);
+    add(nthSunday(y, 5, 3), "Babalar Gününüz Kutlu Olsun.", false, false);
+    add(new Date(y, 10, 24), "Öğretmenler Gününüz Kutlu Olsun.", false, false);
+    add(new Date(y, 10, 10), "Ulu Önder Atatürk'ü Saygı ve Özlemle Anıyoruz.", false, false);
+  }
+  return [...days]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, { withDate, ...d }]) => ({
+      date,
+      ...d,
+      text: withDate ? `${dayMonth.format(new Date(`${date}T00:00:00`))} ${d.text}` : d.text,
+    }));
+}
+
+async function sendSpecialDays() {
+  if (!tvChannel) return;
+  await tvChannel.send({ type: "broadcast", event: "specialDays", payload: { days: await buildSpecialDays() } });
+}
+
+export async function saveTvDevice(tvId, cfg, actingUserId) {
+  const devices = await getTvDevices();
+  devices[tvId] = { ...devices[tvId], ...cfg };
+  await updateSettings({ tvDevices: JSON.stringify(devices) }, actingUserId);
+  await sendTvConfigTo(tvId);
+  return devices;
+}
+
+// Ayarlar > TV Ekranları "Güncellemeleri kontrol et": TV'ler GitHub'daki
+// yeni sürüme hemen bakar (normalde açılışta ve 6 saatte bir).
+export async function requestTvUpdateCheck() {
+  if (!tvChannel) throw new Error("TV kanalına bağlı değil.");
+  await tvChannel.send({ type: "broadcast", event: "update", payload: {} });
+}
+
+export async function listTvDevices() {
+  return { devices: await getTvDevices(), online: onlineTvs };
+}
+
+// Başka bir bilgisayarın yayını bu bilgisayarınkini ancak aynı TV'ye (ya da
+// tüm TV'lere) gidiyorsa devralmış sayılır.
+function overlaps(otherTarget) {
+  if (!currentTvPayload) return false;
+  const mine = currentTvPayload.target ?? null;
+  return mine === null || (otherTarget ?? null) === null || mine === otherTarget;
+}
+
+function setCurrentTvPayload(payload) {
+  currentTvPayload = payload;
+  onTvStateCallback?.(payload);
+}
+
+function subscribeToTvChannel() {
+  clearTimeout(tvReconnectTimer);
+  if (tvChannel) supabase.removeChannel(tvChannel);
+  const channel = supabase.channel(TV_CHANNEL, { config: { broadcast: { ack: true } } });
+  channel.on("broadcast", { event: "show" }, ({ payload }) => {
+    if (overlaps(payload?.target)) setCurrentTvPayload(null);
+  });
+  channel.on("broadcast", { event: "clear" }, ({ payload }) => {
+    if (overlaps(payload?.target)) setCurrentTvPayload(null);
+  });
+  // TV (yeniden) bağlandı: ayarlarını ve — bu TV'ye gidiyorsa — yayındaki içeriği yolla.
+  channel.on("broadcast", { event: "hello" }, ({ payload }) => {
+    const tvId = payload?.tvId;
+    if (tvId) sendTvConfigTo(tvId).catch(() => {});
+    sendSpecialDays().catch(() => {});
+    const target = currentTvPayload?.target ?? null;
+    if (currentTvPayload && (target === null || target === tvId)) {
+      channel.send({ type: "broadcast", event: "show", payload: currentTvPayload });
+    }
+  });
+  channel.on("presence", { event: "sync" }, () => {
+    const state = channel.presenceState();
+    onlineTvs = Object.values(state)
+      .flat()
+      .filter((p) => p?.tvId)
+      .map(({ tvId, name, mode, version }) => ({ tvId, name, mode, version }));
+    onTvPresenceCallback?.(onlineTvs);
+  });
+  channel.subscribe((status) => {
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      tvReconnectTimer = setTimeout(subscribeToTvChannel, 5000);
+    }
+  });
+  tvChannel = channel;
+}
+
+async function sendTvEvent(event, payload) {
+  if (!tvChannel) subscribeToTvChannel();
+  const result = await tvChannel.send({ type: "broadcast", event, payload });
+  if (result !== "ok") throw new Error("TV'ye ulaşılamadı — internet bağlantısını kontrol edin.");
+}
+
+// "kind" TV'de hangi ekranın açılacağını belirler: "product" (tek ürün) ya
+// da "quote" (fiyat teklifi). Eski TV sürümleri "kind" alanını bilmez ama
+// "product" alanına baktıkları için ürün yayını onlarda da çalışmaya devam eder.
+async function sendToTv(content, actingUserId, entityType, activityText) {
+  // Kişisel veri içeren yayınlar mağaza modundaki TV'de gösterilmez (TV de
+  // ayrıca reddeder) — gönderen kişi boşuna beklemesin diye burada uyarılır.
+  if (OFFICE_ONLY_KINDS.has(content.kind)) {
+    const devices = await getTvDevices();
+    const isOffice = (tvId) => devices[tvId]?.mode === "office";
+    const ok = tvTarget ? isOffice(tvTarget) : onlineTvs.some((t) => isOffice(t.tvId));
+    if (!ok) {
+      throw new Error(
+        tvTarget
+          ? "Seçilen TV mağaza modunda — bu içerik yalnız ofis modundaki TV'lerde gösterilir (Ayarlar > TV Ekranları)."
+          : "Ofis modunda bağlı TV yok — bu içerik mağaza modundaki TV'lerde gösterilmez (Ayarlar > TV Ekranları)."
+      );
+    }
+  }
+  const payload = {
+    ...content,
+    target: tvTarget,
+    sentBy: await actorDisplayName(actingUserId),
+    sentAt: new Date().toISOString(),
+  };
+  await sendTvEvent("show", payload);
+  setCurrentTvPayload(payload);
+  await logActivity(actingUserId, entityType, activityText);
+  return payload;
+}
+
+export function broadcastToTv(product, actingUserId) {
+  return sendToTv({ kind: "product", product }, actingUserId, "stock",
+    `TV'de yayınladı: ${product.code || ""} — ${product.name || ""}`);
+}
+
+export function broadcastRoutesToTv(routes, actingUserId) {
+  return sendToTv({ kind: "routes", routes }, actingUserId, "appointment",
+    `servis rotalarını TV'de yayınladı: ${routes.date || ""}`);
+}
+
+export function broadcastDashboardToTv(dashboard, actingUserId) {
+  return sendToTv({ kind: "dashboard", dashboard }, actingUserId, "appointment", "günlük özeti TV'de yayınladı");
+}
+
+// Yayındaki içeriğin verisi değişince (randevu atandı, teklif düzenlendi,
+// pano sayıları değişti) TV'yi tazeler — aynı yayın sayılır: sentAt/hedef
+// korunur, TV geçiş animasyonu yapmaz, aktivite kaydı düşülmez. Yalnız bu
+// bilgisayarın yayını ve aynı içerik (aynı gün/teklif no) tazelenir.
+export async function refreshTvContent(kind, isSame, content) {
+  if (currentTvPayload?.kind !== kind || !isSame(currentTvPayload[kind])) return false;
+  const payload = { ...currentTvPayload, [kind]: content };
+  if (JSON.stringify(payload) === JSON.stringify(currentTvPayload)) return false;
+  await sendTvEvent("show", payload);
+  currentTvPayload = payload;
+  return true;
+}
+
+export function broadcastQuoteToTv(quote, actingUserId) {
+  return sendToTv({ kind: "quote", quote }, actingUserId, "quote",
+    `teklifi TV'de yayınladı: ${quote.quoteNo || ""} (${quote.customerName || ""})`);
+}
+
+export async function clearTv() {
+  await sendTvEvent("clear", { target: currentTvPayload?.target ?? tvTarget });
+  setCurrentTvPayload(null);
+}
+
+export function getCurrentTvPayload() {
+  return currentTvPayload;
 }
 
 // Ayarlar > Güvenlik'teki "Tüm Veriyi Yedekle" butonu için — Supabase
@@ -573,7 +867,7 @@ export async function addPartCheckout(input) {
   // Mutabakat yapılınca (reconcilePartCheckout) sadece GERÇEKTEN
   // kullanılmayıp iade edilen kısım AYNI depoya geri eklenir — bu yüzden
   // depotId aşağıda partCheckouts satırına da kaydediliyor.
-  await deductStockItemDepotQuantity(input.stockItemId, input.depotId, qty, input.actingUserId);
+  await deductStockItemDepotQuantity(input.stockItemId, input.depotId, qty, input.actingUserId, { reason: "zimmetlendi" });
 
   const row = {
     id: uuid(),
@@ -626,7 +920,13 @@ export async function addPartCheckout(input) {
     "partCheckout",
     `yedek parça zimmetledi: ${item.code} — ${item.name} x${qty}`
   );
-  return data;
+  // Düşümden sonraki güncel toplamı döndürüyoruz ki çağıran taraf (desktop
+  // PartCheckoutsPage) her zimmetten sonra ~10 binlik stockItems tablosunun
+  // TAMAMINI yeniden çekmek zorunda kalmasın — bu tam resync, popup'ı tekrar
+  // açıp hemen yazmaya başlayan kullanıcıda birkaç saniyelik donmaya
+  // sebep oluyordu.
+  const updatedStockItem = await getStockItemById(input.stockItemId);
+  return { ...data, updatedStockItem };
 }
 
 export async function reconcilePartCheckout(id, patch) {
@@ -653,8 +953,22 @@ export async function reconcilePartCheckout(id, patch) {
   // sadece GERÇEKTEN iade edilen kısım, ALINDIĞI depoya geri eklenir.
   // "depotId" eski (migrasyon öncesi) bir kayıtta yoksa hangi depoya
   // geri ekleneceği bilinmediği için bu kısım sessizce atlanır.
-  if (qtyReturned > 0 && existing.depotId) {
-    await addStockItemDepotQuantity(existing.stockItemId, existing.depotId, qtyReturned, patch.actingUserId);
+  //
+  // Bu kayıt zaten mutabakatı sağlanmışsa (desktop'taki "düzelt" özelliği
+  // veya aynı isteğin çift gönderimi), FARK (delta) uygulanır — aksi halde
+  // her tekrar kaydetmede tüm qtyReturned yeniden eklenip stok şişerdi.
+  const previousQtyReturned = existing.status === "reconciled" ? Number(existing.qtyReturned) || 0 : 0;
+  const returnDelta = qtyReturned - previousQtyReturned;
+  if (returnDelta !== 0 && existing.depotId) {
+    if (returnDelta > 0) {
+      await addStockItemDepotQuantity(existing.stockItemId, existing.depotId, returnDelta, patch.actingUserId, {
+        reason: "zimmetten iade edildi",
+      });
+    } else {
+      await deductStockItemDepotQuantity(existing.stockItemId, existing.depotId, -returnDelta, patch.actingUserId, {
+        reason: "zimmet mutabakatı düzeltildi",
+      });
+    }
   }
 
   const finalPatch = {
@@ -760,6 +1074,8 @@ export async function setHolidays(list, actingUserId) {
   await requireAdmin(actingUserId, "Tatil listesini güncelleme");
   const result = await replaceTable("holidays", list);
   await logActivity(actingUserId, "holidays", "resmi/dini tatil listesini güncelledi");
+  // TV'ler özel gün mesajlarını hemen güncellesin (yoksa ancak yeniden bağlanınca alırlar).
+  sendSpecialDays().catch(() => {});
   return result;
 }
 
@@ -888,8 +1204,39 @@ export async function getStockItemById(id) {
   return data;
 }
 
+// Ürün sayfasındaki "info" butonu için — bu ürüne ait depo/miktar
+// değişikliklerinin (kim, ne zaman, kaçtan kaça, ekleme/çıkarma/transfer)
+// okunabilir geçmişi. "activityLog" tablosunda bu ürüne özel bir kimlik
+// (entityId) tutulmuyor — yukarıdaki fonksiyonlar (setStockItemDepotQuantity/
+// removeStockItemDepot/transferStockItemDepot) mesaja ürün KODUNU zaten
+// gömdüğü için, burada da aynı kodu arayarak filtreliyoruz. Kodlar benzersiz
+// olduğundan bu pratikte güvenilir.
+export async function getStockItemActivity(stockItemId) {
+  const item = await getStockItemById(stockItemId);
+  if (!item?.code) return [];
+  const { data, error } = await supabase
+    .from("activityLog")
+    .select("*")
+    .eq("entityType", "stock")
+    .ilike("description", `%${item.code}%`)
+    .order("createdAt", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 // Mobil barkod okuma aracı için — telefon kamerasıyla okutulan barkoda
 // karşılık gelen tek kalemi, ~10 binlik listenin tamamını çekmeden bulur.
+// Teklif kalemlerinin TV'de küçük fotoğrafla gösterilebilmesi için — teklif
+// kalemleri sadece ürün KODUNU tutuyor, görsel stok kaydında.
+export async function getStockImagesByCodes(codes) {
+  const unique = [...new Set(codes.filter(Boolean))];
+  if (unique.length === 0) return {};
+  const { data, error } = await supabase.from("stockItems").select("code, imageUrl").in("code", unique);
+  if (error) throw new Error(error.message);
+  return Object.fromEntries((data || []).filter((r) => r.imageUrl).map((r) => [r.code, r.imageUrl]));
+}
+
 export async function getStockItemByBarcode(barcode) {
   const { data, error } = await supabase.from("stockItems").select("*").eq("barcode", barcode).maybeSingle();
   if (error) throw new Error(error.message);
@@ -914,12 +1261,24 @@ export async function addStockItem(item, actingUserId) {
   // TOPLAMINI yansıtan, elle yazılmayan bir alan — mevcut ~10 binlik
   // listede (az stok uyarısı, arama sonucu rozeti vb.) "item.quantity"yi
   // okuyan hiçbir yerin değişmesine gerek kalmasın diye bilerek böyle.
-  const { depotId, quantity, ...rest } = item;
+  // "depots" (çoklu depo — ör. hem dükkan hem şantiye) varsa onlar,
+  // yoksa geriye dönük uyumluluk için tekil "depotId"/"quantity" kullanılır.
+  const { depotId, quantity, depots, ...rest } = item;
   const row = { id: uuid(), ...rest, quantity: 0 };
-  const { data, error } = await supabase.from("stockItems").insert(row).select().single();
+  let { data, error } = await supabase.from("stockItems").insert({ ...row, ...stampCreatedPatch(actingUserId) }).select().single();
+  if (error && isMissingColumnError(error, "createdBy")) {
+    ({ data, error } = await supabase.from("stockItems").insert(row).select().single());
+  }
   if (error) throw new Error(error.message);
-  if (depotId && Number(quantity) > 0) {
-    await setStockItemDepotQuantity(data.id, depotId, Number(quantity), actingUserId, { skipActivityLog: true });
+  const depotRows = Array.isArray(depots) && depots.length > 0
+    ? depots
+    : depotId && Number(quantity) > 0
+      ? [{ depotId, quantity }]
+      : [];
+  for (const row of depotRows) {
+    if (row.depotId && Number(row.quantity) > 0) {
+      await setStockItemDepotQuantity(data.id, row.depotId, Number(row.quantity), actingUserId, { skipActivityLog: true });
+    }
   }
   await logActivity(actingUserId, "stock", `stok kalemi ekledi: ${data.code} — ${data.name}`);
   return (await getStockItemById(data.id)) || data;
@@ -933,15 +1292,26 @@ export async function addStockItem(item, actingUserId) {
 // uyarısı/arama sonucu gibi TEK bir sayı bekleyen onlarca eski ekran
 // (masaüstü+iOS+Android) hiç değişmeden doğru toplamı göstermeye devam etsin.
 
-async function resyncStockItemTotal(stockItemId) {
+async function resyncStockItemTotal(stockItemId, actingUserId) {
   const { data: rows, error } = await supabase
     .from("stockItemDepots")
     .select("quantity")
     .eq("stockItemId", stockItemId);
   if (error) throw new Error(error.message);
   const total = (rows || []).reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
-  const { error: updErr } = await supabase.from("stockItems").update({ quantity: total }).eq("id", stockItemId);
-  if (updErr) throw new Error(updErr.message);
+  // Depo bazlı HER miktar değişimi (girişi, transferi, satış/zimmet düşümü,
+  // iade) "bu üründe en son kim işlem yaptı" bilgisini de günceller — tek
+  // bir yerde toplanmış, ayrıca her çağıran fonksiyonda tekrarlanmıyor.
+  const { error: updErr } = await supabase
+    .from("stockItems")
+    .update({ quantity: total, ...stampUpdatedPatch(actingUserId) })
+    .eq("id", stockItemId);
+  if (updErr && isMissingColumnError(updErr, "updatedBy")) {
+    const { error: fallbackErr } = await supabase.from("stockItems").update({ quantity: total }).eq("id", stockItemId);
+    if (fallbackErr) throw new Error(fallbackErr.message);
+  } else if (updErr) {
+    throw new Error(updErr.message);
+  }
   return total;
 }
 
@@ -971,31 +1341,55 @@ export async function setStockItemDepotQuantity(stockItemId, depotId, quantity, 
       .insert({ id: uuid(), stockItemId, depotId, quantity: qty });
     if (error) throw new Error(error.message);
   }
-  await resyncStockItemTotal(stockItemId);
+  await resyncStockItemTotal(stockItemId, actingUserId);
   if (!opts.skipActivityLog) {
     const [item, depot] = await Promise.all([getStockItemById(stockItemId), getDepotById(depotId)]);
+    // "Ürün sayfasındaki info butonu" bu kaydı okunabilir tek bir metin
+    // olarak doğrudan gösteriyor — ayrı bir yapılandırılmış alan tutmak
+    // yerine kimin, hangi depoda, eski/yeni miktarla, ne kadar ekleyip/
+    // çıkardığını TEK bir Türkçe cümlede taşıyoruz.
+    const oldQty = Number(existing?.quantity) || 0;
+    const delta = qty - oldQty;
+    const deltaText = delta === 0 ? "değişiklik yok" : delta > 0 ? `+${delta} eklendi` : `${delta} çıkarıldı`;
     await logActivity(
       actingUserId,
       "stock",
-      `depo miktarı güncellendi: ${item?.code || ""} — ${depot?.name || "bilinmeyen depo"} = ${qty}`
+      `depo miktarı güncellendi: ${item?.code || ""} — ${item?.name || ""} · ${depot?.name || "bilinmeyen depo"}: ${oldQty} → ${qty} (${deltaText})`
     );
   }
 }
 
 export async function removeStockItemDepot(stockItemId, depotId, actingUserId) {
+  const { data: existingRow } = await supabase
+    .from("stockItemDepots")
+    .select("*")
+    .eq("stockItemId", stockItemId)
+    .eq("depotId", depotId)
+    .maybeSingle();
   const { error } = await supabase
     .from("stockItemDepots")
     .delete()
     .eq("stockItemId", stockItemId)
     .eq("depotId", depotId);
   if (error) throw new Error(error.message);
-  await resyncStockItemTotal(stockItemId);
-  await logActivity(actingUserId, "stock", "ürünün bir depo kaydını kaldırdı");
+  await resyncStockItemTotal(stockItemId, actingUserId);
+  const [item, depot] = await Promise.all([getStockItemById(stockItemId), getDepotById(depotId)]);
+  const removedQty = Number(existingRow?.quantity) || 0;
+  await logActivity(
+    actingUserId,
+    "stock",
+    `bir depo kaydını kaldırdı: ${item?.code || ""} — ${item?.name || ""} · ${depot?.name || "bilinmeyen depo"} (${removedQty} adet kaldırıldı)`
+  );
 }
 
 // Hızlı Satış/Parça Zimmeti gibi stoktan fiziksel düşüm yapılan yerlerde
 // kullanılır — belirli bir depodaki miktarı azaltır (0'ın altına inmez).
-export async function deductStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId) {
+// DİKKAT: bu fonksiyon "ürün sayfasındaki info butonu"nun okuduğu TEK
+// aktivite kaydı kaynağı — önceden burada logActivity çağrılmıyordu, yani
+// satış/zimmet kaynaklı HER düşüm miktarı (ve updatedAt) sessizce değişiyor
+// ama geçmişte hiç görünmüyordu. transferStockItemDepot kendi tek birleşik
+// mesajını zaten logladığı için oradan skipActivityLog:true ile çağrılır.
+export async function deductStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId, opts = {}) {
   const { data: existing } = await supabase
     .from("stockItemDepots")
     .select("*")
@@ -1003,7 +1397,8 @@ export async function deductStockItemDepotQuantity(stockItemId, depotId, amount,
     .eq("depotId", depotId)
     .maybeSingle();
   const current = Number(existing?.quantity) || 0;
-  const next = Math.max(0, current - (Number(amount) || 0));
+  const amt = Number(amount) || 0;
+  const next = Math.max(0, current - amt);
   if (existing) {
     const { error } = await supabase.from("stockItemDepots").update({ quantity: next }).eq("id", existing.id);
     if (error) throw new Error(error.message);
@@ -1013,11 +1408,20 @@ export async function deductStockItemDepotQuantity(stockItemId, depotId, amount,
       .insert({ id: uuid(), stockItemId, depotId, quantity: 0 });
     if (error) throw new Error(error.message);
   }
-  await resyncStockItemTotal(stockItemId);
+  await resyncStockItemTotal(stockItemId, actingUserId);
+  if (!opts.skipActivityLog) {
+    const [item, depot] = await Promise.all([getStockItemById(stockItemId), getDepotById(depotId)]);
+    const label = opts.reason || "stok düşüldü";
+    await logActivity(
+      actingUserId,
+      "stock",
+      `${label}: ${item?.code || ""} — ${item?.name || ""} · ${depot?.name || "bilinmeyen depo"}: ${current} → ${next} (-${amt} adet)`
+    );
+  }
 }
 
 // Parça iadesinde (reconcilePartCheckout) geri eklenir.
-export async function addStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId) {
+export async function addStockItemDepotQuantity(stockItemId, depotId, amount, actingUserId, opts = {}) {
   const { data: existing } = await supabase
     .from("stockItemDepots")
     .select("*")
@@ -1025,7 +1429,8 @@ export async function addStockItemDepotQuantity(stockItemId, depotId, amount, ac
     .eq("depotId", depotId)
     .maybeSingle();
   const current = Number(existing?.quantity) || 0;
-  const next = current + (Number(amount) || 0);
+  const amt = Number(amount) || 0;
+  const next = current + amt;
   if (existing) {
     const { error } = await supabase.from("stockItemDepots").update({ quantity: next }).eq("id", existing.id);
     if (error) throw new Error(error.message);
@@ -1035,7 +1440,66 @@ export async function addStockItemDepotQuantity(stockItemId, depotId, amount, ac
       .insert({ id: uuid(), stockItemId, depotId, quantity: next });
     if (error) throw new Error(error.message);
   }
-  await resyncStockItemTotal(stockItemId);
+  await resyncStockItemTotal(stockItemId, actingUserId);
+  if (!opts.skipActivityLog) {
+    const [item, depot] = await Promise.all([getStockItemById(stockItemId), getDepotById(depotId)]);
+    const label = opts.reason || "stok eklendi";
+    await logActivity(
+      actingUserId,
+      "stock",
+      `${label}: ${item?.code || ""} — ${item?.name || ""} · ${depot?.name || "bilinmeyen depo"}: ${current} → ${next} (+${amt} adet)`
+    );
+  }
+}
+
+// ---------- Stok Girişi (yeni gelen ürün) ----------
+// ---------- Depo Transferi (stok kaydırma) ----------
+// Örn. depodaki bir ürünü dükkana teşhir/satış için getirmek — bir depodan
+// düşüp başka bir depoya ekler. Kaynakta yetersiz miktar varsa (deductStock
+// ItemDepotQuantity sessizce 0'a kadar kırptığı için) burada ÖNCEDEN kontrol
+// ediliyor ki "transfer ettim ama aslında yoktu" gibi sessiz bir tutarsızlık
+// oluşmasın.
+export async function transferStockItemDepot(stockItemId, fromDepotId, toDepotId, qty, actingUserId) {
+  if (!fromDepotId || !toDepotId) throw new Error("Kaynak ve hedef depo seçimi zorunlu.");
+  if (fromDepotId === toDepotId) throw new Error("Kaynak ve hedef depo aynı olamaz.");
+  const amount = Number(qty) || 0;
+  if (amount <= 0) throw new Error("Miktar 0'dan büyük olmalı.");
+  const rows = await getStockItemDepots(stockItemId);
+  const available = Number(rows.find((r) => r.depotId === fromDepotId)?.quantity) || 0;
+  if (amount > available) throw new Error(`Kaynak depoda yalnızca ${available} adet var.`);
+  await deductStockItemDepotQuantity(stockItemId, fromDepotId, amount, actingUserId, { skipActivityLog: true });
+  await addStockItemDepotQuantity(stockItemId, toDepotId, amount, actingUserId, { skipActivityLog: true });
+  const [item, fromDepot, toDepot] = await Promise.all([
+    getStockItemById(stockItemId),
+    getDepotById(fromDepotId),
+    getDepotById(toDepotId),
+  ]);
+  await logActivity(
+    actingUserId,
+    "stock",
+    `depo transferi: ${item?.code || ""} — ${item?.name || ""} · ${fromDepot?.name || "?"} → ${toDepot?.name || "?"} (${amount} adet)`
+  );
+  return item;
+}
+
+// "VitrA fotoğraflarını eşle" (bkz. handlers.syncVitraStockImages) — binlerce
+// satırın yalnızca imageUrl alanını günceller. Upsert yerine satır bazlı
+// update: upsert, eksik zorunlu kolonlar yüzünden yeni satır eklemeye
+// kalkışabilir. Aynı anda birkaç istek gönderilerek hızlandırılır; işlem
+// kaydına tek satır yazılır (binlerce ayrı kayıt yerine).
+export async function setStockImageUrls(updates, actingUserId, activityText) {
+  const CONCURRENCY = 8;
+  let done = 0;
+  const failed = [];
+  for (let i = 0; i < updates.length; i += CONCURRENCY) {
+    const chunk = updates.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(({ id, imageUrl }) => supabase.from("stockItems").update({ imageUrl }).eq("id", id))
+    );
+    results.forEach(({ error }, k) => (error ? failed.push(chunk[k].id) : done++));
+  }
+  await logActivity(actingUserId, "stock", activityText || `VitrA fotoğraflarını eşledi (${done} ürüne fotoğraf eklendi)`);
+  return { updated: done, failed: failed.length };
 }
 
 export async function updateStockItem(id, patch, actingUserId) {
@@ -1047,17 +1511,33 @@ export async function updateStockItem(id, patch, actingUserId) {
   const { quantity, depotId, ...rest } = patch;
   let data;
   if (Object.keys(rest).length > 0) {
-    const { data: updated, error } = await supabase.from("stockItems").update(rest).eq("id", id).select().single();
+    let { data: updated, error } = await supabase
+      .from("stockItems")
+      .update({ ...rest, ...stampUpdatedPatch(actingUserId) })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error && isMissingColumnError(error, "updatedBy")) {
+      ({ data: updated, error } = await supabase.from("stockItems").update(rest).eq("id", id).select().single());
+    }
     if (error) throw new Error("Ürün bulunamadı");
     data = updated;
   }
   if (quantity !== undefined && depotId) {
     await setStockItemDepotQuantity(id, depotId, quantity, actingUserId, { skipActivityLog: true });
   }
-  if (!data) data = await getStockItemById(id);
-  if (!data) throw new Error("Ürün bulunamadı");
-  await logActivity(actingUserId, "stock", `stok güncelledi: ${data.code} — ${data.name}`);
-  return getStockItemById(id);
+  // Yukarıdaki (artık kullanılmayan, geriye dönük uyumluluk için duran) depo
+  // dalı "data"yı DEĞİŞTİRMEDEN bıraktığı için, güncel toplam miktarı
+  // loglamadan önce burada TAZE çekiyoruz — aksi halde eski (depo
+  // değişiminden önceki) bir sayı yazılabilirdi.
+  const fresh = await getStockItemById(id);
+  if (!fresh) throw new Error("Ürün bulunamadı");
+  await logActivity(
+    actingUserId,
+    "stock",
+    `stok güncelledi: ${fresh.code} — ${fresh.name} (${Number(fresh.quantity) || 0} ${fresh.unit || "adet"})`
+  );
+  return fresh;
 }
 
 // Stok silme SADECE yönetici hesaplarında — buton zaten arayüzde admin

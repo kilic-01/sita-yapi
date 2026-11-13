@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Upload, Download } from "lucide-react";
+import { Upload, Download, ImageDown } from "lucide-react";
 import { parseCSV, stringifyCSV } from "../lib/csv.js";
 
 const HEADER_ALIASES = {
@@ -16,6 +16,28 @@ const HEADER_ALIASES = {
 
 export default function StockCsvSection({ stockItems, onStockSaved, depots, onDepotsSaved, currentUser }) {
   const [importSummary, setImportSummary] = useState("");
+  const [imageSync, setImageSync] = useState({ running: false, message: "", error: "" });
+
+  // Kodu vitra.com.tr'de bulunan ve fotoğrafı boş olan ürünlere sitedeki ilk
+  // fotoğrafın linkini yazar (bkz. electron/handlers.js syncVitraStockImages).
+  async function handleVitraImageSync() {
+    setImageSync({ running: true, message: "", error: "" });
+    try {
+      const r = await window.api.syncVitraStockImages(currentUser?.id);
+      onStockSaved?.(await window.api.listStockItems());
+      setImageSync({
+        running: false,
+        error: "",
+        message:
+          `${r.updated} ürüne fotoğraf eklendi. vitra.com.tr'de bulunan ${r.matched} üründen ${r.alreadyHasImage} ` +
+          `tanesinin zaten fotoğrafı vardı (değiştirilmedi)` +
+          (r.skippedUncertain ? `, ${r.skippedUncertain} tanesi eşleşmesi kesin olmadığı için atlandı` : "") +
+          (r.failed ? `; ${r.failed} ürün güncellenemedi.` : "."),
+      });
+    } catch (err) {
+      setImageSync({ running: false, message: "", error: (err.message || "Eşleme yapılamadı.").replace(/^.*Error: /, "") });
+    }
+  }
   const fileInputRef = useRef(null);
 
   const depotName = (id) => depots.find((d) => d.id === id)?.name || "";
@@ -165,8 +187,23 @@ export default function StockCsvSection({ stockItems, onStockSaved, depots, onDe
           <Download size={15} strokeWidth={1.75} style={{ verticalAlign: "-2px", marginRight: "0.3rem" }} />
           CSV Dışa Aktar
         </button>
+        {currentUser?.role === "admin" && window.api?.syncVitraStockImages && (
+          <button type="button" className="secondary" onClick={handleVitraImageSync} disabled={imageSync.running}>
+            <ImageDown size={15} strokeWidth={1.75} style={{ verticalAlign: "-2px", marginRight: "0.3rem" }} />
+            {imageSync.running ? "Fotoğraflar eşleniyor…" : "VitrA Fotoğraflarını Eşle"}
+          </button>
+        )}
       </div>
+      {currentUser?.role === "admin" && (
+        <p style={{ fontSize: "0.82rem", opacity: 0.75, marginTop: "-0.4rem" }}>
+          "VitrA Fotoğraflarını Eşle": ürün kodu vitra.com.tr'de bulunan ve fotoğrafı boş olan ürünlere
+          sitedeki ilk fotoğrafın linki eklenir. Fotoğrafı olan ürünlere ve eşleşmesi kesin olmayanlara
+          dokunulmaz. Birkaç dakika sürebilir.
+        </p>
+      )}
       {importSummary && <div className="success">{importSummary}</div>}
+      {imageSync.message && <div className="success">{imageSync.message}</div>}
+      {imageSync.error && <div className="error">{imageSync.error}</div>}
     </div>
   );
 }

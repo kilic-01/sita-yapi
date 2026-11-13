@@ -390,8 +390,12 @@ export default function PartCheckoutsPage({
     try {
       // Ard arda (transaction yok) — bir satır başarısız olursa öncekiler
       // zaten kaydedilmiş olur, onChanged() yine de en güncel durumu getirir.
+      // Her çağrı artık düşümden sonraki güncel stok kalemini döndürüyor —
+      // onChanged'e iletip ~10 binlik tam tabloyu yeniden çekmeden sadece bu
+      // kalemleri güncelliyoruz (bkz. onChanged'in App.jsx'teki tanımı).
+      const updatedItems = [];
       for (const r of validRows) {
-        await window.api.addPartCheckout({
+        const result = await window.api.addPartCheckout({
           technicianId: recipientTechId,
           stockItemId: r.selectedStock.id,
           depotId: r.depotId,
@@ -400,10 +404,11 @@ export default function PartCheckoutsPage({
           actingUserId: currentUser?.id,
           companionTechnicianIds: companionTechIds,
         });
+        if (result?.updatedStockItem) updatedItems.push(result.updatedStockItem);
       }
       resetCheckoutForm();
       setShowCheckoutModal(false);
-      onChanged?.();
+      onChanged?.(updatedItems);
     } catch (err) {
       setError(err.message);
       setRecipientChoice(null);

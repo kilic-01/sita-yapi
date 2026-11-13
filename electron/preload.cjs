@@ -95,6 +95,10 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("stock:depots:set", { stockItemId, depotId, quantity, actingUserId }),
   removeStockItemDepot: (stockItemId, depotId, actingUserId) =>
     ipcRenderer.invoke("stock:depots:remove", { stockItemId, depotId, actingUserId }),
+  getStockItemActivity: (stockItemId) => ipcRenderer.invoke("stock:activity", stockItemId),
+  syncVitraStockImages: (actingUserId) => ipcRenderer.invoke("stock:syncVitraImages", actingUserId),
+  transferStockItemDepot: (stockItemId, fromDepotId, toDepotId, qty, actingUserId) =>
+    ipcRenderer.invoke("stock:depots:transfer", { stockItemId, fromDepotId, toDepotId, qty, actingUserId }),
 
   listSuppliers: () => ipcRenderer.invoke("suppliers:list"),
   setSuppliers: (list, actingUserId) => ipcRenderer.invoke("suppliers:set", { list, actingUserId }),
@@ -167,6 +171,36 @@ contextBridge.exposeInMainWorld("api", {
     const listener = (_e, payload) => callback(payload);
     ipcRenderer.on("sync:status", listener);
     return () => ipcRenderer.removeListener("sync:status", listener);
+  },
+
+  // Ofisteki TV'ye (Mi Stick) ürün yayını — bkz. electron/db.js broadcastToTv.
+  broadcastToTv: (item, actingUserId) => ipcRenderer.invoke("tv:broadcast", { item, actingUserId }),
+  broadcastQuoteToTv: (quote, totals, actingUserId) =>
+    ipcRenderer.invoke("tv:broadcastQuote", { quote, totals, actingUserId }),
+  broadcastVitraProductToTv: (input, actingUserId) =>
+    ipcRenderer.invoke("tv:broadcastVitra", { input, actingUserId }),
+  broadcastRoutesToTv: (routes, actingUserId) => ipcRenderer.invoke("tv:broadcastRoutes", { routes, actingUserId }),
+  clearTv: () => ipcRenderer.invoke("tv:clear"),
+  listTvDevices: () => ipcRenderer.invoke("tv:devices"),
+  broadcastDashboardToTv: (actingUserId) => ipcRenderer.invoke("tv:broadcastDashboard", actingUserId),
+  saveTvDevice: (tvId, cfg, actingUserId) => ipcRenderer.invoke("tv:saveDevice", { tvId, cfg, actingUserId }),
+  setTvTarget: (tvId) => ipcRenderer.invoke("tv:setTarget", tvId),
+  getTvTarget: () => ipcRenderer.invoke("tv:getTarget"),
+  refreshRoutesOnTv: (input) => ipcRenderer.invoke("tv:refreshRoutes", input),
+  refreshQuoteOnTv: (quote, totals) => ipcRenderer.invoke("tv:refreshQuote", { quote, totals }),
+  requestTvUpdateCheck: (actingUserId) => ipcRenderer.invoke("tv:checkUpdate", actingUserId),
+  // callback({ online: [{ tvId, name, mode, version }] })
+  onTvPresenceChange: (callback) => {
+    const listener = (_e, payload) => callback(payload);
+    ipcRenderer.on("tv:presence", listener);
+    return () => ipcRenderer.removeListener("tv:presence", listener);
+  },
+  getCurrentTvPayload: () => ipcRenderer.invoke("tv:current"),
+  // callback({ payload }) alır — payload null ise bu bilgisayar yayında değil.
+  onTvStateChange: (callback) => {
+    const listener = (_e, payload) => callback(payload);
+    ipcRenderer.on("tv:state", listener);
+    return () => ipcRenderer.removeListener("tv:state", listener);
   },
 
   exportBackup: (actingUserId) => ipcRenderer.invoke("backup:export", actingUserId),
