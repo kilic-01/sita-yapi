@@ -41,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -93,7 +94,7 @@ private fun captionStyle(color: Color = LabelSecondary) =
 
 /** Masaüstündeki Stok sayfasından ya da VitrA kartından "TV'de Yayınla" ile gönderilen ürün. */
 @Composable
-fun ProductScreen(product: TvProduct) {
+fun ProductScreen(product: TvProduct, badge: String? = null) {
     val context = LocalContext.current
     // Her ürün için bekleme ekranı fotoğraflarından biri arka plan olur.
     val backdrop = remember(product) {
@@ -190,7 +191,7 @@ fun ProductScreen(product: TvProduct) {
                 var logoHeight by remember { mutableStateOf<Dp?>(null) }
                 Column(Modifier.fillMaxSize()) {
                     Spacer(Modifier.weight(1f))
-                    ProductInfo(product, Modifier.onSizeChanged { headerHeight = with(density) { it.height.toDp() } })
+                    ProductInfo(product, badge, Modifier.onSizeChanged { headerHeight = with(density) { it.height.toDp() } })
                     val header = headerHeight
                     val logo = logoHeight
                     if (product.features.isNotEmpty() && header != null && logo != null) {
@@ -219,9 +220,17 @@ fun ProductScreen(product: TvProduct) {
 }
 
 @Composable
-private fun ProductInfo(product: TvProduct, modifier: Modifier = Modifier) {
+private fun ProductInfo(product: TvProduct, badge: String?, modifier: Modifier = Modifier) {
     val (title, specs) = remember(product.name) { splitProductName(product.name.ifBlank { product.code }) }
     Column(modifier) {
+        // Vitrin sayfası etiketi ("Haftanın Ürünü") — kategori satırının üstünde, vurgu renginde.
+        if (badge != null) {
+            Text(
+                badge.uppercase(turkish),
+                style = TextStyle(fontFamily = Poppins, color = Accent, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         if (product.category.isNotBlank()) {
             Text(product.category, style = captionStyle(), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
@@ -230,6 +239,18 @@ private fun ProductInfo(product: TvProduct, modifier: Modifier = Modifier) {
         if (specs.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             SpecChips(specs)
+        }
+        // Kampanya yazısı (haftanın ürünü): vurgu renginde, açık zeminli şerit.
+        if (product.note.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                product.note,
+                style = TextStyle(fontFamily = Poppins, color = Accent, fontSize = 15.5.sp, fontWeight = FontWeight.Medium),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Accent.copy(alpha = 0.12f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
         Spacer(Modifier.height(20.dp))
         if (product.code.isNotBlank()) {
@@ -244,13 +265,41 @@ private fun ProductInfo(product: TvProduct, modifier: Modifier = Modifier) {
         if (product.code.isNotBlank() || product.unit.isNotBlank()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Separator))
         }
+        // Fiyat yalnız haftanın ürünü sayfasında gelir (normal yayınlarda null).
         product.priceIncVat?.let { price ->
             Spacer(Modifier.height(16.dp))
-            Text(
-                formatProductPrice(price),
-                style = TextStyle(fontFamily = Poppins, color = LabelPrimary, fontSize = 28.5.sp, fontWeight = FontWeight.SemiBold),
-            )
-            Text("KDV dahil", style = captionStyle())
+            if (product.discountRate > 0) {
+                // İndirimsiz fiyat üstü çizili + indirim etiketi, altında indirimli fiyat.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        formatProductPrice(price),
+                        style = TextStyle(
+                            fontFamily = Poppins, color = LabelSecondary, fontSize = 15.5.sp, fontWeight = FontWeight.Normal,
+                            textDecoration = TextDecoration.LineThrough,
+                        ),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "%${product.discountRate} indirim",
+                        style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Accent)
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+            }
+            val finalPrice = price * (100 - product.discountRate) / 100.0
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    formatProductPrice(finalPrice),
+                    style = TextStyle(fontFamily = Poppins, color = LabelPrimary, fontSize = 28.5.sp, fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.alignByBaseline(),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("KDV dahil", style = captionStyle(), modifier = Modifier.alignByBaseline())
+            }
         }
     }
 }

@@ -40,8 +40,12 @@ data class TvProduct(
     val images: List<String> = emptyList(),
     // VitrA YouTube kanalında ürünün serisine ait tanıtım videosu (varsa).
     val videoId: String = "",
-    // vitra.com.tr'deki kısa özellik maddeleri (en fazla 5) — bilgi sütununda madde madde.
+    // vitra.com.tr'deki kısa özellik maddeleri — bilgi sütununda madde madde.
     val features: List<String> = emptyList(),
+    // Haftanın ürünü kampanya yazısı (Ayarlar > TV Vitrin Sayfaları); boşsa gösterilmez.
+    val note: String = "",
+    // Haftanın ürünü indirim oranı (%) — priceIncVat indirimsiz fiyat; 0 ise indirim yok.
+    val discountRate: Int = 0,
     val unit: String = "adet",
     val priceExVat: Double? = null,
     val priceIncVat: Double? = null,
@@ -354,6 +358,11 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
                     }
                     // Masaüstünden "Güncellemeleri kontrol et".
                     "update" -> scope.launch { Updater.check() }
+                    "showcase" -> {
+                        val inner = payload["payload"] ?: return
+                        runCatching { json.decodeFromJsonElement<TvShowcase>(inner) }
+                            .onSuccess { ShowcaseStore.apply(it) }
+                    }
                     "specialDays" -> {
                         val inner = (payload["payload"] as? JsonObject)?.get("days") ?: return
                         runCatching { json.decodeFromJsonElement<List<SpecialDay>>(inner) }

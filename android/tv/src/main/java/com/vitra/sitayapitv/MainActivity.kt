@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppUptime.startedAt = android.os.SystemClock.elapsedRealtime()
         SpecialDays.init(this)
+        ShowcaseStore.init(this)
         // Vitrin ekranı: TV hiç uyku moduna/ekran koruyucuya geçmesin, sistem
         // çubukları görünmesin.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -171,9 +172,39 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { IstanbulPhotos.warmUp(applicationContext) }
         setContent {
             val ch = channel
+            val pinPage = intent.getStringExtra("pinPage")
             if (intent.getBooleanExtra("screenTest", false)) {
                 // Kurulumda TV'nin görüntüyü kırpıp kırpmadığını görmek için (ScreenFitTest.kt).
                 FixedCanvas { ScreenFitTest() }
+            } else if (pinPage != null) {
+                // Tasarım kontrolü için vitrin sayfasını sabit göster:
+                // --es pinPage featured|collection|services
+                val showcase by ShowcaseStore.showcase.collectAsState()
+                FixedCanvas {
+                    when (pinPage) {
+                        "featured" -> showcase.featured?.let { ProductScreen(it, badge = "Haftanın Ürünü") }
+                        // Koleksiyonlar sırayla döner (--ei pinSeconds N, varsayılan 7 sn).
+                        "collection" -> if (showcase.collections.isNotEmpty()) {
+                            val seconds = intent.getIntExtra("pinSeconds", 7)
+                            val ctx = LocalContext.current
+                            LaunchedEffect(showcase) {
+                                showcase.collections.flatMap { it.images + it.products }
+                                    .forEach { ctx.imageLoader.enqueue(ImageRequest.Builder(ctx).data(it).build()) }
+                            }
+                            var i by remember { mutableStateOf(0) }
+                            LaunchedEffect(showcase.collections.size) {
+                                while (true) {
+                                    delay(seconds * 1_000L)
+                                    i = (i + 1) % showcase.collections.size
+                                }
+                            }
+                            Crossfade(targetState = i % showcase.collections.size, animationSpec = tween(1_200), label = "pin-collection") { k ->
+                                CollectionSlide(showcase.collections[k], seconds)
+                            }
+                        }
+                        "services" -> showcase.services?.let { ServicesSlide(it) }
+                    }
+                }
             } else if (ch == null) {
                 MissingConfigScreen()
             } else {
@@ -265,6 +296,15 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
             Updater.check()
             delay(6 * 60 * 60 * 1_000L)
         }
+    }
+
+    // Vitrin içeriği gelince koleksiyon ve ürün görselleri önceden indirilir:
+    // sayfa ilk kez gösterildiğinde boş kart/siyah zemin görünmesin.
+    val showcaseForPreload by ShowcaseStore.showcase.collectAsState()
+    LaunchedEffect(showcaseForPreload) {
+        val urls = showcaseForPreload.collections.flatMap { it.images + it.products } +
+            showcaseForPreload.featured?.images.orEmpty().take(3)
+        urls.forEach { context.imageLoader.enqueue(ImageRequest.Builder(context).data(it).build()) }
     }
 
     // Kumanda menüsü (FlowMenu.kt): yayın yokken ve mesai içindeyken OK ile açılır.
@@ -472,31 +512,61 @@ private fun rememberNow(): LocalDateTime {
 // koymak yeterli.
 private const val BACKGROUND_DIR = "backgrounds"
 private const val BACKGROUND_SECONDS = 12
-// Her bu kadar fotoğraftan sonra haftalık hava durumu sayfası gösterilir.
+// Her bu kadar fotoğraftan sonra bir "sayfa" araya girer: sırayla hava
+// durumu, haftanın ürünü, bir koleksiyon tanıtımı, hizmetlerimiz (olanlar).
 private const val WEATHER_EVERY = 4
 private const val WEATHER_SECONDS = 24
+private const val FEATURED_SECONDS = 24
+private const val FEATURED_FEATURES = 6
+private const val COLLECTION_SECONDS = 16
+private const val SERVICES_SECONDS = 18
+
+/** Bekleme döngüsünün bir adımı. */
+private sealed interface IdleSlide {
+    data class Photo(val url: String) : IdleSlide
+    data object Weather : IdleSlide
+    data object Featured : IdleSlide
+    data class Collection(val index: Int) : IdleSlide
+    data object Services : IdleSlide
+}
 
 @Composable
 private fun IdleScreen(pinWeather: Boolean = false) {
     val now = rememberNow()
     val weather = rememberWeather()
     val context = LocalContext.current
-    // Döngü: fotoğraflar, her WEATHER_EVERY fotoğrafta bir araya giren
-    // haftalık hava durumu sayfası (listede null). Hava durumu henüz
-    // alınamadıysa o sayfa atlanır. Fotoğraflar: uygulamadaki VitrA
-    // fotoğrafları + vitra.com.tr'den gelen ortam fotoğrafları (VitraBackgrounds), karışık.
+    // Döngü: fotoğraflar; her WEATHER_EVERY fotoğrafta bir araya sırayla
+    // hava durumu, haftanın ürünü, bir koleksiyon tanıtımı ve hizmetlerimiz
+    // girer (vitrin sayfaları Ayarlar > TV Vitrin Sayfaları'ndan; olmayan
+    // atlanır). Hava durumu henüz alınamadıysa o sayfa atlanır. Fotoğraflar:
+    // uygulamadaki VitrA fotoğrafları + vitra.com.tr ortam fotoğrafları, karışık.
     val remote by VitraBackgrounds.urls.collectAsState()
+    val showcase by ShowcaseStore.showcase.collectAsState()
     LaunchedEffect(Unit) { VitraBackgrounds.refresh() }
-    val slides: List<String?> = remember(remote.isNotEmpty()) {
+    val slides: List<IdleSlide> = remember(remote.isNotEmpty(), showcase) {
         val bundled = runCatching { context.assets.list(BACKGROUND_DIR)?.filter { it.endsWith(".jpg") } }
             .getOrNull().orEmpty().map { "file:///android_asset/$BACKGROUND_DIR/$it" }
         val photos = (bundled + VitraBackgrounds.urls.value).shuffled()
+        // Araya girecek sayfaların sırası; koleksiyonlar her turda bir sonrakine geçer.
+        val pages = buildList {
+            add(IdleSlide.Weather)
+            if (showcase.featured != null) add(IdleSlide.Featured)
+            if (showcase.collections.isNotEmpty()) add(IdleSlide.Collection(0))
+            if (showcase.services?.items?.isNotEmpty() == true) add(IdleSlide.Services)
+        }
+        var page = 0
+        var collection = 0
         buildList {
             photos.forEachIndexed { i, photo ->
-                add(photo)
-                if ((i + 1) % WEATHER_EVERY == 0) add(null)
+                add(IdleSlide.Photo(photo))
+                if ((i + 1) % WEATHER_EVERY == 0) {
+                    when (val next = pages[page++ % pages.size]) {
+                        is IdleSlide.Collection -> add(IdleSlide.Collection(collection++ % showcase.collections.size))
+                        else -> add(next)
+                    }
+                }
             }
-            if (photos.isEmpty()) add(null)
+            if (photos.isEmpty()) add(IdleSlide.Weather)
         }
     }
     var index by remember { mutableStateOf(0) }
@@ -504,30 +574,58 @@ private fun IdleScreen(pinWeather: Boolean = false) {
     // değeri görsün diye (yoksa ilk anki null'ı hatırlayıp sayfayı hep atlardı).
     val latestWeather by rememberUpdatedState(weather)
     LaunchedEffect(slides) {
+        index = index.coerceIn(0, (slides.size - 1).coerceAtLeast(0))
         if (slides.size < 2) return@LaunchedEffect
         while (true) {
-            // Hava durumu sayfası daha uzun kalır: arkasında birkaç İstanbul fotoğrafı dönebilsin.
-            delay((if (slides[index] == null) WEATHER_SECONDS else BACKGROUND_SECONDS) * 1_000L)
+            // Sayfalar fotoğraflardan uzun kalır (hava durumunda arkada birkaç İstanbul
+            // fotoğrafı döner; haftanın ürününde fotoğraflar ve özellik sayfaları).
+            delay(
+                when (slides[index]) {
+                    is IdleSlide.Photo -> BACKGROUND_SECONDS
+                    IdleSlide.Weather -> WEATHER_SECONDS
+                    IdleSlide.Featured -> FEATURED_SECONDS
+                    is IdleSlide.Collection -> COLLECTION_SECONDS
+                    IdleSlide.Services -> SERVICES_SECONDS
+                } * 1_000L,
+            )
             var next = (index + 1) % slides.size
-            if (slides[next] == null && latestWeather == null) next = (next + 1) % slides.size
+            if (slides[next] == IdleSlide.Weather && latestWeather == null) next = (next + 1) % slides.size
             index = next
             // Sıradaki uzak fotoğrafı önceden indir: geçişte boş kare görünmesin.
-            slides.getOrNull((index + 1) % slides.size)?.let { context.imageLoader.enqueue(ImageRequest.Builder(context).data(it).build()) }
+            (slides.getOrNull((index + 1) % slides.size) as? IdleSlide.Photo)?.let {
+                context.imageLoader.enqueue(ImageRequest.Builder(context).data(it.url).build())
+            }
         }
     }
     if (pinWeather && weather != null) {
         WeatherSlide(weather)
         return
     }
-    val slide = slides.getOrNull(index)
-    val showWeather = slide == null && weather != null
+    // Logo + saat yalnız fotoğrafların üstünde; sayfaların kendi düzeni var.
+    val onPhoto = slides.getOrNull(index) is IdleSlide.Photo
 
     Box(Modifier.fillMaxSize().background(Ink)) {
         Crossfade(targetState = index, animationSpec = tween(1_500), label = "idle-background") { i ->
-            val photo = slides.getOrNull(i)
-            if (photo == null) {
-                if (weather != null) WeatherSlide(weather) else Box(Modifier.fillMaxSize().background(Paper))
-                return@Crossfade
+            val photo = when (val slide = slides.getOrNull(i)) {
+                is IdleSlide.Photo -> slide.url
+                IdleSlide.Weather, null -> {
+                    if (weather != null) WeatherSlide(weather) else Box(Modifier.fillMaxSize().background(Paper))
+                    return@Crossfade
+                }
+                IdleSlide.Featured -> {
+                    // Fiyat bloğu yer kapladığından sayfa başına az madde sığar: ilk 6
+                    // özellik, sayfanın ekranda kaldığı süre içinde hepsi dönebilsin.
+                    showcase.featured?.let { ProductScreen(it.copy(features = it.features.take(FEATURED_FEATURES)), badge = "Haftanın Ürünü") }
+                    return@Crossfade
+                }
+                is IdleSlide.Collection -> {
+                    showcase.collections.getOrNull(slide.index)?.let { CollectionSlide(it, COLLECTION_SECONDS) }
+                    return@Crossfade
+                }
+                IdleSlide.Services -> {
+                    showcase.services?.let { ServicesSlide(it) }
+                    return@Crossfade
+                }
             }
             // Ken Burns: fotoğraf ekranda kaldığı süre boyunca çok yavaş
             // yakınlaşır — durağan fotoğrafa hafif bir canlılık katar.
@@ -553,10 +651,10 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 },
             )
         }
-        // Fotoğrafların üstündeki logo + saat; hava durumu sayfasının kendi
-        // düzeni olduğu için orada gizlenir.
+        // Fotoğrafların üstündeki logo + saat; sayfaların (hava durumu, vitrin)
+        // kendi düzeni olduğu için orada gizlenir.
         AnimatedVisibility(
-            visible = !showWeather,
+            visible = onPhoto,
             enter = fadeIn(tween(1_500)),
             exit = fadeOut(tween(800)),
             modifier = Modifier.fillMaxSize(),
