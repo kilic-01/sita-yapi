@@ -110,7 +110,7 @@ fun CollectionSlide(collection: TvCollection, seconds: Int) {
             }.fillMaxWidth(0.5f),
         ) {
             Text(
-                "VitrA Koleksiyonu",
+                "Vitra",
                 style = TextStyle(fontFamily = Poppins, color = White70, fontSize = TvCaption1, fontWeight = FontWeight.Medium, letterSpacing = 0.5.sp),
             )
             Spacer(Modifier.height(6.dp))

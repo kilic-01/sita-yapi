@@ -526,8 +526,18 @@ private sealed interface IdleSlide {
     data class Photo(val url: String) : IdleSlide
     data object Weather : IdleSlide
     data object Featured : IdleSlide
-    data class Collection(val index: Int) : IdleSlide
+    /** [offset]: bu bekleme ekranındaki kaçıncı koleksiyon sayfası (0, 1, …). */
+    data class Collection(val offset: Int) : IdleSlide
     data object Services : IdleSlide
+}
+
+/**
+ * Sıradaki koleksiyon; bekleme ekranı her açıldığında baştan başlamasın diye
+ * uygulama boyunca tutulur. Normal akışta bir bekleme ekranına (5 dk) tek
+ * koleksiyon sığdığından, sıfırlansa hep ilk koleksiyon gösterilirdi.
+ */
+private object IdleRotation {
+    var nextCollection = 0
 }
 
 @Composable
@@ -561,7 +571,7 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 add(IdleSlide.Photo(photo))
                 if ((i + 1) % WEATHER_EVERY == 0) {
                     when (val next = pages[page++ % pages.size]) {
-                        is IdleSlide.Collection -> add(IdleSlide.Collection(collection++ % showcase.collections.size))
+                        is IdleSlide.Collection -> add(IdleSlide.Collection(collection++))
                         else -> add(next)
                     }
                 }
@@ -601,6 +611,8 @@ private fun IdleScreen(pinWeather: Boolean = false) {
         WeatherSlide(weather)
         return
     }
+    // Bu bekleme ekranının koleksiyonları, bir öncekinin kaldığı yerden devam eder.
+    val collectionBase = remember { IdleRotation.nextCollection }
     // Logo + saat yalnız fotoğrafların üstünde; sayfaların kendi düzeni var.
     val onPhoto = slides.getOrNull(index) is IdleSlide.Photo
 
@@ -619,7 +631,9 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                     return@Crossfade
                 }
                 is IdleSlide.Collection -> {
-                    showcase.collections.getOrNull(slide.index)?.let { CollectionSlide(it, COLLECTION_SECONDS) }
+                    val k = collectionBase + slide.offset
+                    LaunchedEffect(k) { IdleRotation.nextCollection = maxOf(IdleRotation.nextCollection, k + 1) }
+                    showcase.collections.takeIf { it.isNotEmpty() }?.let { CollectionSlide(it[k % it.size], COLLECTION_SECONDS) }
                     return@Crossfade
                 }
                 IdleSlide.Services -> {
