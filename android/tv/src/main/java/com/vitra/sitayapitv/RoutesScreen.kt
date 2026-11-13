@@ -6,6 +6,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.background
@@ -19,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
@@ -62,18 +71,34 @@ private val RouteSeparator = Color(0x1F0E2A3B)
 private val UrgentRed = Color(0xFFD9534F)
 
 // Durak satırı yüksekliği durak sayısına göre kademeli: rahat (müşteri + semt
-// iki satıra kadar), orta (müşteri + semt tek satır), sıkışık (tek satır).
-// En sıkışığa da sığmayan duraklar için son satır "+N durak daha" olur.
-private enum class StopDensity(val height: Dp) { ROOMY(60.dp), MEDIUM(42.dp), TIGHT(28.dp) }
+// iki satıra kadar), orta ve sıkışık (müşteri + altında tek satır semt; semt
+// sığana kadar küçülür). En sıkışığa da sığmayan duraklar için son satır "+N durak daha" olur.
+private enum class StopDensity(val height: Dp) { ROOMY(60.dp), MEDIUM(42.dp), TIGHT(32.dp) }
 
-private val stopNameStyle = TextStyle(fontFamily = Poppins, color = Ink, fontSize = 14.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
-private val stopAreaStyle = TextStyle(fontFamily = Poppins, color = RouteLabelSecondary, fontSize = 12.5.sp, lineHeight = 16.sp)
+// Satır yükseklikleri Poppins'in alt uzantılarına (ğ, y, ş, ç) yer bırakır: "…" ile kesilen
+// yazılar satır sınırına kırpıldığı için dar satır yüksekliği harflerin altını keser.
+private val stopNameStyle = TextStyle(fontFamily = Poppins, color = Ink, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+private val stopAreaStyle = TextStyle(fontFamily = Poppins, color = RouteLabelSecondary, fontSize = 12.5.sp, lineHeight = 17.5.sp)
 
-// Teknisyen adı tek satıra sığana kadar küçülür; en küçükte de sığmazsa iki satır.
-private val TECH_NAME_SIZES = listOf(19f, 17f, 15.5f)
+// Teknisyen adı ve altındaki "N durak" satırı tek satıra sığana kadar
+// küçülür (en küçükte de sığmazsa sonu "…"). Satır yükseklikleri sabit: her
+// sütunun başlığı aynı yükseklikte, listeler aynı çizgiden başlar.
+private const val ROUTE_PAGE_SECONDS = 10
+// Bu genişlikte (4 teknisyen) kart tam boyutta; daha dar kartlar orantılı küçülür.
+private val ROUTE_COLUMN_REF_WIDTH = 200.dp
+private const val ROUTE_MIN_SCALE = 0.5f
+// Tek sayfaya sığdırmak için en fazla bu orana kadar ek küçülme (%80); daha fazlası gerekirse sayfalanır.
+private const val ROUTE_FIT_SHRINK = 0.8f
+// Kartın durak listesi dışındaki yüksekliği: iç boşluk, ad, "N durak", ayırıcı (+ küçük pay).
+private val ROUTE_CARD_CHROME = 90.dp
+private val TECH_NAME_SIZES = listOf(19f, 17f, 15.5f, 14f, 13f, 12f)
+private val TECH_META_SIZES = listOf(12.5f, 11.5f, 10.5f, 9.5f)
+// Semt (müşteri adının altında): orta ve sıkışık düzende sığana kadar küçülür.
+private val AREA_SIZES_MEDIUM = listOf(12.5f, 11.5f, 10.5f, 9.5f)
+private val AREA_SIZES_TIGHT = listOf(11f, 10f, 9f)
 
 @Composable
-fun RoutesScreen(routes: TvRoutes) {
+fun RoutesScreen(routes: TvRoutes, sentFrom: String = "") {
     val context = LocalContext.current
     val techs = routes.technicians
     val totalStops = techs.sumOf { it.stops.size }
@@ -97,7 +122,7 @@ fun RoutesScreen(routes: TvRoutes) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Servis Rotaları",
+                        "Randevu Rotaları",
                         style = TextStyle(fontFamily = Poppins, color = Accent, fontSize = TvCaption1, fontWeight = FontWeight.SemiBold),
                     )
                     Text(
@@ -111,28 +136,51 @@ fun RoutesScreen(routes: TvRoutes) {
                 )
             }
             Spacer(Modifier.height(18.dp))
-            // 5+ teknisyende sütunlar daralır: aralık ve kart içi boşluk azaltılır ki adlara yer kalsın.
+            // 5+ teknisyende sütunlar daralır: aralık azalır, kart içeriği orantılı küçülür (TechnicianColumn).
             val dense = techs.size >= 5
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (dense) 10.dp else 16.dp)) {
-                techs.forEach { tech -> TechnicianColumn(tech, dense, Modifier.weight(1f).fillMaxHeight()) }
+                techs.forEach { tech -> TechnicianColumn(tech, Modifier.weight(1f).fillMaxHeight()) }
             }
+        }
+        // Yayını yapan bilgisayar: alt güvenli alan boşluğunda, sağ kenara hizalı.
+        SentFromTag(sentFrom, Modifier.align(Alignment.BottomEnd).padding(end = TvSafeSide).height(TvSafeVertical))
+    }
+}
+
+@Composable
+private fun TechnicianColumn(tech: TvRouteTechnician, modifier: Modifier) {
+    val color = parseColor(tech.color)
+    // Orantılı küçülme: kart ROUTE_COLUMN_REF_WIDTH'ten darsa içindeki her şey
+    // (yazılar, daireler, boşluklar, satır yükseklikleri) aynı oranda küçülür —
+    // 6–8 teknisyende de kart, 4 teknisyendeki kartın küçültülmüş hali gibi görünür.
+    BoxWithConstraints(modifier) {
+        val widthScale = (maxWidth / ROUTE_COLUMN_REF_WIDTH).coerceIn(ROUTE_MIN_SCALE, 1f)
+        // Sayfaya az durak taşıyorsa (biraz daha küçültmek yetiyorsa) ikinci sayfa
+        // açmak yerine hepsi tek sayfaya sığacak kadar küçülür; fark büyükse sayfalanır.
+        val done = tech.stops.count { it.completed }
+        val rowsNeeded = if (done > 0) tech.stops.size - done + 1 else tech.stops.size
+        val fitScale = maxHeight / (ROUTE_CARD_CHROME + StopDensity.TIGHT.height * rowsNeeded)
+        val scale = if (fitScale < widthScale && fitScale >= widthScale * ROUTE_FIT_SHRINK && fitScale >= ROUTE_MIN_SCALE) fitScale else widthScale
+        val base = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(base.density * scale, base.fontScale)) {
+            TechnicianCard(tech, color)
         }
     }
 }
 
 @Composable
-private fun TechnicianColumn(tech: TvRouteTechnician, dense: Boolean, modifier: Modifier) {
-    val color = parseColor(tech.color)
+private fun TechnicianCard(tech: TvRouteTechnician, color: Color) {
     Column(
-        modifier
+        Modifier
+            .fillMaxSize()
             .clip(RoundedCornerShape(18.dp))
             .background(RouteCardFill)
-            .padding(horizontal = if (dense) 10.dp else 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(color))
             Spacer(Modifier.width(8.dp))
-            TechnicianName(tech.name, Modifier.weight(1f))
+            FitLine(tech.name, TECH_NAME_SIZES, ::techNameStyle, Modifier.weight(1f))
             if (tech.onLeave) {
                 Text(
                     "İzinli",
@@ -144,59 +192,101 @@ private fun TechnicianColumn(tech: TvRouteTechnician, dense: Boolean, modifier: 
                 )
             }
         }
-        Text(
-            "${tech.stops.size} durak" + tech.stops.mapNotNull { it.minutes }.sum().takeIf { it > 0 }
-                ?.let { "  ·  ~${formatMinutes(it)}" }.orEmpty(),
-            style = TextStyle(fontFamily = Poppins, color = RouteLabelSecondary, fontSize = TvCaption1, fontWeight = FontWeight.Normal),
-            modifier = Modifier.padding(start = 18.dp, top = 2.dp),
+        FitLine(
+            "${tech.stops.size} durak",
+            TECH_META_SIZES,
+            ::techMetaStyle,
+            Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
         )
         Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(RouteSeparator))
         Spacer(Modifier.height(4.dp))
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val n = tech.stops.size
-            // Hepsinin sığdığı en rahat düzen; hiçbiri yetmezse en sıkışık + "+N durak daha".
-            val density = StopDensity.entries.firstOrNull { it.height * n <= maxHeight } ?: StopDensity.TIGHT
-            val fit = (maxHeight / density.height).toInt().coerceAtLeast(1)
-            val shown = if (n <= fit) tech.stops else tech.stops.take(fit - 1)
-            val hidden = n - shown.size
-            Column {
-                shown.forEach { stop -> StopRow(stop, color, density) }
-                if (hidden > 0) {
-                    Box(Modifier.height(density.height).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                        Text(
-                            "+$hidden durak daha",
-                            style = TextStyle(fontFamily = Poppins, color = RouteLabelSecondary, fontSize = TvCaption1, fontWeight = FontWeight.Medium),
-                        )
-                    }
+            // Yoğun gün: duraklar en sıkışık düzende bile sığmıyorsa tamamlananlar
+            // tek satırda toplanır ("✓ 3 tamamlandı"), yer sıradaki işlere kalır.
+            val done = tech.stops.count { it.completed }
+            val collapse = done > 0 && StopDensity.TIGHT.height * tech.stops.size > maxHeight
+            val stops = if (collapse) tech.stops.filterNot { it.completed } else tech.stops
+            val extra = if (collapse) 1 else 0
+            // Hepsinin sığdığı en rahat düzen; hiçbiri yetmezse en sıkışık düzende
+            // sayfalara bölünür ve ROUTE_PAGE_SECONDS'ta bir döner. Sayfa göstergesi
+            // ("1 / 2") satır kaplamaz: kartın sağ alt köşesinde, alt boşlukta, küçük.
+            val density = StopDensity.entries.firstOrNull { it.height * (stops.size + extra) <= maxHeight } ?: StopDensity.TIGHT
+            val rows = (maxHeight / density.height).toInt()
+            val perPage = (rows - extra).coerceAtLeast(1)
+            val pages = stops.chunked(perPage).ifEmpty { listOf(emptyList()) }
+            var page by remember(tech, perPage) { mutableStateOf(0) }
+            LaunchedEffect(tech, pages.size) {
+                if (pages.size < 2) return@LaunchedEffect
+                while (true) {
+                    delay(ROUTE_PAGE_SECONDS * 1_000L)
+                    page = (page + 1) % pages.size
                 }
+            }
+            Column(Modifier.fillMaxSize()) {
+                if (collapse) DoneSummaryRow(done, color, density)
+                Crossfade(targetState = page.coerceIn(0, pages.lastIndex), animationSpec = tween(500), label = "route-page") { p ->
+                    Column { pages[p].forEach { stop -> StopRow(stop, color, density) } }
+                }
+            }
+            if (pages.size > 1) {
+                Text(
+                    "${page + 1} / ${pages.size}",
+                    style = TextStyle(fontFamily = Poppins, color = RouteLabelTertiary, fontSize = 9.5.sp, lineHeight = 11.sp, fontWeight = FontWeight.Medium),
+                    modifier = Modifier.align(Alignment.BottomEnd).offset(y = 9.dp),
+                )
             }
         }
     }
 }
 
-/** Teknisyen adı: tek satıra sığan en büyük boyut; en küçükte de sığmazsa iki satır — hiç kesilmez. */
+/**
+ * Tek satır: sığan en büyük boyut; en küçükte de sığmazsa sonu "…". Yükseklik
+ * en büyük boyuta göre sabit — boyut küçülse de satır (ve altındakiler) kaymaz.
+ */
 @Composable
-private fun TechnicianName(name: String, modifier: Modifier) {
+private fun FitLine(text: String, sizes: List<Float>, style: (Float) -> TextStyle, modifier: Modifier) {
     val measurer = rememberTextMeasurer()
-    BoxWithConstraints(modifier) {
+    val lineHeight = with(LocalDensity.current) { style(sizes.first()).lineHeight.toDp() }
+    BoxWithConstraints(modifier.height(lineHeight), contentAlignment = Alignment.CenterStart) {
         val widthPx = constraints.maxWidth
-        val size = remember(name, widthPx) {
-            TECH_NAME_SIZES.firstOrNull { sz ->
-                measurer.measure(name, techNameStyle(sz), maxLines = 1, softWrap = false).size.width <= widthPx
-            }
+        val size = remember(text, widthPx) {
+            sizes.firstOrNull { sz -> measurer.measure(text, style(sz), maxLines = 1, softWrap = false).size.width <= widthPx }
         }
-        Text(
-            name,
-            style = techNameStyle(size ?: TECH_NAME_SIZES.last()),
-            maxLines = if (size == null) 2 else 1,
-            softWrap = size == null,
-        )
+        Text(text, style = style(size ?: sizes.last()), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
     }
 }
 
 private fun techNameStyle(size: Float) =
-    TextStyle(fontFamily = Poppins, color = Ink, fontSize = size.sp, lineHeight = (size + 4f).sp, fontWeight = FontWeight.SemiBold)
+    TextStyle(fontFamily = Poppins, color = Ink, fontSize = size.sp, lineHeight = (size * 1.35f).sp, fontWeight = FontWeight.SemiBold)
+
+private fun stopAreaSized(size: Float) = stopAreaStyle.copy(fontSize = size.sp, lineHeight = (size * 1.4f).sp)
+
+private fun techMetaStyle(size: Float) =
+    TextStyle(fontFamily = Poppins, color = RouteLabelSecondary, fontSize = size.sp, lineHeight = (size * 1.4f).sp, fontWeight = FontWeight.Normal)
+
+/** Yoğun günde tamamlanan durakların yerine tek satır: onay işareti + "N tamamlandı" (soluk). */
+@Composable
+private fun DoneSummaryRow(count: Int, color: Color, density: StopDensity) {
+    val tight = density == StopDensity.TIGHT
+    Row(
+        Modifier.fillMaxWidth().height(density.height).alpha(0.45f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(if (tight) 18.dp else 22.dp).clip(CircleShape).background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            StopCheck(Modifier.size(if (tight) 10.dp else 12.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$count tamamlandı",
+            style = if (tight) stopNameStyle.copy(fontSize = 12.5.sp, lineHeight = 17.sp) else stopNameStyle,
+            maxLines = 1,
+        )
+    }
+}
 
 @Composable
 private fun StopRow(stop: TvRouteStop, color: Color, density: StopDensity) {
@@ -221,25 +311,24 @@ private fun StopRow(stop: TvRouteStop, color: Color, density: StopDensity) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        val area = listOfNotNull(stop.area.takeIf { it.isNotBlank() }, stop.minutes?.let { formatMinutes(it) }).joinToString("  ·  ")
-        if (tight) {
+        val area = stop.area
+        Column(Modifier.weight(1f)) {
             Text(
-                stop.customer + if (stop.area.isNotBlank()) "  ·  ${stop.area}" else "",
-                style = stopNameStyle.copy(fontSize = 12.5.sp, lineHeight = 16.sp),
+                stop.customer,
+                style = if (tight) stopNameStyle.copy(fontSize = 12.5.sp, lineHeight = 17.sp) else stopNameStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
             )
-        } else {
-            Column(Modifier.weight(1f)) {
-                Text(stop.customer, style = stopNameStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (area.isNotBlank()) {
-                    Text(
+            if (area.isNotBlank()) {
+                if (density == StopDensity.ROOMY) {
+                    // Rahat düzende semt iki satıra iner, kesilmez.
+                    Text(area, style = stopAreaStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    FitLine(
                         area,
-                        style = stopAreaStyle,
-                        // Rahat düzende semt iki satıra iner, kesilmez.
-                        maxLines = if (density == StopDensity.ROOMY) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
+                        if (tight) AREA_SIZES_TIGHT else AREA_SIZES_MEDIUM,
+                        ::stopAreaSized,
+                        Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -282,9 +371,6 @@ private fun StopCheck(modifier: Modifier) {
 
 internal fun parseColor(hex: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(RouteLabelTertiary)
-
-private fun formatMinutes(total: Int): String =
-    if (total < 60) "$total dk" else "${total / 60} sa" + (total % 60).takeIf { it > 0 }?.let { " $it dk" }.orEmpty()
 
 internal fun formatRouteDate(iso: String): String = runCatching {
     val date = LocalDate.parse(iso)

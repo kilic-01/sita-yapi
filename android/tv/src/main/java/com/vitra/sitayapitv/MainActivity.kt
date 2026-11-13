@@ -110,7 +110,7 @@ internal val TvCallout = 15.5.sp
 
 // Bekleme ekranı saati ve Poppins'te rakam yüksekliğinin yazı boyutuna oranı
 // (logo, rakamların dikey ortasına hizalanır).
-private val CLOCK_SIZE = 52.sp
+private val CLOCK_SIZE = 44.sp
 private const val POPPINS_DIGIT_HEIGHT = 0.70f
 
 // Buzlu cam zemini: bulanık fotoğraf + açık ton. Modifier.blur yalnız Android
@@ -393,10 +393,10 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
             ) { state ->
                 when (state) {
                     is TvPayload -> when {
-                        state.quote != null -> QuoteScreen(state.quote)
-                        state.routes != null -> RoutesScreen(state.routes)
-                        state.dashboard != null -> DashboardScreen(state.dashboard)
-                        state.product != null -> ProductScreen(state.product)
+                        state.quote != null -> QuoteScreen(state.quote, state.sentFrom)
+                        state.routes != null -> RoutesScreen(state.routes, state.sentFrom)
+                        state.dashboard != null -> DashboardScreen(state.dashboard, state.sentFrom)
+                        state.product != null -> ProductScreen(state.product, sentFrom = state.sentFrom)
                         else -> IdleScreen(weatherPinned)
                     }
                     NightMode -> NightScreen()
@@ -486,7 +486,7 @@ private fun NightScreen() {
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "Mesai dışı",
+                "Mesai Dışı",
                 style = TextStyle(fontFamily = Poppins, color = Color(0x26FFFFFF), fontSize = TvCaption1, fontWeight = FontWeight.Normal),
             )
         }
@@ -742,7 +742,7 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                     val date = now.format(DateTimeFormatter.ofPattern("d MMMM yyyy  ·  EEEE", turkish))
                     Text(
                         date.uppercase(turkish),
-                        style = TextStyle(fontFamily = Poppins, color = Color(0xD9FFFFFF), fontSize = TvCaption1, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp),
+                        style = TextStyle(fontFamily = Poppins, color = Color(0xD9FFFFFF), fontSize = TvCaption2, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp),
                     )
                 }
                 }
@@ -773,7 +773,7 @@ private fun MissingConfigScreen() {
             Modifier.fillMaxSize().padding(64.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("Kurulum eksik", style = TextStyle(fontFamily = Poppins, color = Ink, fontSize = 32.sp, fontWeight = FontWeight.Medium))
+            Text("Kurulum Eksik", style = TextStyle(fontFamily = Poppins, color = Ink, fontSize = 32.sp, fontWeight = FontWeight.Medium))
             Spacer(Modifier.height(12.dp))
             Text(
                 "android/tv/supabase.properties dosyasına Supabase adresi ve publishable anahtar yazılıp uygulama yeniden derlenmeli.",

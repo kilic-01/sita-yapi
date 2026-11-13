@@ -55,6 +55,8 @@ object ServiceIcons {
         "globe" to listOf(
             "M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20",
         ),
+        // Ürün ekranında yayını yapan bilgisayarın adının yanında.
+        "airplay" to listOf("M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1", "m12 15 5 6H7Z"),
         "pin" to listOf(
             "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0",
             "M15 10a3 3 0 1 1-6 0a3 3 0 1 1 6 0",

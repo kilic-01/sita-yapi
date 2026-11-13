@@ -258,7 +258,7 @@ fun WeatherSlide(weather: Weather) {
             // Üst: konum | büyük ikon — ikon, konum bloğunun dikey ortasına hizalı.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Şu an", style = TextStyle(fontFamily = Poppins, color = White80, fontSize = 19.sp, fontWeight = FontWeight.Normal))
+                    Text("Şu An", style = TextStyle(fontFamily = Poppins, color = White80, fontSize = 19.sp, fontWeight = FontWeight.Normal))
                     Text(LOCATION_NAME, style = TextStyle(fontFamily = Poppins, color = White, fontSize = 36.sp, fontWeight = FontWeight.Medium))
                 }
                 // Animasyonlu ikonun çiziminin etrafında kendi boşluğu var; görünen

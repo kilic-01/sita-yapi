@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -94,7 +96,7 @@ private fun captionStyle(color: Color = LabelSecondary) =
 
 /** Masaüstündeki Stok sayfasından ya da VitrA kartından "TV'de Yayınla" ile gönderilen ürün. */
 @Composable
-fun ProductScreen(product: TvProduct, badge: String? = null) {
+fun ProductScreen(product: TvProduct, badge: String? = null, sentFrom: String = "") {
     val context = LocalContext.current
     // Her ürün için bekleme ekranı fotoğraflarından biri arka plan olur.
     val backdrop = remember(product) {
@@ -205,16 +207,36 @@ fun ProductScreen(product: TvProduct, badge: String? = null) {
                     }
                     Spacer(Modifier.weight(1f))
                     // Boşluksuz logo: sağ ve alt güvenli alan çizgisine (fotoğraf panelinin alt kenarı) oturur.
-                    Image(
-                        painter = painterResource(R.drawable.logo_color_tight),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .align(Alignment.End)
-                            .width(95.dp)
-                            .onSizeChanged { logoHeight = with(density) { it.height.toDp() } },
-                    )
+                    // Solunda, logonun alt çizgisinde, yayını yapan bilgisayarın adı.
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                        SentFromTag(sentFrom, Modifier.weight(1f).padding(end = 12.dp))
+                        Image(
+                            painter = painterResource(R.drawable.logo_color_tight),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .width(95.dp)
+                                .onSizeChanged { logoHeight = with(density) { it.height.toDp() } },
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/** Yayını yapan bilgisayarın adı — AirPlay ikonuyla, çok küçük ve yarı saydam (tüm yayın ekranlarında). */
+@Composable
+internal fun SentFromTag(sentFrom: String, modifier: Modifier = Modifier) {
+    Row(modifier.alpha(0.5f), verticalAlignment = Alignment.CenterVertically) {
+        if (sentFrom.isNotBlank()) {
+            Icon(ServiceIcons.get("airplay"), contentDescription = null, tint = LabelSecondary, modifier = Modifier.size(7.dp))
+            Spacer(Modifier.width(3.dp))
+            Text(
+                sentFrom,
+                style = captionStyle().copy(fontSize = 6.sp, lineHeight = 8.sp, fontWeight = FontWeight.Normal),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -255,7 +277,7 @@ private fun ProductInfo(product: TvProduct, badge: String?, modifier: Modifier =
         Spacer(Modifier.height(20.dp))
         if (product.code.isNotBlank()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Separator))
-            InfoRow("Ürün kodu", product.code, bold = true)
+            InfoRow("Ürün Kodu", product.code, bold = true)
         }
         // vitra.com.tr'den gelen vitrin ürünlerinde birim/fiyat gönderilmiyor.
         if (product.unit.isNotBlank()) {
@@ -312,7 +334,7 @@ private fun ProductInfo(product: TvProduct, badge: String?, modifier: Modifier =
 private const val FEATURES_PER_PAGE = 6
 // Uzun madde (ör. "…sıcaklık ayarı ve emniyet kontrolü üniteden yapılmaktadır.") en fazla 3 satır.
 private const val FEATURE_MAX_LINES = 3
-private const val FEATURE_PAGE_SECONDS = 8
+private const val FEATURE_PAGE_SECONDS = 10
 private val FeatureGap = 18.dp
 private val FeatureMargin = 24.dp
 private val FeatureBullet = 4.dp

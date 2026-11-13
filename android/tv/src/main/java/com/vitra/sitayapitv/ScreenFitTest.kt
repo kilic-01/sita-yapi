@@ -52,7 +52,7 @@ fun ScreenFitTest() {
         }
         Column(Modifier.align(Alignment.Center).padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val style = TextStyle(fontFamily = Poppins, color = Color.White, fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-            Text("Ekrana sığma testi", style = style.copy(fontSize = 26.sp, fontWeight = FontWeight.SemiBold))
+            Text("Ekrana Sığma Testi", style = style.copy(fontSize = 26.sp, fontWeight = FontWeight.SemiBold))
             Text(
                 "Beyaz çerçevenin dört kenarı ve köşelerdeki beyaz çizgiler görünmeli.\n" +
                     "Görünmüyorsa TV görüntüyü kırpıyor: TV'nin Görüntü > Ekran boyutu ayarını\n" +

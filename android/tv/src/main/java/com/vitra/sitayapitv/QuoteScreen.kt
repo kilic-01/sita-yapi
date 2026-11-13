@@ -65,7 +65,7 @@ private const val PAGE_SECONDS = 8
 
 /** Masaüstündeki Teklifler sayfasından "TV'de Yayınla" ile gönderilen fiyat teklifi. */
 @Composable
-fun QuoteScreen(quote: TvQuote) {
+fun QuoteScreen(quote: TvQuote, sentFrom: String = "") {
     val money = remember(quote.currency) { moneyFormat(quote.currency) }
     var page by remember(quote) { mutableStateOf(0) }
     // Sayfa sayısı kalem listesinin yüksekliği ölçülünce belli olur (aşağıda);
@@ -168,7 +168,7 @@ fun QuoteScreen(quote: TvQuote) {
                 // İskonto varsa önce iskontosuz tutar, altında düşülen iskonto
                 // gösterilir; müşteri indirimi açıkça görsün.
                 TotalRow(
-                    if (quote.totals.discount > 0.005) "Tutar" else "Ara toplam",
+                    if (quote.totals.discount > 0.005) "Tutar" else "Ara Toplam",
                     money.format(quote.totals.subtotal + quote.totals.discount),
                 )
                 if (quote.totals.discount > 0.005) {
@@ -190,12 +190,15 @@ fun QuoteScreen(quote: TvQuote) {
                 )
                 Text("KDV dahil", style = TextStyle(fontFamily = Poppins, color = Muted, fontSize = TvCaption1))
                 Spacer(Modifier.height(28.dp))
-                // Boşluksuz logo: sağ ve alt güvenli alan çizgisine oturur.
-                Image(
-                    painter = painterResource(R.drawable.logo_color_tight),
-                    contentDescription = null,
-                    modifier = Modifier.align(Alignment.End).width(62.dp),
-                )
+                // Boşluksuz logo: sağ ve alt güvenli alan çizgisine oturur; solunda yayını yapan bilgisayar.
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    SentFromTag(sentFrom, Modifier.weight(1f).padding(end = 12.dp))
+                    Image(
+                        painter = painterResource(R.drawable.logo_color_tight),
+                        contentDescription = null,
+                        modifier = Modifier.width(62.dp),
+                    )
+                }
             }
         }
     }

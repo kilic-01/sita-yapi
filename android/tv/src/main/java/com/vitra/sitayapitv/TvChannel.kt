@@ -141,6 +141,8 @@ data class TvPayload(
     // Hedef TV kimliği; boşsa (null) tüm TV'ler gösterir.
     val target: String? = null,
     val sentBy: String = "",
+    // Yayını gönderen bilgisayarın adı.
+    val sentFrom: String = "",
     val sentAt: String = "",
 )
 

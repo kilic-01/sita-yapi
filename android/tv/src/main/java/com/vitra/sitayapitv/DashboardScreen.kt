@@ -45,7 +45,7 @@ private val DashTrack = Color(0x1F0E2A3B)
 private val DashUrgent = Color(0xFFD9534F)
 
 @Composable
-fun DashboardScreen(d: TvDashboard) {
+fun DashboardScreen(d: TvDashboard, sentFrom: String = "") {
     val context = LocalContext.current
     val backdrop = remember(d) {
         runCatching { context.assets.list("backgrounds")?.filter { it.endsWith(".jpg") }?.randomOrNull() }.getOrNull()
@@ -73,11 +73,11 @@ fun DashboardScreen(d: TvDashboard) {
             Spacer(Modifier.height(18.dp))
             // Üst sıra: büyük sayılar.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatCard("Bugünkü servis", "${d.appointmentsToday}", "${d.completedToday} tamamlandı", Modifier.weight(1f))
+                StatCard("Bugünkü Servis", "${d.appointmentsToday}", "${d.completedToday} tamamlandı", Modifier.weight(1f))
                 StatCard("Acil", "${d.urgentToday}", "bugün", Modifier.weight(1f), valueColor = if (d.urgentToday > 0) DashUrgent else Ink)
                 StatCard("Atanmamış", "${d.unassignedToday}", "bugün", Modifier.weight(1f))
                 StatCard("Yarın", "${d.appointmentsTomorrow}", "servis", Modifier.weight(1f))
-                StatCard("Bekleyen parça", "${d.pendingParts}", "${d.partsArrived} geldi", Modifier.weight(1f))
+                StatCard("Bekleyen Parça", "${d.pendingParts}", "${d.partsArrived} geldi", Modifier.weight(1f))
             }
             Spacer(Modifier.height(16.dp))
             // Alt: teknisyen başına ilerleme.
@@ -111,6 +111,8 @@ fun DashboardScreen(d: TvDashboard) {
                 }
             }
         }
+        // Yayını yapan bilgisayar: alt güvenli alan boşluğunda, sağ kenara hizalı.
+        SentFromTag(sentFrom, Modifier.align(Alignment.BottomEnd).padding(end = TvSafeSide).height(TvSafeVertical))
     }
 }
 

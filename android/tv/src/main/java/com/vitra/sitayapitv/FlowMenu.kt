@@ -36,11 +36,11 @@ enum class MenuAction { FLOW, UPDATE, INFO }
 
 fun flowMenuItems(update: UpdateState): List<FlowMenuItem> = buildList {
     add(FlowMenuItem("Normal", "Fotoğraflar, hava durumu ve videolar sırayla", FlowMode.NORMAL))
-    add(FlowMenuItem("Hava durumu", "Sürekli hava durumu sayfası", FlowMode.WEATHER))
+    add(FlowMenuItem("Hava Durumu", "Sürekli hava durumu sayfası", FlowMode.WEATHER))
     add(FlowMenuItem("Video", "Sürekli VitrA videoları", FlowMode.VIDEO))
     when (update) {
-        is UpdateState.Available -> add(FlowMenuItem("Güncellemeyi kur", "Yeni sürüm ${update.version}", action = MenuAction.UPDATE))
-        is UpdateState.Failed -> add(FlowMenuItem("Güncellemeyi kur", "Yeniden dene — ${update.retry.version}", action = MenuAction.UPDATE))
+        is UpdateState.Available -> add(FlowMenuItem("Güncellemeyi Kur", "Yeni sürüm ${update.version}", action = MenuAction.UPDATE))
+        is UpdateState.Failed -> add(FlowMenuItem("Güncellemeyi Kur", "Yeniden dene — ${update.retry.version}", action = MenuAction.UPDATE))
         else -> Unit
     }
     add(FlowMenuItem("Bilgi", "Sürüm, bağlantı ve cihaz bilgileri", action = MenuAction.INFO))
@@ -66,7 +66,7 @@ fun FlowMenu(items: List<FlowMenuItem>, focused: Int, active: FlowMode) {
                 .padding(horizontal = 12.dp, vertical = 14.dp),
         ) {
             Text(
-                "Ekran akışı",
+                "Ekran Akışı",
                 style = TextStyle(fontFamily = Poppins, color = MenuSecondary, fontSize = TvCaption1, fontWeight = FontWeight.Medium),
                 modifier = Modifier.padding(start = 10.dp, bottom = 8.dp),
             )

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Ana ekran kartı (banner) koyu kalıyor; uygulamanın kendisi açık tema. -->
-    <color name="tv_background">#0E1B22</color>
+    <color name="tv_background">#001E3C</color>
     <color name="tv_window">#FFFFFF</color>
     <color name="ic_launcher_background">#FFFFFF</color>
 </resources>

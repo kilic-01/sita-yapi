@@ -88,7 +88,7 @@ private fun formatUptime(): String {
 
 private fun flowLabel(mode: FlowMode) = when (mode) {
     FlowMode.NORMAL -> "Normal"
-    FlowMode.WEATHER -> "Hava durumu"
+    FlowMode.WEATHER -> "Hava Durumu"
     FlowMode.VIDEO -> "Video"
 }
 
@@ -126,10 +126,10 @@ fun InfoPanel(connection: ConnectionState, config: TvConfig, flowMode: FlowMode,
                 Column(Modifier.weight(1f)) {
                     Section("Bağlantı")
                     InfoRow("İnternet", if (net.online) "Bağlı" else "Yok", if (net.online) InfoGood else InfoBad)
-                    InfoRow("Bağlantı türü", net.type)
-                    InfoRow("IP adresi", net.ip ?: "—")
+                    InfoRow("Bağlantı Türü", net.type)
+                    InfoRow("IP Adresi", net.ip ?: "—")
                     InfoRow(
-                        "Sunucu (yayın)",
+                        "Sunucu (Yayın)",
                         when (connection) {
                             ConnectionState.CONNECTED -> "Bağlı"
                             ConnectionState.CONNECTING -> "Bağlanıyor"
@@ -146,16 +146,16 @@ fun InfoPanel(connection: ConnectionState, config: TvConfig, flowMode: FlowMode,
                     InfoRow("Sürüm", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
                     InfoRow("Güncelleme", updateLabel(update))
                     InfoRow("Ortam", if (isDev) "Geliştirme" else "Canlı")
-                    InfoRow("Açık kalma süresi", uptime)
+                    InfoRow("Açık Kalma Süresi", uptime)
                 }
                 Column(Modifier.weight(1f)) {
                     Section("Bu TV")
                     InfoRow("Ad", config.name)
                     InfoRow("Kimlik", config.tvId.take(8))
                     InfoRow("Mod", if (config.isOffice) "Ofis" else "Mağaza")
-                    InfoRow("Ekran akışı", flowLabel(flowMode))
+                    InfoRow("Ekran Akışı", flowLabel(flowMode))
                     InfoRow("Mesai", "${config.workStart} – ${config.workEnd}")
-                    InfoRow("Mesai dışı karartma", if (config.dimOutside) "Açık" else "Kapalı")
+                    InfoRow("Mesai Dışı Karartma", if (config.dimOutside) "Açık" else "Kapalı")
                     Spacer(Modifier.height(12.dp))
                     Section("Cihaz")
                     InfoRow("Model", deviceModel())
