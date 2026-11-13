@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV ana ekranında görünen 320x180 kart. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/tv_background" />
+        </shape>
+    </item>
+    <item android:left="24dp" android:right="24dp" android:top="37dp" android:bottom="37dp"
+        android:drawable="@drawable/logo_white" />
+</layer-list>

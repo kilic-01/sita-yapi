@@ -1,0 +1,44 @@
+[
+ {
+  "file": "01.jpg",
+  "artist": "Benh LIEU SONG",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Blue_Mosque_Courtyard_Dusk_Wikimedia_Commons.jpg"
+ },
+ {
+  "file": "02.jpg",
+  "artist": "Diego Delso",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Cuerno_de_Oro,_Estambul,_Turquía,_2024-09-28,_DD_141-143_HDR.jpg"
+ },
+ {
+  "file": "03.jpg",
+  "artist": "Moonik",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Exterior_of_Sultan_Ahmed_I_Mosque_in_Istanbul,_Turkey_002.jpg"
+ },
+ {
+  "file": "05.jpg",
+  "artist": "Arild Vågen",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Hagia_Sophia_Mars_2013.jpg"
+ },
+ {
+  "file": "06.jpg",
+  "artist": "Arild Vågen",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Haliç_Tersaneleri_Mars_2013.jpg"
+ },
+ {
+  "file": "11.jpg",
+  "artist": "Diego Delso",
+  "license": "CC BY-SA 4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Mezquita_de_Solimán,_Estambul,_Turquía,_2024-09-28,_DD_147-149_HDR.jpg"
+ },
+ {
+  "file": "12.jpg",
+  "artist": "Mstyslav Chernov",
+  "license": "CC BY-SA 3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Panoramic_view_of_Istanbul-_Yeni_Cami_(The_New_Mosque),_Galata_Bridge._Turkey,_Southeastern_Europe.jpg"
+ }
+]

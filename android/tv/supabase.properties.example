@@ -1,0 +1,5 @@
+# Bu dosyayı "supabase.properties" adıyla kopyalayıp doldurun (git'e girmez).
+# Supabase paneli > Project Settings > API Keys > "Publishable key".
+# DİKKAT: "sb_secret_..." ile başlayan gizli anahtarı buraya YAZMAYIN.
+url=https://PROJE.supabase.co
+key=sb_publishable_...
