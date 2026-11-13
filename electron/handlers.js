@@ -7,7 +7,7 @@ import { geocodeAddress } from "./googleMaps.js";
 import { buildGeocodeAttempts } from "./geocodeQuery.js";
 import { estimateJobDurationMinutes } from "./gemini.js";
 import { getRandomFeaturedImage } from "./wikimedia.js";
-import { lookupVitraProduct, loadFirstImagesByCode, normalizeCode, isConfidentImageMatch, findVitraVideo } from "./vitraCatalog.js";
+import { lookupVitraProduct, loadFirstImagesByCode, normalizeCode, isConfidentImageMatch, findVitraVideo, listVitraCollections, lookupVitraCollection } from "./vitraCatalog.js";
 import { assignToTechnicians, orderTechnicianStops, isOnLeave, haversineDistance } from "./routing.js";
 import { GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, FILOTIM_API_KEY, SHOP_LOCATION } from "./config.js";
 import { fetchFuelPurchases, fetchFuelDevices, fetchFleetSummary } from "./filotimSync.js";
@@ -1312,6 +1312,81 @@ export async function saveTvDevice(tvId, cfg, actingUserId) {
 export async function requestTvUpdateCheck(actingUserId) {
   await db.requireAdmin(actingUserId, "TV güncellemesi");
   return db.requestTvUpdateCheck();
+}
+
+// ---------- TV vitrin sayfaları ----------
+// "12.500,50" (Türkçe) ya da "12500.50" → 12500.5; geçersiz/boş → null.
+function parseTrPrice(value) {
+  const text = String(value ?? "").replace(/[₺\s]/g, "");
+  if (!text) return null;
+  const normalized = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : /^\d{1,3}(\.\d{3})+$/.test(text)
+      ? text.replace(/\./g, "") // "9.999" / "1.250.000": binlik ayracı
+      : text;
+  const n = Number(normalized);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+// TV'deki ServiceIcons ile aynı adlar.
+const SERVICE_ICONS = ["auto", "bath", "wrench", "package", "shield", "truck", "ruler", "house", "message", "droplet", "check"];
+export function listTvCollections() {
+  return listVitraCollections();
+}
+
+export async function getTvShowcase(actingUserId) {
+  await db.requireAdmin(actingUserId, "TV vitrin ayarlarını görüntüleme");
+  return (await db.getTvShowcase()).config || {};
+}
+
+// Ayarlar > TV Vitrin Sayfaları "Kaydet": içerik siteden derlenip TV'ye
+// gönderilir; TV saklar, masaüstü kapalıyken de gösterir. Fiyat gönderilmez.
+export async function saveTvShowcase(config, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV vitrin ayarlarını değiştirme");
+  const clean = (v, max) => String(v || "").trim().slice(0, max);
+  const cfg = {
+    featuredCode: clean(config?.featuredCode, 60),
+    featuredNote: clean(config?.featuredNote, 80),
+    // Haftanın ürünü fiyatı (KDV dahil, TL) ve indirim oranı — TV'de fiyat
+    // gösterilen TEK yer; boşsa fiyat gösterilmez.
+    featuredPrice: parseTrPrice(config?.featuredPrice),
+    featuredDiscount: Math.min(90, Math.max(0, Math.round(Number(config?.featuredDiscount) || 0))),
+    collections: (Array.isArray(config?.collections) ? config.collections : []).filter((s) => /^[a-z0-9-]+$/.test(s)).slice(0, 12),
+    services: {
+      items: (config?.services?.items || [])
+        .map((it) => ({ title: clean(it?.title, 40), text: clean(it?.text, 140), icon: SERVICE_ICONS.includes(it?.icon) ? it.icon : "auto" }))
+        .filter((it) => it.title)
+        .slice(0, 6),
+    },
+  };
+  let featured = null;
+  if (cfg.featuredCode) {
+    const p = await lookupVitraProduct(cfg.featuredCode);
+    featured = {
+      id: p.code,
+      code: p.code,
+      name: p.name,
+      category: p.category,
+      imageUrl: p.images[0],
+      images: p.images,
+      features: p.features,
+      unit: "",
+      note: cfg.featuredNote,
+      priceIncVat: cfg.featuredPrice,
+      discountRate: cfg.featuredPrice ? cfg.featuredDiscount : 0,
+    };
+  }
+  const collections = [];
+  for (const slug of cfg.collections) {
+    try {
+      collections.push(await lookupVitraCollection(slug));
+    } catch {
+      // sitede olmayan/değişmiş koleksiyon — atlanır
+    }
+  }
+  const services = cfg.services.items.length > 0 ? cfg.services : null;
+  const payload = { featured, collections, services, updatedAt: new Date().toISOString() };
+  await db.saveTvShowcase({ config: cfg, payload }, actingUserId);
+  return { config: cfg, summary: { featured: featured?.name || null, collections: collections.map((c) => c.name), services: services?.items.length || 0 } };
 }
 
 export function setTvTarget(tvId) {

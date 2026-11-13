@@ -268,6 +268,30 @@ export async function buildSpecialDays() {
     }));
 }
 
+// ---------- TV vitrin sayfaları (haftanın ürünü, koleksiyonlar, hizmetlerimiz) ----------
+// settings."tvShowcase" = JSON { config, payload } — config Ayarlar formu, payload
+// TV'ye giden hazır içerik (handlers.saveTvShowcase siteden derler).
+export async function getTvShowcase() {
+  const settings = await getSettings();
+  try {
+    const raw = settings.tvShowcase;
+    return (typeof raw === "string" ? JSON.parse(raw) : raw) || {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveTvShowcase(value, actingUserId) {
+  await updateSettings({ tvShowcase: JSON.stringify(value) }, actingUserId);
+  await sendShowcase();
+}
+
+async function sendShowcase() {
+  if (!tvChannel) return;
+  const { payload } = await getTvShowcase();
+  if (payload) await tvChannel.send({ type: "broadcast", event: "showcase", payload });
+}
+
 async function sendSpecialDays() {
   if (!tvChannel) return;
   await tvChannel.send({ type: "broadcast", event: "specialDays", payload: { days: await buildSpecialDays() } });
@@ -320,6 +344,7 @@ function subscribeToTvChannel() {
     const tvId = payload?.tvId;
     if (tvId) sendTvConfigTo(tvId).catch(() => {});
     sendSpecialDays().catch(() => {});
+    sendShowcase().catch(() => {});
     const target = currentTvPayload?.target ?? null;
     if (currentTvPayload && (target === null || target === tvId)) {
       channel.send({ type: "broadcast", event: "show", payload: currentTvPayload });

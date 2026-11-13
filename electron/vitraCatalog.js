@@ -145,6 +145,62 @@ export async function lookupVitraProduct(input) {
   return product;
 }
 
+// ---------- Koleksiyonlar (TV: koleksiyon tanıtım sayfası) ----------
+// vitra.com.tr/v/<koleksiyon> sayfalarından: ad, VitrA'nın kendi açıklaması
+// (ilk uzun paragraf), büyük tanıtım görselleri ve koleksiyonun ürün fotoğrafları.
+const COLLECTIONS_SITEMAP_URL = "https://www.vitra.com.tr/sitemaps/sitemap-collections.xml";
+
+function prettyCollectionName(slug) {
+  const base = slug.replace(/-k$/, "").replace(/-i$/, "").replace(/-/g, " ");
+  return base
+    .split(" ")
+    .map((w) => (w === "v" ? "V" : w.charAt(0).toLocaleUpperCase("tr") + w.slice(1)))
+    .join(" ")
+    .replace(/^V Care$/, "V-Care")
+    .replace(/^Vitra /, "VitrA ");
+}
+
+// [{ slug, name }] — yalnız /v/<ad> koleksiyon sayfaları (karo ve genel listeler hariç).
+export async function listVitraCollections() {
+  const xml = await fetchText(COLLECTIONS_SITEMAP_URL);
+  const out = [];
+  for (const [, slug] of xml.matchAll(/<loc>https:\/\/www\.vitra\.com\.tr\/v\/([a-z0-9-]+)<\/loc>/g)) {
+    if (!out.some((c) => c.slug === slug)) out.push({ slug, name: prettyCollectionName(slug) });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name, "tr"));
+}
+
+// İlk 1–2 cümle, en fazla ~260 karakter (TV'de 3–4 satır).
+function shortDescription(text) {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  let out = "";
+  for (const s of sentences) {
+    if ((out + s).length > 260) break;
+    out += s;
+  }
+  return (out || text.slice(0, 257) + "…").trim();
+}
+
+export async function lookupVitraCollection(slug) {
+  const url = `https://www.vitra.com.tr/v/${slug}`;
+  const html = await fetchText(url);
+  const og = /<meta property="og:title" content="([^"]+)"/.exec(html)?.[1] || "";
+  const base = decodeEntities(og).replace(/\s*Ürünleri.*$/i, "").replace(/\s*\|.*$/, "").trim() || prettyCollectionName(slug);
+  // Hepsi aynı kalıpta: "Origin Aura" → "Origin Aura Koleksiyonu".
+  const name = /koleksiyon/i.test(base) ? base : `${base} Koleksiyonu`;
+  const paragraph = [...html.matchAll(/<p[^>]*>([^<]{80,800})<\/p>/g)]
+    .map((m) => decodeEntities(m[1]).replace(/\s+/g, " ").trim())
+    .find((t) => /koleksiyon|seri|tasarım/i.test(t));
+  const banners = [...new Set([...html.matchAll(/https:\/\/online-vitra\.mncdn\.com\/vitraimages\/content\/[^"' )]+?\.(?:jpg|jpeg|png)/gi)].map((m) => m[0]))]
+    .filter((u) => /banner/i.test(u) && !/nav node|mobile/i.test(u))
+    .map((u) => u.replace(/ /g, "%20"));
+  const products = [...new Set([...html.matchAll(/https:\/\/img-salsify\.mncdn\.com\/mnpadding\/\d+\/\d+\/FFFFFF\/images\/q_auto:low\/([^"' )]+?\.(?:jpg|jpeg|png))/gi)].map((m) => m[1]))]
+    .slice(0, 4)
+    .map((p) => `https://img-salsify.mncdn.com/mnpadding/600/600/FFFFFF/images/q_auto:good/${p}`);
+  if (banners.length === 0) throw new Error(`${name}: koleksiyon görseli bulunamadı.`);
+  return { slug, name, description: paragraph ? shortDescription(paragraph) : "", images: banners, products, url };
+}
+
 // ---------- Ürün videosu (VitrA Türkiye YouTube kanalı) ----------
 // API anahtarı olmadan kanalın resmi RSS akışı okunur — yalnız son 15 video
 // gelir. Video başlığının ayırt edici kelimelerinin hepsi ("VitrA Origin Aura
