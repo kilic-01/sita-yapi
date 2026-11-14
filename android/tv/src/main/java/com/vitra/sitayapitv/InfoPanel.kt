@@ -86,6 +86,11 @@ private fun formatUptime(): String {
     }.joinToString(" ")
 }
 
+private val DAY_SHORT = listOf("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+
+private fun offDaysLabel(days: List<Int>) =
+    days.sorted().mapNotNull { DAY_SHORT.getOrNull(it - 1) }.joinToString(", ").ifEmpty { "Yok" }
+
 private fun flowLabel(mode: FlowMode) = when (mode) {
     FlowMode.NORMAL -> "Normal"
     FlowMode.WEATHER -> "Hava Durumu"
@@ -155,6 +160,7 @@ fun InfoPanel(connection: ConnectionState, config: TvConfig, flowMode: FlowMode,
                     InfoRow("Mod", if (config.isOffice) "Ofis" else "Mağaza")
                     InfoRow("Ekran Akışı", flowLabel(flowMode))
                     InfoRow("Mesai", "${config.workStart} – ${config.workEnd}")
+                    InfoRow("Tatil Günleri", offDaysLabel(config.offDays))
                     InfoRow("Mesai Dışı Karartma", if (config.dimOutside) "Açık" else "Kapalı")
                     Spacer(Modifier.height(12.dp))
                     Section("Cihaz")

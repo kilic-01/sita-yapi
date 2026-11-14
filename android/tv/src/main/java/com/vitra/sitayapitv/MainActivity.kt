@@ -249,10 +249,10 @@ private fun TvApp(channel: TvChannel, tvSettings: TvSettings, idleSeconds: Int, 
     var showVideo by remember { mutableStateOf(false) }
     // Video akışında videolar açılamazsa (internet yok) bir süre bekleme ekranı gösterilir.
     var videoFailed by remember { mutableStateOf(false) }
-    // Mesai dışı karartma (Ayarlar > TV Ekranları): dakikada bir kontrol edilir.
-    // Mesai dışında bir yayın gelirse yine gösterilir.
+    // Mesai dışı karartma (Ayarlar > TV Ekranları): mesai saatleri dışı ve tatil
+    // günleri; dakikada bir kontrol edilir. Mesai dışında bir yayın gelirse yine gösterilir.
     val now = rememberNow()
-    val dimmed = config.isDimmedAt(now.toLocalTime())
+    val dimmed = config.isDimmedAt(now)
 
     // Normal akış: bekleme ekranı idleSeconds → videolar videoSeconds → bekleme ekranı…
     // Ürün/teklif yayınlanınca video kapanır; yayın bitip bekleme ekranına

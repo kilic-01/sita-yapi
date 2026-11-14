@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.UUID
 
@@ -15,6 +16,7 @@ import java.util.UUID
  *  • mode: "customer" (mağaza) ya da "office" (ofis) — mağaza modunda
  *    kişisel veri içeren yayınlar (rotalar, pano) gösterilmez.
  *  • workStart/workEnd/dimOutside: mesai dışında ekran karartılır.
+ *  • offDays: tatil günleri (1 = Pazartesi … 7 = Pazar) — bütün gün mesai dışı sayılır.
  */
 @Serializable
 data class TvConfig(
@@ -24,12 +26,15 @@ data class TvConfig(
     val workStart: String = "08:30",
     val workEnd: String = "19:00",
     val dimOutside: Boolean = true,
+    val offDays: List<Int> = emptyList(),
 ) {
     val isOffice: Boolean get() = mode == MODE_OFFICE
 
-    /** Şu an mesai saatleri dışında mı (ve karartma açık mı)? */
-    fun isDimmedAt(now: LocalTime): Boolean {
+    /** Şu an mesai dışında mı — tatil günü ya da mesai saatleri dışı (ve karartma açık mı)? */
+    fun isDimmedAt(at: LocalDateTime): Boolean {
         if (!dimOutside) return false
+        if (at.dayOfWeek.value in offDays) return true
+        val now = at.toLocalTime()
         val start = runCatching { LocalTime.parse(workStart) }.getOrNull() ?: return false
         val end = runCatching { LocalTime.parse(workEnd) }.getOrNull() ?: return false
         return if (start <= end) now < start || now >= end else now in end..start
@@ -73,6 +78,7 @@ class TvSettings(context: Context) {
             workStart = prefs.getString("workStart", null) ?: "08:30",
             workEnd = prefs.getString("workEnd", null) ?: "19:00",
             dimOutside = prefs.getBoolean("dimOutside", true),
+            offDays = prefs.getString("offDays", null).orEmpty().split(",").mapNotNull { it.toIntOrNull() },
         )
     }
 
@@ -85,6 +91,7 @@ class TvSettings(context: Context) {
             .putString("workStart", merged.workStart)
             .putString("workEnd", merged.workEnd)
             .putBoolean("dimOutside", merged.dimOutside)
+            .putString("offDays", merged.offDays.joinToString(","))
             .apply()
         _config.value = merged
     }
