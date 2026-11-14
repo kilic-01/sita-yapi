@@ -1305,6 +1305,10 @@ export async function saveTvDevice(tvId, cfg, actingUserId) {
     workStart: /^\d{2}:\d{2}$/.test(cfg?.workStart) ? cfg.workStart : "08:30",
     workEnd: /^\d{2}:\d{2}$/.test(cfg?.workEnd) ? cfg.workEnd : "19:00",
     dimOutside: cfg?.dimOutside !== false,
+    // Tatil günleri: 1 = Pazartesi … 7 = Pazar; TV bu günlerde bütün gün mesai dışı ekranını gösterir.
+    offDays: [...new Set((Array.isArray(cfg?.offDays) ? cfg.offDays : []).map(Number))]
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 7)
+      .sort((a, b) => a - b),
   };
   return db.saveTvDevice(tvId, clean, actingUserId);
 }

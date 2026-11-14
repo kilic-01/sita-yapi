@@ -115,7 +115,91 @@ async function createWindow() {
   }
 }
 
+// Uygulama menüsü (Türkçe). Electron'un hazır İngilizce menüsünün (File, Edit,
+// View, Window, Help) yerine — aynı işlevler, "Hakkında" Dosya menüsünde.
+function showAboutDialog() {
+  dialog.showMessageBox(BrowserWindow.getFocusedWindow() || mainWindow, {
+    type: "none",
+    icon: path.join(__dirname, "..", "assets", "icon.png"),
+    title: "Sita Yapı Hakkında",
+    message: "Sita Yapı",
+    detail: [
+      `Sürüm ${app.getVersion()}`,
+      `Veritabanı: ${IS_DEV_DB ? "Geliştirme" : "Canlı"}`,
+      "",
+      `© ${new Date().getFullYear()} Sita Yapı`,
+    ].join("\n"),
+    buttons: ["Tamam"],
+  });
+}
+
+function buildAppMenu() {
+  const isMac = process.platform === "darwin";
+  const template = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "hide", label: "Sita Yapı'yı Gizle" },
+              { role: "hideOthers", label: "Diğerlerini Gizle" },
+              { role: "unhide", label: "Tümünü Göster" },
+              { type: "separator" },
+              { role: "quit", label: "Sita Yapı'dan Çık" },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "Dosya",
+      submenu: [
+        { label: "Sita Yapı Hakkında", click: showAboutDialog },
+        { type: "separator" },
+        isMac ? { role: "close", label: "Pencereyi Kapat" } : { role: "quit", label: "Çıkış" },
+      ],
+    },
+    {
+      label: "Düzen",
+      submenu: [
+        { role: "undo", label: "Geri Al" },
+        { role: "redo", label: "Yinele" },
+        { type: "separator" },
+        { role: "cut", label: "Kes" },
+        { role: "copy", label: "Kopyala" },
+        { role: "paste", label: "Yapıştır" },
+        { role: "selectAll", label: "Tümünü Seç" },
+      ],
+    },
+    {
+      label: "Görünüm",
+      submenu: [
+        { role: "reload", label: "Yeniden Yükle" },
+        { role: "forceReload", label: "Zorla Yeniden Yükle" },
+        { role: "toggleDevTools", label: "Geliştirici Araçları" },
+        { type: "separator" },
+        { role: "resetZoom", label: "Gerçek Boyut" },
+        { role: "zoomIn", label: "Yakınlaştır" },
+        { role: "zoomOut", label: "Uzaklaştır" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "Tam Ekran" },
+      ],
+    },
+    {
+      label: "Pencere",
+      submenu: [
+        { role: "minimize", label: "Simge Durumuna Küçült" },
+        { role: "zoom", label: "Büyüt" },
+        ...(isMac
+          ? [{ type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }]
+          : [{ role: "close", label: "Kapat" }]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(async () => {
+  buildAppMenu();
   // Geliştirme modunda uygulama "electron ." ile çıplak çalıştığı için
   // macOS Dock'ta ve bildirimlerde kendi ikonumuz yerine jenerik Electron
   // logosu görünüyordu — paketlenmiş (build) sürümde electron-builder zaten

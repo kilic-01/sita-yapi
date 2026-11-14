@@ -172,7 +172,7 @@ export function getTvTarget() {
 }
 
 // Ayarlar > TV Ekranları — settings tablosunda "tvDevices" anahtarı altında
-// { [tvId]: { name, mode, workStart, workEnd, dimOutside } }.
+// { [tvId]: { name, mode, workStart, workEnd, dimOutside, offDays } }.
 async function getTvDevices() {
   const settings = await getSettings();
   // settings.value metin sütunu — nesne JSON olarak saklanır.

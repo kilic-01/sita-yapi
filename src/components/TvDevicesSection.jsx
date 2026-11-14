@@ -2,7 +2,17 @@ import { useEffect, useState } from "react";
 import useTvDevices, { tvLabel } from "./useTvDevices.js";
 import ToggleSwitch from "./ToggleSwitch.jsx";
 
-const DEFAULTS = { name: "TV", mode: "customer", workStart: "08:30", workEnd: "19:00", dimOutside: true };
+const DEFAULTS = { name: "TV", mode: "customer", workStart: "08:30", workEnd: "19:00", dimOutside: true, offDays: [] };
+// Tatil günleri: 1 = Pazartesi … 7 = Pazar (TV tarafıyla aynı numaralama).
+const WEEK_DAYS = [
+  [1, "Pzt"],
+  [2, "Sal"],
+  [3, "Çar"],
+  [4, "Per"],
+  [5, "Cum"],
+  [6, "Cmt"],
+  [7, "Paz"],
+];
 
 // Ayarlar > TV Ekranları — ofisteki her TV'nin adı, modu (mağaza/ofis) ve
 // mesai saatleri. Kaydedilen ayar TV'ye anında gönderilir; TV kapalıysa
@@ -79,7 +89,7 @@ export default function TvDevicesSection({ currentUser, onNotify }) {
       </div>
       <p style={{ marginTop: 0 }}>
         <strong>Mağaza modu</strong>nda rota ve günlük özet gibi kişisel veri içeren yayınlar gösterilmez.
-        Mesai dışında ekran karartılır.
+        Mesai dışında ve seçilen tatil günlerinde ekran karartılır.
       </p>
       <div>
         <button type="button" className="secondary" onClick={checkUpdate} disabled={checkingUpdate || online.length === 0}>
@@ -121,10 +131,28 @@ export default function TvDevicesSection({ currentUser, onNotify }) {
                 <input type="time" value={d.workEnd} onChange={(e) => patch(id, { workEnd: e.target.value })} />
               </label>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+              <span style={{ fontSize: "0.9rem" }}>Tatil günleri</span>
+              {WEEK_DAYS.map(([day, label]) => {
+                const offDays = d.offDays || [];
+                return (
+                  <label key={day} style={{ flexDirection: "row", alignItems: "center", gap: "0.3rem", margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={offDays.includes(day)}
+                      onChange={(e) =>
+                        patch(id, { offDays: e.target.checked ? [...offDays, day] : offDays.filter((x) => x !== day) })
+                      }
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.75rem" }}>
               <label style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem", margin: 0 }}>
                 <ToggleSwitch checked={d.dimOutside} onChange={(e) => patch(id, { dimOutside: e.target.checked })} />
-                Mesai dışında ekranı karart
+                Mesai dışında ve tatil günlerinde ekranı karart
               </label>
               <button type="button" className="primary" style={{ marginLeft: "auto" }} onClick={() => save(id)} disabled={savingId === id}>
                 {savingId === id ? "Kaydediliyor…" : "Kaydet"}
