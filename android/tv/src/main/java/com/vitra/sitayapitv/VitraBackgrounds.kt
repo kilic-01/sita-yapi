@@ -62,8 +62,7 @@ object VitraBackgrounds {
             if (!res.isSuccessful) error("HTTP ${res.code}")
             res.body?.string().orEmpty()
         }
-        Regex("<image:loc>([^<]+)</image:loc>").findAll(xml)
-            .map { it.groupValues[1].trim() }
+        imageLocs(xml)
             .filter { url ->
                 val file = url.substringAfterLast('/')
                 INCLUDE.containsMatchIn(file) && !EXCLUDE.containsMatchIn(file)
@@ -71,6 +70,23 @@ object VitraBackgrounds {
             .mapNotNull(::toScreenSize)
             .distinct()
             .toList()
+    }
+
+    // Site haritası ~4 MB. Android 9'da (Mi Box) Regex.findAll bu büyüklükte bir metinde
+    // her eşleşmede metni yerel belleğe yeniden kopyalıyor: binlerce eşleşmede bellek
+    // saniyeler içinde 1 GB'ı aşıp uygulama kapatılıyordu. Düz metin aramasıyla okunur.
+    private fun imageLocs(xml: String): Sequence<String> = sequence {
+        val open = "<image:loc>"
+        val close = "</image:loc>"
+        var from = 0
+        while (true) {
+            val start = xml.indexOf(open, from)
+            if (start < 0) break
+            val end = xml.indexOf(close, start + open.length)
+            if (end < 0) break
+            yield(xml.substring(start + open.length, end).trim())
+            from = end + close.length
+        }
     }
 
     // images.salsify.com/images/q_auto:low/<id>/<dosya> → mncdn üzerinden ekran
