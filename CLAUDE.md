@@ -18,7 +18,7 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 - DEV sunucusu her zaman `NODE_ENV=development` ile çalışmalı:
   `kill $(lsof -tiTCP:4173 -sTCP:LISTEN); NODE_ENV=development nohup node server/index.js > /tmp/server.log 2>&1 &`
   Kontrol: `ps eww <pid> | tr ' ' '\n' | grep NODE_ENV`.
-- Gizli dosyaları commit etme: `electron/config.js`, `android/tv/supabase.properties` (şu an PROD publishable), `android/tv/photo-api.properties`, `.env`.
+- Gizli dosyaları commit etme: `electron/config.js`, `android/tv/supabase.properties` (şu an PROD publishable), `android/tv/photo-api.properties`, `.env`, `electron/secrets/`, `android/app/google-services.json`, `server/.token-secret`. **GitHub deposu herkese açık.** Android Google Maps anahtarı `android/local.properties` içinde `MAPS_API_KEY=` (git dışı; yeni bilgisayarda bu satır eklenmeli). Göndermeden önce `git diff origin/main..HEAD` gizli anahtar desenlerine karşı taranmalı.
 - Telefona/TV'ye `sb_secret_` anahtarı koyma. İstisna: yalnız emülatörde DEV testi için geçici derleme. Sonra `supabase.properties` PROD'a geri alınır.
 - Commit'te dosyaları tek tek ekle (`git add -A` yok). TV, masaüstü ve mobil değişikliklerini ayrı commit'le.
 - Push, GitHub sürümü ve mağaza işlemleri yalnız kullanıcı açıkça isteyince yapılır.
