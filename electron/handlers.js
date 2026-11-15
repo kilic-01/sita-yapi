@@ -978,7 +978,12 @@ export async function sendMessage(senderId, recipientId, body) {
   // ya da anahtar/ayar eksik olsa bile mesaj zaten kaydedildi, sadece push
   // sessizce başarısız olur (bkz. notifyUserPush içindeki try/catch).
   const sender = (await db.getUsers()).find((u) => u.id === senderId);
-  notifyUserPush(recipientId, { title: sender?.name || "Yeni mesaj", body });
+  // data: bildirime basılınca uygulama doğrudan bu kişiyle olan sohbeti açar.
+  notifyUserPush(recipientId, {
+    title: sender?.name || "Yeni mesaj",
+    body,
+    data: { type: "message", senderId, senderName: sender?.name || "" },
+  });
   return message;
 }
 

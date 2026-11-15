@@ -562,10 +562,17 @@ function escapeHtml(s) {
 }
 
 async function api(path, opts) {
-  const res = await fetch("/api" + path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  // Giriş dışındaki her istek oturum anahtarını taşır (bkz. server/auth.js).
+  const headers = { "Content-Type": "application/json" };
+  if (state.user?.token) headers.Authorization = "Bearer " + state.user.token;
+  const res = await fetch("/api" + path, { ...opts, headers });
+  // Anahtar geçersiz/süresi dolmuş: oturumu kapat, giriş ekranına dön.
+  if (res.status === 401 && path !== "/login") {
+    state.user = null;
+    localStorage.removeItem("sita-barkod-user");
+    renderLoggedOut();
+    throw new Error("Oturum süresi doldu, lütfen tekrar giriş yapın.");
+  }
   if (!res.ok) {
     // Sunucu tarafındaki gerçek hata mesajını (ör. "sadece yönetici
     // hesapları görebilir") göstermek, düz bir durum koduna göre çok daha

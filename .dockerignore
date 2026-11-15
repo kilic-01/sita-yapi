@@ -1,0 +1,36 @@
+# Canlı kapsayıcıya GİRMEYECEKLER (bkz. Dockerfile).
+
+# --- Gizli bilgiler: ASLA ---
+electron/config.js
+electron/secrets/
+server/.token-secret
+.env
+.env.*
+**/*.p8
+**/google-services.json
+**/*firebase-adminsdk*.json
+**/supabase.properties
+**/photo-api.properties
+
+# --- Sunucunun ihtiyacı olmayanlar ---
+.git/
+.claude/
+node_modules/
+node_modules.nosync/
+dist/
+dist.nosync/
+release/
+release.nosync/
+android/
+ios/
+src/
+public/
+assets/
+resources/
+e2e/
+test-results/
+scripts/
+docs/
+*.md
+.DS_Store
+.metadata_never_index

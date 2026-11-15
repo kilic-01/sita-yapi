@@ -8,20 +8,41 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as config from "../electron/config.js";
 import * as db from "../electron/db.js";
 import * as handlers from "../electron/handlers.js";
+import { requireAuth, issueToken, loginBlocked, recordLoginResult, securityHeaders } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 4173;
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+// Güvenlik kilidi: canlı mod YALNIZ kapsayıcıdaki ortam değişkenli yapılandırmayla
+// (server/config.production.js) açılır. Bir geliştiricinin bilgisayarında
+// yanlışlıkla NODE_ENV=production verilirse yerel config.js ile PROD'a bağlanmak
+// yerine sunucu hiç açılmaz.
+if (IS_PRODUCTION && config.CONFIG_KIND !== "production-env") {
+  console.error("NODE_ENV=production yalnız canlı kapsayıcıda kullanılır (server/config.production.js). Sunucu başlatılmadı.");
+  process.exit(1);
+}
+// Barındırma hizmeti portu PORT ile verir; yerelde 4173.
+const PORT = Number(process.env.PORT) || 4173;
 
 await db.initDb();
 
 const app = express();
+app.disable("x-powered-by");
+// Canlıda HTTPS'i barındırma hizmetinin vekili (proxy) sonlandırır: gerçek
+// istemci IP'si X-Forwarded-For'dan okunur (giriş denemesi sınırı IP'ye bakar).
+if (IS_PRODUCTION) app.set("trust proxy", 1);
+// Sağlık kontrolü (barındırma hizmeti için) — oturum gerektirmez, veri döndürmez.
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+app.use(securityHeaders);
 // Varsayılan limit 100kb — profil fotoğrafı gibi base64 gövdeler (mobil
 // profil ekranı, PUT /api/users/:id) bunu kolayca aşıp 413 ile reddediliyordu.
 // Masaüstü bu sınırı hiç görmüyordu çünkü IPC üzerinden direkt çalışıyor,
 // sadece HTTP'den geçen mobil istemciler etkileniyordu.
 app.use(express.json({ limit: "5mb" }));
+// Giriş hariç bütün /api istekleri imzalı oturum anahtarı ister (bkz. auth.js).
+app.use("/api", requireAuth);
 
 app.get("/api/appointments", async (req, res, next) => {
   try {
@@ -152,7 +173,7 @@ app.put("/api/vehicles", async (req, res, next) => {
 
 app.get("/api/settings", async (req, res, next) => {
   try {
-    res.json(await handlers.getSettings(req.query.actingUserId));
+    res.json(await handlers.getSettings(req.authUserId));
   } catch (err) {
     next(err);
   }
@@ -237,7 +258,7 @@ app.get("/api/fuel/devices", async (req, res, next) => {
 
 app.get("/api/activity-log", async (req, res, next) => {
   try {
-    res.json(await handlers.listActivityLog(undefined, req.query.actingUserId));
+    res.json(await handlers.listActivityLog(undefined, req.authUserId));
   } catch (err) {
     next(err);
   }
@@ -417,7 +438,13 @@ app.delete("/api/users/:id", async (req, res, next) => {
 app.post("/api/login", async (req, res, next) => {
   try {
     const { name, password } = req.body;
-    res.json(await handlers.login(name, password));
+    if (loginBlocked(req, name)) {
+      return res.status(429).json({ message: "Çok fazla hatalı deneme. Lütfen 15 dakika sonra tekrar deneyin." });
+    }
+    const user = await handlers.login(name, password);
+    recordLoginResult(req, name, Boolean(user));
+    // Başarılı girişte kullanıcıyla birlikte oturum anahtarı döner; hatalıysa null (eskisi gibi).
+    res.json(user ? { ...user, token: issueToken(user.id) } : null);
   } catch (err) {
     next(err);
   }
@@ -531,8 +558,8 @@ app.delete("/api/pending-parts/:id", async (req, res, next) => {
 });
 app.put("/api/pending-parts/:id/mark-reminder-sent", async (req, res, next) => {
   try {
-    const { userId } = req.body;
-    res.json(await handlers.markPendingPartReminderSent(req.params.id, userId));
+    // Hatırlatma, oturum sahibinin kendisi için işaretlenir.
+    res.json(await handlers.markPendingPartReminderSent(req.params.id, req.authUserId));
   } catch (err) {
     next(err);
   }
@@ -608,16 +635,14 @@ app.delete("/api/incoming-orders/:id", async (req, res, next) => {
 });
 app.put("/api/incoming-orders/:id/mark-reminder-notified", async (req, res, next) => {
   try {
-    const { userId } = req.body;
-    res.json(await handlers.markIncomingOrderReminderNotified(req.params.id, userId));
+    res.json(await handlers.markIncomingOrderReminderNotified(req.params.id, req.authUserId));
   } catch (err) {
     next(err);
   }
 });
 app.put("/api/incoming-orders/:id/dismiss-reminder", async (req, res, next) => {
   try {
-    const { userId } = req.body;
-    res.json(await handlers.dismissIncomingOrderReminder(req.params.id, userId));
+    res.json(await handlers.dismissIncomingOrderReminder(req.params.id, req.authUserId));
   } catch (err) {
     next(err);
   }
@@ -663,33 +688,38 @@ app.post("/api/tv/clear", async (req, res, next) => {
 
 app.post("/api/device-tokens", async (req, res, next) => {
   try {
-    const { userId, token, platform, actingUserId } = req.body;
-    await handlers.registerDeviceToken(userId, token, platform, actingUserId);
+    const { token, platform, actingUserId } = req.body;
+    // Bildirim anahtarı yalnız oturum sahibinin kendisine kaydedilebilir.
+    await handlers.registerDeviceToken(req.authUserId, token, platform, actingUserId);
     res.json({ ok: true });
   } catch (err) {
     next(err);
   }
 });
 
+// Mesajlar yalnız oturum sahibine aittir: adresteki :userId yok sayılır
+// (eskiden herkes başkasının mesajlarını okuyabilirdi).
 app.get("/api/messages/:userId", async (req, res, next) => {
   try {
-    res.json(await handlers.listMessagesFor(req.params.userId));
+    res.json(await handlers.listMessagesFor(req.authUserId));
   } catch (err) {
     next(err);
   }
 });
 app.post("/api/messages", async (req, res, next) => {
   try {
-    const { senderId, recipientId, body } = req.body;
-    res.json(await handlers.sendMessage(senderId, recipientId, body));
+    const { recipientId, body } = req.body;
+    // Gönderen her zaman oturum sahibi (başkası adına mesaj gönderilemez).
+    res.json(await handlers.sendMessage(req.authUserId, recipientId, body));
   } catch (err) {
     next(err);
   }
 });
 app.put("/api/messages/read", async (req, res, next) => {
   try {
-    const { currentUserId, otherUserId } = req.body;
-    res.json(await handlers.markMessagesRead(currentUserId, otherUserId));
+    const { otherUserId } = req.body;
+    // Yalnız oturum sahibine gelen mesajlar okundu işaretlenebilir.
+    res.json(await handlers.markMessagesRead(req.authUserId, otherUserId));
   } catch (err) {
     next(err);
   }
@@ -706,8 +736,14 @@ app.use((err, req, res, _next) => {
 // Aynı /api/* uçlarını kullanır, ayrı bir backend gerektirmez.
 app.use("/barkod", express.static(path.join(__dirname, "public-barkod")));
 
-app.use(express.static(path.join(__dirname, "..", "dist")));
+// Masaüstünün web derlemesi yalnız yerelde (Electron dışında işlevsiz; canlıda
+// uygulama kodunu gereksiz yere dışarı açmasın).
+if (!IS_PRODUCTION) app.use(express.static(path.join(__dirname, "..", "dist")));
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Telefon/tarayıcı test sunucusu: http://<bu-bilgisayarın-IP-adresi>:${PORT}`);
+  console.log(
+    IS_PRODUCTION
+      ? `Sita Yapı API (canlı) ${PORT} portunda çalışıyor.`
+      : `Telefon/tarayıcı test sunucusu: http://<bu-bilgisayarın-IP-adresi>:${PORT}`
+  );
 });

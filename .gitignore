@@ -22,3 +22,9 @@ android/build
 android/app/build
 android/tv/build
 ios/App/build
+
+# Mobil API oturum anahtarlarını imzalayan gizli anahtar (geliştirme; canlıda SITA_TOKEN_SECRET).
+server/.token-secret
+
+# Firebase istemci yapılandırması (API anahtarı içerir) ve servis hesabı — commit edilmez.
+android/app/google-services.json
