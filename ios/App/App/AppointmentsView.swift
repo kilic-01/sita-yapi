@@ -33,7 +33,7 @@ private func shortDate(_ iso: String?) -> String? {
     guard let d = parser.date(from: iso) else { return iso }
     let out = DateFormatter()
     out.locale = Locale(identifier: "tr_TR")
-    out.dateFormat = "d MMM yyyy"
+    out.dateFormat = "dd/MM/yyyy"
     return out.string(from: d)
 }
 
@@ -123,8 +123,9 @@ struct AppointmentsView: View {
     // Hafta şeridindeki günlerin randevu sayıları (seçili tarihin haftası).
     @State private var weekCounts: [String: Int] = [:]
     @State private var showCreate = false
-    // "Geri al": tamamlandı işaretlendikten sonra 5 saniye boyunca önceki duruma dönülebilir.
-    @State private var undo: (appt: Appointment, previous: String)?
+    // "Geri al": durum değiştikten (tamamlandı ↔ bekliyor) sonra 5 saniye boyunca önceki duruma dönülebilir.
+    // token: aynı randevu art arda değişince de 5 sn sayaç yeniden başlasın.
+    @State private var undo: (appt: Appointment, previous: String, newStatus: String, token: UUID)?
 
     private var isSearchActive: Bool { query.trimmingCharacters(in: .whitespaces).count >= 2 }
 
@@ -201,6 +202,14 @@ struct AppointmentsView: View {
                 // dokunması daha kolay yuvarlak buton — Harita ve Rota
                 // Oluştur'a ulaşmak için ekstra bir menü açma adımı olmasın.
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { showCreate = true } label: {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel("Randevu Oluştur")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showRouteBuilder = true } label: {
                         Image(systemName: "wand.and.stars")
                     }
@@ -235,7 +244,7 @@ struct AppointmentsView: View {
             }
             .task(id: date) { await load() }
             .overlay(alignment: .bottom) { undoToast }
-            .task(id: undo?.appt.id) {
+            .task(id: undo?.token) {
                 guard undo != nil else { return }
                 try? await Task.sleep(for: .seconds(5))
                 if !Task.isCancelled { withAnimation { undo = nil } }
@@ -256,9 +265,17 @@ struct AppointmentsView: View {
 
     @ViewBuilder
     private func completeAction(_ appt: Appointment) -> some View {
-        if appt.status != "completed" {
+        // Android ile aynı: tamamlanmamışsa "Tamamlandı", tamamlanmışsa "Bekliyor"a geri al.
+        if appt.status == "completed" {
             Button {
-                Task { await markCompleted(appt) }
+                Task { await setStatus(appt, to: "pending") }
+            } label: {
+                Label("Bekliyor", systemImage: "arrow.uturn.backward.circle.fill")
+            }
+            .tint(.orange)
+        } else {
+            Button {
+                Task { await setStatus(appt, to: "completed") }
             } label: {
                 Label("Tamamlandı", systemImage: "checkmark.circle.fill")
             }
@@ -283,18 +300,18 @@ struct AppointmentsView: View {
         if let idx = searchResults.firstIndex(where: { $0.id == updated.id }) { searchResults[idx] = updated }
     }
 
-    private func markCompleted(_ appt: Appointment) async {
+    private func setStatus(_ appt: Appointment, to newStatus: String) async {
         struct Body: Encodable { let status: String; let actingUserId: String }
         do {
             let _: Appointment = try await APIClient.shared.put(
                 "/appointments/\(appt.id)/status",
-                body: Body(status: "completed", actingUserId: appState.currentUser?.id ?? "")
+                body: Body(status: newStatus, actingUserId: appState.currentUser?.id ?? "")
             )
             var updated = appt
-            updated.status = "completed"
+            updated.status = newStatus
             replaceEverywhere(updated)
             Haptics.success()
-            withAnimation { undo = (appt, appt.status ?? "pending") }
+            withAnimation { undo = (appt, appt.status ?? "pending", newStatus, UUID()) }
         } catch {
             errorMessage = error.turkishMessage
         }
@@ -304,8 +321,9 @@ struct AppointmentsView: View {
     private var undoToast: some View {
         if let undo {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("\(undo.appt.customerName ?? "Randevu") tamamlandı").font(.subheadline).lineLimit(1)
+                Image(systemName: undo.newStatus == "completed" ? "checkmark.circle.fill" : "arrow.uturn.backward.circle.fill")
+                    .foregroundStyle(undo.newStatus == "completed" ? .green : .orange)
+                Text("\(undo.appt.customerName ?? "Randevu") \(undo.newStatus == "completed" ? "tamamlandı" : "bekliyor olarak işaretlendi")").font(.subheadline).lineLimit(1)
                 Spacer(minLength: 4)
                 Button("Geri al") { Task { await revert(undo) } }
                     .font(.subheadline.bold())
@@ -318,7 +336,7 @@ struct AppointmentsView: View {
         }
     }
 
-    private func revert(_ item: (appt: Appointment, previous: String)) async {
+    private func revert(_ item: (appt: Appointment, previous: String, newStatus: String, token: UUID)) async {
         struct Body: Encodable { let status: String; let actingUserId: String }
         withAnimation { undo = nil }
         do {
@@ -394,7 +412,19 @@ struct AppointmentsView: View {
 }
 
 extension Appointment: Hashable {
-    static func == (lhs: Appointment, rhs: Appointment) -> Bool { lhs.id == rhs.id }
+    // Eskiden yalnız id karşılaştırılıyordu: kaydırmayla durum değişince SwiftUI
+    // satırı "değişmemiş" sayıp yeniden çizmiyordu (sunucuda tamamlandı, ekranda
+    // hâlâ bekliyor). Ekranda görünen alanlar da karşılaştırılır; hash yalnız id
+    // (eşit olanların hash'i yine aynı — Hashable kuralı korunuyor).
+    static func == (lhs: Appointment, rhs: Appointment) -> Bool {
+        lhs.id == rhs.id && lhs.status == rhs.status && lhs.customerName == rhs.customerName
+            && lhs.complaint == rhs.complaint && lhs.stopOrder == rhs.stopOrder
+            && lhs.scheduledDate == rhs.scheduledDate && lhs.urgency == rhs.urgency
+            && lhs.assignedTechnicianId == rhs.assignedTechnicianId && lhs.address == rhs.address
+            && lhs.customerPhone == rhs.customerPhone && lhs.feeAmount == rhs.feeAmount
+            && lhs.feePaid == rhs.feePaid && lhs.geocodeIssue == rhs.geocodeIssue
+            && lhs.heldForLeave == rhs.heldForLeave
+    }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 

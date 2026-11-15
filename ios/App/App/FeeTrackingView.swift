@@ -45,7 +45,7 @@ struct FeeTrackingView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(feeCategoryLabel(entry.category)).font(.body)
-                                let subtitle = [entry.date, (entry.description?.isEmpty == false ? entry.description : nil)]
+                                let subtitle = [entry.date.isEmpty ? nil : trDate(entry.date), (entry.description?.isEmpty == false ? entry.description : nil)]
                                     .compactMap { $0 }
                                     .joined(separator: " · ")
                                 Text(subtitle).font(.caption).foregroundStyle(.secondary)

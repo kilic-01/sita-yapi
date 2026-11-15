@@ -22,6 +22,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         completionHandler([.banner, .sound, .list])
     }
 
+    /// Bildirime basıldı: mesaj bildirimiyse gönderenle olan sohbet açılır.
+    /// Uygulama kapalıyken basıldığında bu, AppState oluşmadan önce gelebilir —
+    /// bu yüzden bilgi önce PendingChat'e yazılır, sonra duyurulur.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        if (info["type"] as? String) == "message", let senderId = info["senderId"] as? String, !senderId.isEmpty {
+            PendingChat.value = (senderId, (info["senderName"] as? String) ?? "")
+            NotificationCenter.default.post(name: .sitaOpenChat, object: nil)
+        }
+        completionHandler()
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenHex = deviceToken.map { String(format: "%02x", $0) }.joined()
         guard
@@ -73,4 +89,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         config.delegateClass = SceneDelegate.self
         return config
     }
+}
+
+extension Notification.Name {
+    /// Mesaj bildirimine basıldı (bilgi PendingChat'te).
+    static let sitaOpenChat = Notification.Name("sitaOpenChat")
+}
+
+/// Bildirimden gelen, henüz açılmamış sohbet (gönderen id, ad).
+enum PendingChat {
+    nonisolated(unsafe) static var value: (id: String, name: String)?
 }

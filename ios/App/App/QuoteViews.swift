@@ -22,14 +22,14 @@ struct QuoteListView: View {
                     NavigationLink(value: quote) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(quote.customerName ?? "(isimsiz)").font(.body)
-                            Text([quote.quoteNo, quote.quoteDate].compactMap { $0 }.joined(separator: " · "))
+                            Text([quote.quoteNo, quote.quoteDate.map { trDate($0) }].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Teklifler")
+        .navigationTitle("Fiyat Teklifi")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreate = true } label: { Image(systemName: "plus.circle.fill") }
@@ -38,6 +38,8 @@ struct QuoteListView: View {
         .navigationDestination(for: Quote.self) { quote in
             QuoteDetailView(quote: quote, onDeleted: {
                 quotes.removeAll { $0.id == quote.id }
+            }, onUpdated: { updated in
+                if let idx = quotes.firstIndex(where: { $0.id == updated.id }) { quotes[idx] = updated }
             })
         }
         .sheet(isPresented: $showCreate) {
@@ -55,7 +57,8 @@ struct QuoteListView: View {
         defer { isLoading = false }
         do {
             let all: [Quote] = try await APIClient.shared.get("/quotes")
-            quotes = all.sorted { ($0.quoteDate ?? "") > ($1.quoteDate ?? "") }
+            // En yeni en üstte; aynı gün içinde teklif no büyük olan üstte.
+            quotes = all.sorted { (($0.quoteDate ?? ""), ($0.quoteNo ?? "")) > (($1.quoteDate ?? ""), ($1.quoteNo ?? "")) }
         } catch {
             errorMessage = error.turkishMessage
         }
@@ -63,16 +66,30 @@ struct QuoteListView: View {
 }
 
 extension Quote: Hashable {
-    static func == (lhs: Quote, rhs: Quote) -> Bool { lhs.id == rhs.id }
+    // Yalnız id karşılaştırılırsa düzenlenen teklif listede yeniden çizilmez
+    // (bkz. Appointment'taki aynı sorun); listede görünen alanlar da karşılaştırılır.
+    static func == (lhs: Quote, rhs: Quote) -> Bool {
+        lhs.id == rhs.id && lhs.customerName == rhs.customerName && lhs.quoteNo == rhs.quoteNo
+            && lhs.quoteDate == rhs.quoteDate && lhs.contactName == rhs.contactName
+            && lhs.validityDays == rhs.validityDays && lhs.items?.count == rhs.items?.count
+    }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 struct QuoteDetailView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    let quote: Quote
+    @State private var quote: Quote
     var onDeleted: () -> Void = {}
+    var onUpdated: (Quote) -> Void = { _ in }
     @State private var showPrintPreview = false
+    @State private var showEdit = false
+
+    init(quote: Quote, onDeleted: @escaping () -> Void = {}, onUpdated: @escaping (Quote) -> Void = { _ in }) {
+        _quote = State(initialValue: quote)
+        self.onDeleted = onDeleted
+        self.onUpdated = onUpdated
+    }
     // "TV'de Göster": teklif ofis TV'sinde müşteriye gösterilir (masaüstündeki gibi).
     @State private var isBroadcasting = false
     @State private var tvMessage: String?
@@ -115,7 +132,7 @@ struct QuoteDetailView: View {
             }
             Section("Teklif Bilgisi") {
                 LabeledContent("Teklif No", value: quote.quoteNo ?? "—")
-                LabeledContent("Tarih", value: quote.quoteDate ?? "—")
+                LabeledContent("Tarih", value: trDate(quote.quoteDate))
                 if let validity = quote.validityDays {
                     LabeledContent("Geçerlilik", value: "\(validity) gün")
                 }
@@ -164,6 +181,9 @@ struct QuoteDetailView: View {
         .navigationTitle(quote.quoteNo ?? "Teklif")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Düzenle") { showEdit = true }
+            }
             // "TV'de Göster": yalnız ikon (masaüstündeki AirPlay düğmesi gibi).
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -177,6 +197,14 @@ struct QuoteDetailView: View {
         }
         .navigationDestination(isPresented: $showPrintPreview) {
             QuoteWebPrintView(quote: quote)
+        }
+        .sheet(isPresented: $showEdit) {
+            NavigationStack {
+                QuoteCreateView(editing: quote, onCreated: {}, onUpdated: { updated in
+                    quote = updated
+                    onUpdated(updated)
+                })
+            }
         }
     }
 
@@ -233,7 +261,11 @@ struct QuoteDetailView: View {
 struct QuoteCreateView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    /// Verilirse aynı form bu teklifi düzenler. Yalnız formdaki alanlar gönderilir;
+    /// masaüstünde girilen diğerleri (e-posta, şartlar, IBAN, genel indirim…) korunur.
+    var editing: Quote? = nil
     let onCreated: () -> Void
+    var onUpdated: (Quote) -> Void = { _ in }
 
     @State private var customerName = ""
     @State private var contactName = ""
@@ -241,10 +273,32 @@ struct QuoteCreateView: View {
     @State private var customerAddress = ""
     @State private var validityDays = 15
     @State private var items: [QuoteItem] = [QuoteItem(qty: 1, unit: "Adet", vatRate: 20, unitPrice: 0, description: "", discountRate: 0)]
+    @State private var didLoadEditing = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    // Ürün kodu önerileri (masaüstündeki QuoteForm.jsx ile aynı: kod ya da barkod içerir, ilk 8).
+    @State private var stock: [StockItem] = []
+    @FocusState private var focusedCodeItem: UUID?
+    @FocusState private var numberFieldFocused: Bool
 
     private var totals: QuoteTotals { computeQuoteTotals(items) }
+
+    private func codeMatches(_ code: String?) -> [StockItem] {
+        let q = (code ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return [] }
+        return Array(stock.lazy.filter {
+            ($0.code ?? "").lowercased().contains(q) || ($0.barcode ?? "").lowercased().contains(q)
+        }.prefix(8))
+    }
+
+    /// Seçilen ürün: kod, açıklama (ürün adı) ve birim fiyat otomatik dolar.
+    private func pick(_ s: StockItem, for itemID: UUID) {
+        guard let idx = items.firstIndex(where: { $0.id == itemID }) else { return }
+        items[idx].code = s.code ?? ""
+        items[idx].description = s.name ?? ""
+        if let price = s.price { items[idx].unitPrice = price }
+        focusedCodeItem = nil
+    }
 
     var body: some View {
         Form {
@@ -260,16 +314,47 @@ struct QuoteCreateView: View {
             Section("Kalemler") {
                 ForEach($items) { $item in
                     VStack(alignment: .leading, spacing: 6) {
+                        TextField("Ürün Kodu", text: Binding(get: { item.code ?? "" }, set: { item.code = $0 }))
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .focused($focusedCodeItem, equals: item.id)
+                            .submitLabel(.done)
+                        if focusedCodeItem == item.id {
+                            let matches = codeMatches(item.code)
+                            if !matches.isEmpty {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    ForEach(matches) { s in
+                                        Button { pick(s, for: item.id) } label: {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(s.code ?? "").font(.subheadline.bold())
+                                                Text(s.name ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, 6)
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        if s.id != matches.last?.id { Divider() }
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
                         TextField("Açıklama", text: Binding(get: { item.description ?? "" }, set: { item.description = $0 }))
+                            .submitLabel(.done)
                         HStack {
                             TextField("Adet", value: Binding(get: { item.qty ?? 1 }, set: { item.qty = $0 }), format: .number)
                                 .keyboardType(.decimalPad)
+                                .focused($numberFieldFocused)
                                 .frame(width: 60)
                             TextField("Birim Fiyat", value: Binding(get: { item.unitPrice ?? 0 }, set: { item.unitPrice = $0 }), format: .number)
                                 .keyboardType(.decimalPad)
+                                .focused($numberFieldFocused)
                             Text("KDV %")
                             TextField("20", value: Binding(get: { item.vatRate ?? 20 }, set: { item.vatRate = $0 }), format: .number)
                                 .keyboardType(.decimalPad)
+                                .focused($numberFieldFocused)
                                 .frame(width: 40)
                         }
                     }
@@ -290,9 +375,25 @@ struct QuoteCreateView: View {
                 Text(errorMessage).foregroundStyle(.red)
             }
         }
-        .navigationTitle("Yeni Teklif")
+        .navigationTitle(editing == nil ? "Yeni Teklif" : "Teklifi Düzenle")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard let q = editing, !didLoadEditing else { return }
+            didLoadEditing = true
+            customerName = q.customerName ?? ""
+            contactName = q.contactName ?? ""
+            customerPhone = q.customerPhone ?? ""
+            customerAddress = q.customerAddress ?? ""
+            validityDays = q.validityDays ?? 15
+            if let existing = q.items, !existing.isEmpty { items = existing }
+        }
+        .task { stock = (try? await StockCache.shared.all()) ?? [] }
         .toolbar {
+            // Sayı klavyesinde (decimalPad) Enter/Bitti tuşu yok; klavyeyi kapatmak için.
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Bitti") { numberFieldFocused = false; focusedCodeItem = nil }
+            }
             ToolbarItem(placement: .topBarLeading) {
                 Button("İptal") { dismiss() }
             }
@@ -313,6 +414,31 @@ struct QuoteCreateView: View {
         defer { isSaving = false }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        let cleanedItems = items
+            .map { var i = $0; i.code = (i.code ?? "").trimmingCharacters(in: .whitespaces); return i }
+            .filter { !($0.description ?? "").isEmpty || !($0.code ?? "").isEmpty || ($0.unitPrice ?? 0) > 0 }
+        if let q = editing {
+            struct QuotePatch: Encodable {
+                let customerName: String; let contactName: String; let customerPhone: String
+                let customerAddress: String; let validityDays: Int; let items: [QuoteItem]; let actingUserId: String
+            }
+            do {
+                let updated: Quote = try await APIClient.shared.put("/quotes/\(q.id)", body: QuotePatch(
+                    customerName: customerName.trimmingCharacters(in: .whitespaces),
+                    contactName: contactName,
+                    customerPhone: customerPhone,
+                    customerAddress: customerAddress,
+                    validityDays: validityDays,
+                    items: cleanedItems,
+                    actingUserId: appState.currentUser?.id ?? ""
+                ))
+                onUpdated(updated)
+                dismiss()
+            } catch {
+                errorMessage = error.turkishMessage
+            }
+            return
+        }
         do {
             let body = NewQuote(
                 customerName: customerName.trimmingCharacters(in: .whitespaces),
@@ -324,7 +450,7 @@ struct QuoteCreateView: View {
                 validityDays: validityDays,
                 preparedBy: appState.currentUser?.name ?? "",
                 currency: "TRY",
-                items: items.filter { !($0.description ?? "").isEmpty || ($0.unitPrice ?? 0) > 0 },
+                items: cleanedItems,
                 actingUserId: appState.currentUser?.id ?? ""
             )
             let _: Quote = try await APIClient.shared.post("/quotes", body: body)

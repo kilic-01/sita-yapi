@@ -25,6 +25,14 @@ struct RootTabView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
+        tabView
+            // Mesaj bildirimine basıldı → Mesajlar sekmesi (sohbeti MessagesView açar).
+            .onChange(of: appState.openMessagesTick, initial: true) { _, tick in
+                if tick > 0 { router.selection = .messages }
+            }
+    }
+
+    private var tabView: some View {
         TabView(selection: Binding(get: { router.selection }, set: { router.selection = $0 })) {
             Tab("Ana Sayfa", systemImage: "house.fill", value: AppTab.home) {
                 HomeView()

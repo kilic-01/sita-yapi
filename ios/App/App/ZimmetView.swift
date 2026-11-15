@@ -149,7 +149,7 @@ struct ZimmetTechnicianDetailView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item?.name ?? item?.code ?? "(ürün)").foregroundStyle(.primary)
-                            Text(c.date ?? "").font(.caption).foregroundStyle(.secondary)
+                            Text(trDate(c.date, empty: "")).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text("\(Int(c.qtyTaken ?? 0)) \(item?.unit ?? "adet")").font(.subheadline.bold())

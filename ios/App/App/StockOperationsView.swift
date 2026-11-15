@@ -215,7 +215,7 @@ struct StockHistoryView: View {
                         // bunu Date'e çevirip yeniden biçimlendirmiyoruz, aynı
                         // basit yaklaşım: ilk 16 karakteri okunur hale getir.
                         if let createdAt = entry.createdAt, createdAt.count >= 16 {
-                            Text(String(createdAt.prefix(16)).replacingOccurrences(of: "T", with: " "))
+                            Text(trDateTime(createdAt))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }

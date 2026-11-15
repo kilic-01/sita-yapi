@@ -133,8 +133,7 @@ struct LoginView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            struct LoginBody: Encodable { let name: String; let password: String }
-            let user: AppUser? = try await APIClient.shared.post("/login", body: LoginBody(name: name, password: password))
+            let user = try await APIClient.shared.login(name: name, password: password)
             guard let user else {
                 errorMessage = "Ad veya şifre hatalı."
                 return

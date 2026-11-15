@@ -38,7 +38,7 @@ struct AppointmentCreateView: View {
                 Section {
                     ForEach(history.prefix(3)) { a in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(a.scheduledDate ?? "—").font(.caption.bold())
+                            Text(trDate(a.scheduledDate)).font(.caption.bold())
                             Text(a.complaint?.isEmpty == false ? a.complaint! : "(şikâyet yok)")
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }

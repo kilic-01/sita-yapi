@@ -32,7 +32,7 @@ struct IncomingOrdersView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(order.customerName ?? "(isimsiz)").font(.body)
-                            Text([order.orderNo, order.orderDate].compactMap { $0 }.joined(separator: " · "))
+                            Text([order.orderNo, order.orderDate.map { trDate($0) }].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()

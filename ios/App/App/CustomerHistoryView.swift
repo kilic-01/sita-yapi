@@ -51,7 +51,7 @@ struct CustomerHistoryView: View {
                         ForEach(appointments) { appt in
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack {
-                                    Text(appt.scheduledDate ?? "—").font(.subheadline.bold())
+                                    Text(trDate(appt.scheduledDate)).font(.subheadline.bold())
                                     Spacer()
                                     Text(statusLabel(appt.status))
                                         .font(.caption.bold())

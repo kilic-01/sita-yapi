@@ -46,9 +46,10 @@ struct MessagesView: View {
     @State private var isLoading = false
     @State private var hasLoadedOnce = false
     @State private var errorMessage: String?
+    @State private var path: [Contact] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if isLoading {
                     ProgressView()
@@ -93,6 +94,12 @@ struct MessagesView: View {
                 }
             }
             .navigationTitle("Mesajlar")
+            // Mesaj bildirimine basıldı: gönderenle olan sohbeti aç.
+            .onChange(of: appState.pendingChat?.id, initial: true) { _, id in
+                guard let pending = appState.pendingChat, id != nil else { return }
+                path = [Contact(id: pending.id, name: pending.name.isEmpty ? "Mesaj" : pending.name, photo: nil)]
+                appState.pendingChat = nil
+            }
             .navigationDestination(for: Contact.self) { contact in
                 ChatView(contactId: contact.id, contactName: contact.name)
             }
@@ -217,7 +224,30 @@ struct ChatView: View {
         let mine = message.senderId == appState.currentUser?.id
         HStack {
             if mine { Spacer(minLength: 40) }
-            Text(message.body)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(message.body)
+                // Saat + (benim mesajımsa) okundu bilgisi: tek tik gönderildi,
+                // yeşil çift tik okundu — masaüstündeki MessagesDock ile aynı.
+                HStack(spacing: 3) {
+                    Text(chatTime(message.createdAt)).font(.caption2).opacity(0.75)
+                    if mine {
+                        if message.readAt != nil {
+                            HStack(spacing: -6) {
+                                Image(systemName: "checkmark")
+                                Image(systemName: "checkmark")
+                            }
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Color(red: 0.55, green: 0.96, blue: 0.66))
+                            .accessibilityLabel("Okundu")
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.caption2.weight(.bold))
+                                .opacity(0.75)
+                                .accessibilityLabel("Gönderildi")
+                        }
+                    }
+                }
+            }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(mine ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.secondarySystemBackground)), in: RoundedRectangle(cornerRadius: 16))
@@ -279,6 +309,18 @@ func messageTimeLabel(_ iso: String?) -> String {
     if cal.isDateInToday(date) { out.dateFormat = "HH:mm" }
     else if cal.isDateInYesterday(date) { return "Dün" }
     else if let days = cal.dateComponents([.day], from: date, to: Date()).day, days < 7 { out.dateFormat = "EEEE" }
-    else { out.dateFormat = "d MMM" }
+    else { out.dateFormat = "dd/MM/yyyy" }
+    return out.string(from: date)
+}
+
+/// ISO zaman damgası → yerel saat "HH:mm" (sohbet balonu).
+private func chatTime(_ iso: String?) -> String {
+    guard let iso else { return "" }
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
+    let out = DateFormatter()
+    out.locale = Locale(identifier: "tr_TR")
+    out.dateFormat = "HH:mm"
     return out.string(from: date)
 }

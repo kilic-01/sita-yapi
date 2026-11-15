@@ -223,7 +223,7 @@ struct HomeView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(q.customerName ?? "(isimsiz)").font(.subheadline)
-                                Text([q.quoteNo, q.quoteDate].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                                Text([q.quoteNo, q.quoteDate.map { trDate($0) }].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                         }
@@ -246,7 +246,7 @@ struct HomeView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(technicians.first { $0.id == g.techId }?.name ?? "Bilinmeyen teknisyen").font(.subheadline)
-                                Text("En eskisi: \(g.oldest)").font(.caption).foregroundStyle(.secondary)
+                                Text("En eskisi: \(trDate(g.oldest))").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text("\(g.items.count) zimmet")
@@ -427,7 +427,7 @@ struct HomeView: View {
         do { tomorrowAppts = try await tomorrowReq } catch { anyFailed = true; tomorrowAppts = [] }
         do { weekAppts = (try await weekReq).flatMap { $0 } } catch { anyFailed = true; weekAppts = [] }
         do {
-            quotes = (try await quotesReq).sorted { ($0.quoteDate ?? "") > ($1.quoteDate ?? "") }
+            quotes = (try await quotesReq).sorted { (($0.quoteDate ?? ""), ($0.quoteNo ?? "")) > (($1.quoteDate ?? ""), ($1.quoteNo ?? "")) }
         } catch { anyFailed = true; quotes = [] }
         do { checkouts = try await checkoutsReq } catch { anyFailed = true; checkouts = [] }
         do { technicians = try await techsReq } catch { anyFailed = true; technicians = [] }

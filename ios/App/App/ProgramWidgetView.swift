@@ -12,18 +12,43 @@ struct ProgramWidgetView: View {
     @State private var selectedDay: String = todayISODate()
     @State private var isLoading = true
     @State private var detailAppointment: Appointment?
+    /// 0 = bu hafta, -1 = geçen hafta, +1 = gelecek hafta…
+    @State private var weekOffset = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                router.selection = .appointments
-            } label: {
-                Label("Program", systemImage: "calendar.day.timeline.left")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.purple)
+            HStack(spacing: 6) {
+                Button {
+                    router.selection = .appointments
+                } label: {
+                    Label("Program", systemImage: "calendar.day.timeline.left")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.purple)
+                }
+                Spacer(minLength: 4)
+                if weekOffset != 0 {
+                    Button("Bu hafta") { weekOffset = 0 }
+                        .font(.caption.bold())
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                }
+                Button { weekOffset -= 1 } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("Önceki hafta")
+                Text(weekRangeLabel)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Button { weekOffset += 1 } label: { Image(systemName: "chevron.right") }
+                    .accessibilityLabel("Sonraki hafta")
             }
+            .buttonStyle(.borderless)
 
             weekStrip
+                // Şeridi sağa/sola kaydırarak da hafta değişir.
+                .gesture(DragGesture(minimumDistance: 30).onEnded { v in
+                    guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                    weekOffset += v.translation.width < 0 ? 1 : -1
+                })
 
             if isLoading {
                 ProgressView().frame(maxWidth: .infinity)
@@ -56,7 +81,17 @@ struct ProgramWidgetView: View {
                 )
             }
         }
-        .task { await load() }
+        .task(id: weekOffset) { await load() }
+    }
+
+    /// "16/11 – 22/11"
+    private var weekRangeLabel: String {
+        guard let first = weekDays.first, let last = weekDays.last else { return "" }
+        let short = { (iso: String) -> String in
+            let p = iso.split(separator: "-")
+            return p.count == 3 ? "\(p[2])/\(p[1])" : iso
+        }
+        return "\(short(first)) – \(short(last))"
     }
 
     private var weekStrip: some View {
@@ -137,9 +172,13 @@ struct ProgramWidgetView: View {
 
     private func load() async {
         isLoading = true
-        let monday = startOfWeekISODate()
+        let monday = isoDate(fromISO: startOfWeekISODate(), plusDays: weekOffset * 7)
         let days = (0...6).map { isoDate(fromISO: monday, plusDays: $0) }
         weekDays = days
+        // Bu haftada bugün, başka haftada o haftanın pazartesisi seçili gelir.
+        if !days.contains(selectedDay) {
+            selectedDay = weekOffset == 0 ? todayISODate() : monday
+        }
         async let techsReq: [Technician] = APIClient.shared.get("/technicians")
         var results: [String: [Appointment]] = [:]
         await withTaskGroup(of: (String, [Appointment]).self) { group in

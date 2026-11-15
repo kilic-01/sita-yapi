@@ -48,7 +48,7 @@ struct MoreView: View {
                     MoreRow(title: "Zimmet", subtitle: "Parça zimmetleme", systemImage: "shippingbox.fill", tint: .indigo)
                 }
                 NavigationLink(value: MoreDestination.quotes) {
-                    MoreRow(title: "Teklifler", subtitle: nil, systemImage: "doc.text.fill", tint: .gray)
+                    MoreRow(title: "Fiyat Teklifi", subtitle: nil, systemImage: "doc.text.fill", tint: .gray)
                 }
                 NavigationLink(value: MoreDestination.pendingParts) {
                     MoreRow(title: "Bekleyen Parçalar", subtitle: nil, systemImage: "clock.fill", tint: .orange)
@@ -159,6 +159,6 @@ func formatActivityDate(_ iso: String?) -> String {
     guard let date else { return iso }
     let out = DateFormatter()
     out.locale = Locale(identifier: "tr_TR")
-    out.dateFormat = "d MMM yyyy, HH:mm"
+    out.dateFormat = "dd/MM/yyyy HH:mm"
     return out.string(from: date)
 }

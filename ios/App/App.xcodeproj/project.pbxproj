@@ -13,6 +13,7 @@
 		137B68AA49445790C1420877 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5792F3225A94091F45EF4D45 /* LoginView.swift */; };
 		13FBAE3F488691D2F434DA10 /* PrintShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E50069AF32EFF858F3B329 /* PrintShare.swift */; };
 		1A667D0747A0FA2A8F5AD629 /* ProgramWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */; };
+		EB678BDA4F701E974EB4F61A /* DateFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDE8939EC56ED5E13A42943 /* DateFormat.swift */; };
 		2578F7EA42C2C469D1922B9B /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FA9F873D969BF29A082277 /* BarcodeScannerView.swift */; };
 		25DB6B58DF8E2D6A32F655A8 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850144F807DA244495E3F378 /* MessagesView.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -80,6 +81,7 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProgramWidgetView.swift; sourceTree = "<group>"; };
+		EDDE8939EC56ED5E13A42943 /* DateFormat.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DateFormat.swift; sourceTree = "<group>"; };
 		5792F3225A94091F45EF4D45 /* LoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		58E50069AF32EFF858F3B329 /* PrintShare.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrintShare.swift; sourceTree = "<group>"; };
 		690B234DE5C0028C56B833F8 /* VisionKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VisionKit.framework; path = System/Library/Frameworks/VisionKit.framework; sourceTree = SDKROOT; };
@@ -185,6 +187,7 @@
 				7DA322021ED611A9DF23CEB5 /* MapTabView.swift */,
 				82D791F3C94DBE0DE1B80095 /* AppointmentCreateView.swift */,
 				538C542A722CB8C101C7F143 /* ProgramWidgetView.swift */,
+				EDDE8939EC56ED5E13A42943 /* DateFormat.swift */,
 				E2B0D0AAF26A20F5302E49BB /* QuoteViews.swift */,
 				FD837655309722B34B1820B7 /* QuoteWebPrintView.swift */,
 				284B3318F6C10DACC0C91D6F /* PendingPartsView.swift */,
@@ -324,6 +327,7 @@
 				471103A0FC674052A95294DC /* MapTabView.swift in Sources */,
 				DAB9753CA741060C2E9AF482 /* AppointmentCreateView.swift in Sources */,
 				1A667D0747A0FA2A8F5AD629 /* ProgramWidgetView.swift in Sources */,
+				EB678BDA4F701E974EB4F61A /* DateFormat.swift in Sources */,
 				7AC7BB9412DDBA978729919C /* QuoteViews.swift in Sources */,
 				01A754F2526F7EB03BDCCEF6 /* QuoteWebPrintView.swift in Sources */,
 				58C3AE73C92A4DE842E3EE6C /* PendingPartsView.swift in Sources */,

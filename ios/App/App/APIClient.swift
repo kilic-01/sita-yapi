@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// server/index.js'in sunduğu aynı REST uçlarını kullanıyoruz — backend'de
 /// hiçbir değişiklik gerekmedi, web sürümü (server/public-barkod) ile aynı
@@ -93,6 +94,22 @@ actor APIClient {
         return try await get("/stock/by-barcode/\(encoded)")
     }
 
+    /// Giriş: başarılıysa kullanıcıyı döndürür ve sunucunun verdiği oturum
+    /// anahtarını Keychain'e yazar; ad/şifre hatalıysa nil.
+    func login(name: String, password: String) async throws -> AppUser? {
+        struct LoginBody: Encodable { let name: String; let password: String }
+        struct TokenOnly: Decodable { let token: String? }
+        let data = try await sendRaw(path: "/login", method: "POST", body: LoginBody(name: name, password: password))
+        // Hatalı ad/şifrede sunucu "null" döner.
+        // (try? iç içe opsiyonu tek seviyeye indirir: "null" ya da çözülemeyen → nil.)
+        guard let user = try? decoder.decode(AppUser?.self, from: data) else { return nil }
+        guard let token = (try? decoder.decode(TokenOnly.self, from: data))?.token, !token.isEmpty else {
+            throw APIError.server("Sunucu oturum anahtarı vermedi. Sunucu güncel mi?")
+        }
+        AuthToken.save(token)
+        return user
+    }
+
     /// `body` opsiyonel — bazı silme uçları (ör. /stock/:id) aktiviteyi kimin
     /// yaptığını (ve stok silmede yönetici doğrulamasını) actingUserId'den
     /// çıkarıyor; DELETE gövdesiz gönderilirse bu uçlarda kimlik kaybolurdu.
@@ -100,6 +117,7 @@ actor APIClient {
     func delete(_ path: String, body: Encodable? = nil) async throws -> Data {
         var request = URLRequest(url: baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path))
         request.httpMethod = "DELETE"
+        Self.authorize(&request)
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try encoder.encode(AnyEncodable(body))
@@ -110,6 +128,22 @@ actor APIClient {
     }
 
     private func send<T: Decodable>(path: String, method: String, body: Encodable?) async throws -> T {
+        let data = try await sendRaw(path: path, method: method, body: body)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    /// Her isteğe oturum anahtarını ekler (giriş isteğinde anahtar yoktur).
+    private static func authorize(_ request: inout URLRequest) {
+        if let token = AuthToken.value {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+    }
+
+    private func sendRaw(path: String, method: String, body: Encodable?) async throws -> Data {
         var url = baseURL
         // path kendi query string'ini taşıyabilir (ör. "/activity-log?actingUserId=...").
         // percentEncodedPath kullanılıyor: comps.path çağıranın kodladığı
@@ -126,21 +160,23 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        Self.authorize(&request)
         if let body {
             request.httpBody = try encoder.encode(AnyEncodable(body))
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.checkStatus(response, data: data)
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIError.decoding(error)
-        }
+        return data
     }
 
     private static func checkStatus(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard !(200...299).contains(http.statusCode) else { return }
+        // Oturum anahtarı geçersiz/süresi dolmuş: anahtarı sil, uygulama giriş ekranına döner.
+        if http.statusCode == 401 {
+            AuthToken.clear()
+            NotificationCenter.default.post(name: .sitaSessionExpired, object: nil)
+        }
         if let body = try? JSONDecoder().decode(APIErrorBody.self, from: data), let message = body.message {
             throw APIError.server(message)
         }
@@ -175,5 +211,64 @@ extension Error {
             }
         }
         return (self as? LocalizedError)?.errorDescription ?? "Bir hata oluştu, lütfen tekrar deneyin."
+    }
+}
+
+
+extension Notification.Name {
+    /// Sunucu 401 döndü: oturum bitti (AppState dinler ve çıkış yapar).
+    static let sitaSessionExpired = Notification.Name("sitaSessionExpired")
+}
+
+/// Sunucunun girişte verdiği oturum anahtarı — Keychain'de, yalnız bu cihazda
+/// (iCloud yedeğine/başka cihaza geçmez) ve cihazın ilk kilidi açıldıktan sonra
+/// okunabilir. Kullanıcı bilgisinin durduğu UserDefaults'a YAZILMAZ.
+enum AuthToken {
+    private static let service = "com.vitra.sitaservisplanlayici.api"
+    private static let account = "session"
+    private static var cached: String?
+    private static let lock = NSLock()
+
+    static var value: String? {
+        lock.lock(); defer { lock.unlock() }
+        if let cached { return cached }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data, let token = String(data: data, encoding: .utf8) else { return nil }
+        cached = token
+        return token
+    }
+
+    static func save(_ token: String) {
+        lock.lock(); defer { lock.unlock() }
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = Data(token.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
+        cached = token
+    }
+
+    static func clear() {
+        lock.lock(); defer { lock.unlock() }
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(base as CFDictionary)
+        cached = nil
     }
 }

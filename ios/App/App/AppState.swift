@@ -12,6 +12,13 @@ final class AppState {
     // (masaüstündeki TvBroadcastBar ile aynı). Yayın durdurulunca ya da başka
     // bir cihaz yayın yapınca refreshTvOnAir ile kaybolur.
     var tvOnAir: TvOnAir?
+    /// Mesaj bildirimine basıldı: kök ekran Mesajlar'a geçer, MessagesView bu sohbeti açıp sıfırlar.
+    var pendingChat: (id: String, name: String)? {
+        didSet { if pendingChat != nil { openMessagesTick += 1 } }
+    }
+    /// Kök ekran (iPhone sekmeleri / iPad kenar menüsü) bunu izleyip Mesajlar'a geçer.
+    /// pendingChat'i MessagesView hemen tüketip sıfırladığı için ayrı bir sayaç.
+    var openMessagesTick = 0
 
     // Son bakılanlar (cihazda saklı, en yeni başta, en fazla 5): stok ve randevu
     // aramasında kutu boşken gösterilir — aynı ürünü/müşteriyi günde birkaç kez arayan için.
@@ -40,9 +47,25 @@ final class AppState {
     private let storageKey = "sita-yapi-native-user"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+        // Oturum anahtarı olmayan eski girişler (anahtar sisteminden önceki sürüm)
+        // geçersiz: kullanıcıdan bir kez yeniden giriş istenir.
+        if AuthToken.value != nil,
+           let data = UserDefaults.standard.data(forKey: storageKey),
            let user = try? JSONDecoder().decode(AppUser.self, from: data) {
             currentUser = user
+        } else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+        }
+        // Sunucu 401 dönerse (anahtar geçersiz/süresi dolmuş, kullanıcı silinmiş) çıkış.
+        NotificationCenter.default.addObserver(forName: .sitaSessionExpired, object: nil, queue: .main) { [weak self] _ in
+            self?.logout()
+        }
+        // Bildirime basılarak açıldıysa (soğuk başlangıç) bekleyen sohbeti al; açıkken gelirse duyurudan.
+        pendingChat = PendingChat.value
+        PendingChat.value = nil
+        NotificationCenter.default.addObserver(forName: .sitaOpenChat, object: nil, queue: .main) { [weak self] _ in
+            self?.pendingChat = PendingChat.value
+            PendingChat.value = nil
         }
     }
 
@@ -55,6 +78,7 @@ final class AppState {
 
     func logout() {
         currentUser = nil
+        AuthToken.clear()
         UserDefaults.standard.removeObject(forKey: storageKey)
     }
 

@@ -69,7 +69,7 @@ enum RoutePrintHTML {
 
         let headCell = "background:#0e2a3b;color:#fff;font-size:8.5px;padding:3px 5px;text-align:left;"
         let body = """
-        \(h.pageHeaderHTML(title: "Günlük Rota", subtitle: scheduledDate))
+        \(h.pageHeaderHTML(title: "Günlük Rota", subtitle: h.formatDateTR(scheduledDate)))
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.5px;line-height:1.15;">
           <thead>
             <tr>

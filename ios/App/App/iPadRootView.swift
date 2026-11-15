@@ -25,7 +25,7 @@ enum SidebarItem: String, Hashable, CaseIterable, Identifiable {
         case .messages: return "Mesajlar"
         case .zimmet: return "Zimmet"
         case .pendingParts: return "Bekleyen Parçalar"
-        case .quotes: return "Teklifler"
+        case .quotes: return "Fiyat Teklifi"
         case .feeTracking: return "Ücret Takip"
         case .incomingOrders: return "Gelen Siparişler"
         case .depots: return "Depolar"
@@ -65,6 +65,10 @@ struct iPadRootView: View {
     var body: some View {
         splitView
             .overlay(alignment: .bottom) { TvBroadcastBar().frame(maxWidth: 560).padding(.bottom, 16) }
+            // Mesaj bildirimine basıldı → Mesajlar (sohbeti MessagesView açar).
+            .onChange(of: appState.openMessagesTick, initial: true) { _, tick in
+                if tick > 0 { selection = .messages }
+            }
     }
 
     private var splitView: some View {
@@ -148,7 +152,7 @@ struct iPadRootView: View {
             NavigationStack {
                 let userId = appState.currentUser?.id ?? ""
                 GenericListView(title: "Aktivite", fetch: { try await APIClient.shared.get("/activity-log?actingUserId=\(userId)") as [ActivityLogEntry] }) { (a: ActivityLogEntry) in
-                    (a.description ?? "İşlem", a.createdAt ?? "", nil)
+                    (a.description ?? "İşlem", trDateTime(a.createdAt, empty: ""), nil)
                 }
             }
         case .settings:
