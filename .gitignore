@@ -10,3 +10,15 @@ electron/config.js
 # APNs (push bildirimi) özel anahtarı — Apple Developer hesabından indirilen
 # .p8 dosyası, asla commit'lenmez.
 electron/secrets/
+
+# Masaüstü iCloud ile eşitleniyor: yeniden üretilebilen klasörler "*.nosync" adıyla
+# iCloud dışında tutulur, eski adlarında onlara giden kısayol (symlink) durur.
+*.nosync
+node_modules
+dist
+release
+android/.gradle
+android/build
+android/app/build
+android/tv/build
+ios/App/build
