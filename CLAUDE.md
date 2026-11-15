@@ -9,7 +9,7 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 | `android/tv` | Sita Yapı TV (Android TV, Compose) — ofis TV'sindeki Mi Box | Canlıda tv-v1.0.1. Repo'da 1.0.2 hazır, yayınlanmadı. |
 | `ios/App/App` | Mobil iOS (SwiftUI, iOS 26+) | Taslak, mağazada değil. |
 | `android/app` | Mobil Android (Compose, minSdk 26) | Taslak, mağazada değil. |
-| `server/index.js` | Mobil uygulamaların konuştuğu test sunucusu (port 4173) | `electron/db.js` + `handlers.js`'i kullanır. Oturum kontrolü YOK. |
+| `server/index.js` | Mobil uygulamaların konuştuğu test sunucusu (port 4173) | `electron/db.js` + `handlers.js`'i kullanır. Oturum anahtarı var (`server/auth.js`, 2026-11-15). |
 
 `ios/App/App/public`, `android/app/src/main/assets/public` ve capacitor modülleri eski Capacitor sürümünden kalma.
 
@@ -29,9 +29,11 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
   `cd android && ./gradlew :app:assembleDebug --no-daemon --console=plain -q`
   `adb -s <cihaz> install -r app/build/outputs/apk/debug/app-debug.apk`
 - **iOS simülatör** (iPhone 18 Pro `4A9CD359-F413-49FD-8CDE-ECC012D14BB0`):
-  `cd ios/App && xcodebuild -project App.xcodeproj -scheme App -configuration Debug -destination "id=<sim>" -derivedDataPath build/dd build -quiet`
-  Hata ararken `grep " error:"` kullan.
-- **iPhone "Emre"** (`00008150-00154DC03CE2401C`): `-derivedDataPath build/dd-device -allowProvisioningUpdates`, sonra `xcrun devicectl device install app --device ...`. Telefonun kilidi açık olmalı.
+  `cd ios/App && xcodebuild -project App.xcodeproj -scheme App -configuration Debug -destination "id=<sim>" -derivedDataPath ~/Library/Developer/Xcode/DerivedData/sita-sim build -quiet`
+  Hata ararken `grep " error:"` kullan. derivedDataPath iCloud DIŞINDA olmalı: `build/dd*` eski `~/Projeler/test` yolunu tutuyor, iCloud ayrıca cihaz imzasını bozuyor ("resource fork… detritus").
+- **iPhone "Emre"** (`00008150-00154DC03CE2401C`): `-derivedDataPath ~/Library/Developer/Xcode/DerivedData/sita-device -allowProvisioningUpdates`, sonra `xcrun devicectl device install app --device ... <dd>/Build/Products/Debug-iphoneos/App.app`. Telefonun kilidi açık olmalı.
+- **Telefonda sunucu adresi:** Android `shared_prefs/sita-yapi-server.xml` (`address`), iOS UserDefaults `sita-yapi-server-address`. Uygulamadaki giriş ekranından da değişir.
+- **Yeni Swift dosyası** eklenince `App.xcodeproj/project.pbxproj`'a da kaydedilmeli (otomatik değil).
 - **TV:** `./gradlew :tv:assembleDebug`. Sürüm çıkarmak: `build.gradle` versionCode/versionName → `scripts/release-tv.sh`.
 - **Masaüstü Windows:** `electron-builder --win --x64` (bu Mac Apple Silicon).
 
@@ -45,16 +47,18 @@ Mac'in LAN IP'si değişebiliyor; son değer 192.168.1.102. Mobil uygulamalardak
 | Oppo CPH2185 (Android 10, test telefonu) | USB `QSBM7DZL8H8HKNGQ`, kablosuz `192.168.1.127:5555` | |
 | Mi Box (ofis TV) | 192.168.1.84 | |
 
-## Durum (2026-11-15) — `tv-yayin` dalı, main'e birleştirilmedi, push edilmedi
-- `dfe9768` mobil uygulamalar: iOS/Android eşitlendi, tasarım yenilendi.
-- `a3cfdf8` TV yayın onayı: TV "shown" onayı gönderiyor. Bağlı TV yoksa ya da onay gelmezse masaüstü ve mobilde hata/uyarı çıkıyor. TV 1.0.2.
-- `f7af414` iCloud taşıma (`.nosync` klasörler).
-- Kontrol: Android lint hataları giderildi, Android ekran turu çökmesiz, iOS uyarısız derleniyor.
+## Durum (2026-11-16) — `tv-yayin` dalı, main'e birleştirilmedi, push edilmedi
+- `cb2cf37` Mobil API: oturum anahtarı (`server/auth.js`), kimlik bağlama, giriş deneme sınırı; canlı hazırlık (Dockerfile, `server/config.production.js`, `docs/CANLI-SUNUCU.md`). Docker imajı yerelde derlenip denetlendi (gizli dosya yok, `node` kullanıcısı, eksik ortam değişkeninde açılmıyor).
+- `bb6340f` Masaüstü: yeni header/ana sayfa, Program haftaları, GG/AA/YYYY, kamera hata mesajları (v1.1.16'ya girecek, yayınlanmadı).
+- `9b5d193` Android, `549d9b9` iOS/iPad: oturum anahtarı (Keystore/Keychain), bildirime basınca sohbet, okundu bilgisi, teklif düzenleme, kaydırma/geri al düzeltmeleri.
+- `ec76359` TV: fotoğraf inmezse sıradakine geçer (1.0.2'ye girecek).
+- Firebase projesi `com-vitra-sitaservisplanlayici`: `android/app/google-services.json` ve `electron/secrets/fcm-service-account.json` yerinde (git dışı); Android bildirimleri DEV'de çalıştı.
+- GitHub deposu HERKESE AÇIK — hiçbir gizli değer commit'lenmez; geçmiş tarandı, temiz.
+- `ios/App/App/PrivacyInfo.xcprivacy` hazır ama projeye eklenmedi/commit'lenmedi.
 
 ## Sıradaki işler / açık konular
-1. **Mobil yayın öncesi (kullanıcıya anlatıldı, yapılmadı):**
-   - `server/index.js` internete HTTPS ile taşınmalı.
-   - Oturum kontrolü (token) eklenmeli; en kritik güvenlik açığı bu.
+1. **Mobil yayın (önce iOS, Android sonra):** Karar: B yolu — `server/index.js` bulut barındırmada (Render önerildi), veri Supabase PROD. Kullanıcı hesap açıp gizli değerleri kendisi girecek (`docs/CANLI-SUNUCU.md`); push ve main birleştirme yalnız açık onayla.
+   - Oturum kontrolü YAPILDI (2026-11-15, commit edilmedi): `server/auth.js` — girişte HMAC imzalı 30 günlük anahtar, `/api` altında her istek `Authorization: Bearer` ister, gövdedeki `actingUserId` anahtarın sahibiyle değiştirilir, girişte kaba kuvvet sınırı (IP 10 / ad 5 deneme, 15 dk), güvenlik başlıkları. iOS anahtarı Keychain'de, Android Keystore AES-GCM ile şifreli saklar; 401'de çıkış. Canlıda `SITA_TOKEN_SECRET` (≥32 karakter) zorunlu; DEV'de `server/.token-secret` (git dışı). HTTPS'e geçince HSTS eklenmeli.
    - ATS `NSAllowsArbitraryLoads` ve Android `usesCleartextTraffic` kaldırılmalı.
    - Android upload keystore + AAB hazırlanmalı.
    - iOS `PrivacyInfo.xcprivacy` eklenmeli.
@@ -62,3 +66,4 @@ Mac'in LAN IP'si değişebiliyor; son değer 192.168.1.102. Mobil uygulamalardak
 2. **Masaüstü:** TV uyarısı için yeni sürüm gerekir (v1.1.16), yayınlanmadı.
 3. **TV:** 1.0.2 Mi Box'a çıkmadı. `tv-yayin` kanalını private yapmak (RLS) bekliyor. Mi Box'ta USB hata ayıklama kapatılmalı.
 4. **Mobil:** Kaydırma hareketleri, takvim ve teklif detayı gerçek telefonda kullanıcıyla birlikte denenmeli.
+5. **Depo kamerası (2026-11-15):** DVR 78.161.19.251:15541'e bu Mac'ten ulaşılamıyor (tüm portlar zaman aşımı). Kullanıcı depoda kontrol edecek: DVR/modem açık mı, depo dış IP'si değişti mi, port yönlendirmesi duruyor mu. Kod tarafında `electron/camera.js` hata mesajları düzeltildi (anlaşılır Türkçe mesaj, RTSP şifresi gizlenir).
