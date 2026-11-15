@@ -64,6 +64,7 @@ Mac'in LAN IP'si değişebiliyor; son değer 192.168.1.102. Mobil uygulamalardak
    - iOS `PrivacyInfo.xcprivacy` eklenmeli.
    - Dağıtım sırası: TestFlight ve Play dahili test → gizli/liste dışı yayın. Önce ofis, sonra saha.
 2. **Masaüstü:** TV uyarısı için yeni sürüm gerekir (v1.1.16), yayınlanmadı.
-3. **TV:** 1.0.2 Mi Box'a çıkmadı. `tv-yayin` kanalını private yapmak (RLS) bekliyor. Mi Box'ta USB hata ayıklama kapatılmalı.
+3. **TV:** 1.0.2 Mi Box'a çıkmadı — iOS canlıya çıkarken senkron çıkacak (2026-11-16 kararı). Mi Box'ta USB hata ayıklama kapatılmalı.
+   - **RLS (`tv-yayin` kanalını özel yapmak) MASAÜSTÜ v1.1.16 İLE BİRLİKTE yapılacak (kullanıcı kararı, 2026-11-16).** Şu an kanal herkese açık: publishable anahtar TV APK'sında (GitHub'da açık) — anahtarı bilen TV'de içerik gösterebilir, TV'ye gidenleri (teklif/stok) dinleyebilir, sahte TV olabilir. Gerekenler aynı anda: Supabase PROD'da private kanal + realtime.messages politikası, TV'ye kimlik (giriş/JWT), masaüstü ve sunucunun kanala `private: true` ile bağlanması. Yalnız Supabase tarafı değişirse canlı masaüstü v1.1.15 TV'ye yayın yapamaz.
 4. **Mobil:** Kaydırma hareketleri, takvim ve teklif detayı gerçek telefonda kullanıcıyla birlikte denenmeli.
 5. **Depo kamerası (2026-11-15):** DVR 78.161.19.251:15541'e bu Mac'ten ulaşılamıyor (tüm portlar zaman aşımı). Kullanıcı depoda kontrol edecek: DVR/modem açık mı, depo dış IP'si değişti mi, port yönlendirmesi duruyor mu. Kod tarafında `electron/camera.js` hata mesajları düzeltildi (anlaşılır Türkçe mesaj, RTSP şifresi gizlenir).
