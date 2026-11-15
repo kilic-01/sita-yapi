@@ -53,14 +53,17 @@ export const SHOP_LOCATION = { lat: shopLat, lng: shopLng };
 // açılışta yalnız bu sürecin okuyabileceği geçici dosyalara yazılır ---
 const secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "sita-secrets-"));
 fs.chmodSync(secretsDir, 0o700);
-function secretFile(envName, fileName) {
+// unescapeNewlines: tek satıra yazılmış PEM anahtarındaki "\n" dizilerini gerçek
+// satır sonuna çevirir. JSON'a UYGULANMAZ (JSON'daki "\n" kaçışları geçerli
+// JSON'dur; çevrilirse dosya bozulur).
+function secretFile(envName, fileName, { unescapeNewlines = false } = {}) {
   const content = required(envName);
   const file = path.join(secretsDir, fileName);
-  if (content) fs.writeFileSync(file, content.replace(/\\n/g, "\n"), { mode: 0o600 });
+  if (content) fs.writeFileSync(file, unescapeNewlines ? content.replace(/\\n/g, "\n") : content, { mode: 0o600 });
   return file;
 }
 
-export const APNS_KEY_PATH = secretFile("APNS_KEY_P8", "apns.p8");
+export const APNS_KEY_PATH = secretFile("APNS_KEY_P8", "apns.p8", { unescapeNewlines: true });
 export const APNS_KEY_ID = required("APNS_KEY_ID");
 export const APNS_TEAM_ID = required("APNS_TEAM_ID");
 export const APNS_BUNDLE_ID = optional("APNS_BUNDLE_ID", "com.vitra.sitaservisplanlayici");
