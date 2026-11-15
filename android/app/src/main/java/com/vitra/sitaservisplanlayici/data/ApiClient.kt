@@ -45,13 +45,19 @@ object ApiClient {
     private val baseUrl: String
         get() = normalizeBaseUrl(serverAddress)
 
-    /** "192.168.1.5", "192.168.1.5:4173", "http://host:4173/api" → "http://host:port/api" */
+    /**
+     * "192.168.1.5", "192.168.1.5:4173", "http://host:4173/api" → "http://host:port/api"
+     * "https://sita-yapi-api.onrender.com" → "https://sita-yapi-api.onrender.com/api"
+     */
     fun normalizeBaseUrl(address: String): String {
         var a = address.trim().trimEnd('/')
         if (!a.startsWith("http://") && !a.startsWith("https://")) a = "http://$a"
         if (a.endsWith("/api")) a = a.removeSuffix("/api")
         val hostPart = a.substringAfter("://")
-        if (!hostPart.contains(':')) a = "$a:4173"
+        // Port yalnız şifresiz yerel sunucu (ofis Mac'i, 4173) için eklenir; HTTPS
+        // adresinde (canlı sunucu) standart 443 — eskiden ":4173" ekleniyor, canlıya
+        // bağlanırken zaman aşımı oluyordu (iOS'taki aynı hata).
+        if (a.startsWith("http://") && !hostPart.contains(':')) a = "$a:4173"
         return "$a/api"
     }
 
