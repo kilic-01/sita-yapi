@@ -55,13 +55,17 @@ actor APIClient {
     }
 
     /// "192.168.1.5", "192.168.1.5:4173", "http://host:4173/api" → "http://host:port/api"
+    /// "https://sita-yapi-api.onrender.com" → "https://sita-yapi-api.onrender.com/api"
     nonisolated static func baseURL(for address: String) -> URL? {
         var a = address.trimmingCharacters(in: .whitespacesAndNewlines)
         while a.hasSuffix("/") { a.removeLast() }
         if !a.hasPrefix("http://") && !a.hasPrefix("https://") { a = "http://" + a }
         if a.hasSuffix("/api") { a.removeLast(4) }
         let hostPart = a.components(separatedBy: "://").last ?? a
-        if !hostPart.contains(":") { a += ":4173" }
+        // Port yalnız şifresiz yerel sunucu (ofis Mac'i, 4173) için eklenir. HTTPS
+        // adresinde (canlı sunucu) standart 443 kullanılır — eskiden ":4173"
+        // ekleniyor, canlı sunucuya bağlantı zaman aşımına düşüyordu.
+        if a.hasPrefix("http://") && !hostPart.contains(":") { a += ":4173" }
         return URL(string: a + "/api")
     }
 
