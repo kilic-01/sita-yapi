@@ -28,7 +28,8 @@ Render, Fly.io ya da Railway — üçü de bu depodaki `Dockerfile`'ı doğrudan
 - **Plan:** Sürekli açık kalan ücretli en küçük plan. (Ücretsiz planlar boşta
   kalınca uyur; telefon ilk istekte 30–60 sn bekler.)
 - **Health check path:** `/healthz`
-- **Otomatik dağıtım:** yalnız `main` dalından (test dalları canlıya gitmesin).
+- **Dal:** `ios-canli` (2026-11-16 kararı: önce yalnız iOS; `main`'e dokunulmaz).
+- **Otomatik dağıtım:** kapalı (Off) — her dağıtım elle "Manual Deploy" ile.
 
 ## 2. Ortam değişkenleri (hepsi "secret" olarak girilir)
 
@@ -48,7 +49,7 @@ Render, Fly.io ya da Railway — üçü de bu depodaki `Dockerfile`'ı doğrudan
 | `FILOTIM_API_KEY` | Masaüstündeki değer (yakıt) | — |
 | `APNS_BUNDLE_ID` | Varsayılan `com.vitra.sitaservisplanlayici` | — |
 
-`NODE_ENV=production` ve `PORT` Dockerfile/hizmet tarafından verilir.
+`NODE_ENV=production`, `SITA_TV_AUTORESPOND=off` (TV'yi yalnız masaüstü yönetir) ve `PORT` Dockerfile/hizmet tarafından verilir; girilmez.
 
 Bir zorunlu değer eksikse sunucu **açılmaz** ve günlükte yalnız eksik
 değişkenlerin **adlarını** yazar (değerler hiçbir zaman günlüğe yazılmaz).
