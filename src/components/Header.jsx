@@ -1,59 +1,49 @@
 import { useEffect, useRef, useState } from "react";
 import { Moon, Sun, TriangleAlert, LogOut, Bell, Trash2, PanelLeft, Wifi, WifiOff, Loader2 } from "lucide-react";
-import { TABS } from "./navTabs.jsx";
+import { TABS, TAB_GROUPS } from "./navTabs.jsx";
 import { useSyncStatus, useHeaderAlerts } from "../lib/useHeaderAlerts.js";
-import MarqueeText from "./MarqueeText.jsx";
 import GeocodeIssueNotice from "./GeocodeIssueNotice.jsx";
 
 export { TABS };
 
-// macOS Dock'taki gibi: imleç bir ikona yaklaştıkça o ikon (ve komşuları
-// azalan oranda) büyür. Konum, her butonun gerçek DOM dikdörtgeninden
-// okunur (ref üzerinden) — sabit piksel varsayımı yapmaz.
-const MAGNIFY_RADIUS = 80;
-const MAGNIFY_SCALE = 0.45;
-
+// Ortada yüzen SABİT dock: ikonlar hiç büyümez/kaymaz (eski "magnify" ve
+// üzerine gelince açılan etiket, tıklanacak ikonun yerini değiştirip anında
+// basmayı zorlaştırıyordu; Windows'ta da istendiği gibi çalışmıyordu). Sekme
+// adı ikonun altında gecikmesiz bir ipucu olarak çıkar, hiçbir şeyi itmez.
+// Gruplar (TAB_GROUPS, Sidebar'daki ile aynı) ince ayraçla ayrılır.
 function Dock({ tabs, activeTab, onTabChange }) {
-  const itemRefs = useRef({});
-  const [mouseX, setMouseX] = useState(null);
-
-  function scaleFor(id) {
-    if (mouseX == null) return 1;
-    const el = itemRefs.current[id];
-    if (!el) return 1;
-    const rect = el.getBoundingClientRect();
-    const center = rect.left + rect.width / 2;
-    const factor = Math.max(0, 1 - Math.abs(mouseX - center) / MAGNIFY_RADIUS);
-    return 1 + factor * factor * MAGNIFY_SCALE;
-  }
+  const visible = new Set(tabs.map((t) => t.id));
+  const groups = TAB_GROUPS.map((ids) => tabs.filter((t) => ids.includes(t.id))).filter((g) => g.length > 0);
+  // TAB_GROUPS'ta olmayan (ileride eklenen) sekmeler kaybolmasın.
+  const grouped = new Set(TAB_GROUPS.flat());
+  const ungrouped = tabs.filter((t) => !grouped.has(t.id));
+  if (ungrouped.length > 0) groups.push(ungrouped);
 
   return (
-    <div
-      className="dock"
-      onMouseMove={(e) => setMouseX(e.clientX)}
-      onMouseLeave={() => setMouseX(null)}
-    >
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          ref={(el) => {
-            itemRefs.current[tab.id] = el;
-          }}
-          className={`dock-item${activeTab === tab.id ? " active" : ""}`}
-          onClick={() => onTabChange(tab.id)}
-          aria-label={tab.label}
-          style={{ transform: `scale(${scaleFor(tab.id)})` }}
-        >
-          <span className="dock-icon">
-            {tab.icon}
-            {activeTab === tab.id && <span className="dock-dot" />}
-          </span>
-          <span className="dock-label">
-            <MarqueeText text={tab.label} maxWidth={140} />
-          </span>
-        </button>
+    <nav className="dock" aria-label="Sayfalar">
+      {groups.map((group, gi) => (
+        <div key={gi} className="dock-group">
+          {gi > 0 && <span className="dock-sep" aria-hidden="true" />}
+          {group.map((tab) =>
+            visible.has(tab.id) ? (
+              <button
+                key={tab.id}
+                type="button"
+                className={`dock-item${activeTab === tab.id ? " active" : ""}`}
+                onClick={() => onTabChange(tab.id)}
+                aria-label={tab.label}
+                aria-current={activeTab === tab.id ? "page" : undefined}
+              >
+                {tab.icon}
+                <span className="dock-tip" role="tooltip">
+                  {tab.label}
+                </span>
+              </button>
+            ) : null
+          )}
+        </div>
       ))}
-    </div>
+    </nav>
   );
 }
 

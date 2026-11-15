@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   Search,
   User,
@@ -12,6 +12,10 @@ import {
   CalendarPlus,
   BadgeTurkishLira,
   Airplay,
+  CalendarDays,
+  Wallet,
+  TrendingUp,
+  PackageX,
 } from "lucide-react";
 import GridLayout, { useContainerWidth } from "react-grid-layout";
 import { UserAvatar } from "../lib/avatars.jsx";
@@ -31,12 +35,13 @@ function daysAgoISO(n) {
   return toLocalISODate(d);
 }
 
-function formatDayLabel(iso) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("tr-TR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
+// Selamlama satırı için ay ve gün adıyla: "15 Kasım 2026, Pazar" (kullanıcı
+// isteği; diğer yerler GG/AA/YYYY).
+function formatGreetingDate(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  const date = d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+  const weekday = d.toLocaleDateString("tr-TR", { weekday: "long" });
+  return `${date}, ${weekday}`;
 }
 
 function formatMoney(n) {
@@ -114,6 +119,19 @@ export default function HomePage({
   const [showQuickSale, setShowQuickSale] = useState(false);
 
   const [search, setSearch] = useState("");
+  const searchRef = useRef(null);
+  // Ctrl+K / Cmd+K ya da (bir yazı alanında değilken) "/" → aramaya odaklan.
+  useEffect(() => {
+    function onKey(e) {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const term = search.trim().toLowerCase();
   const phoneTerm = search.replace(/\D/g, "");
 
@@ -178,6 +196,8 @@ export default function HomePage({
     () => appointments.filter((a) => a.scheduledDate === today),
     [appointments, today]
   );
+  const todayActive = todaysAppointments.filter((a) => a.status !== "cancelled");
+  const todayDone = todayActive.filter((a) => a.status === "completed").length;
 
   // Özet şeridi için: bekleyen tahsilat, bu haftaki tamamlanma oranı, kritik
   // stok. İptal edilen randevular tahsilat ve tamamlanma oranı hesaplarına
@@ -243,34 +263,59 @@ export default function HomePage({
   };
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "0.75rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
-          <UserAvatar user={currentUser} users={users.length ? users : [currentUser]} size={40} />
+    <div className="home">
+      {/* Üst bölüm: selamlama solda, hızlı işlemler sağda. */}
+      <div className="home-hero">
+        <div className="home-hero-greeting">
+          <UserAvatar user={currentUser} users={users.length ? users : [currentUser]} size={52} />
           <div>
-            <strong>Merhaba, {currentUser.name}</strong>{" "}
-            <small style={{ opacity: 0.7 }}>· {formatDayLabel(today)}</small>
+            <h1>Merhaba, {currentUser.name}</h1>
+            <p>{formatGreetingDate(today)}</p>
           </div>
         </div>
+        <div className="home-hero-actions">
+          <button type="button" className="secondary home-btn" onClick={() => setShowQuickAppointment(true)}>
+            <CalendarPlus size={17} strokeWidth={1.75} />
+            Randevu Oluştur
+          </button>
+          <button type="button" className="secondary home-btn" onClick={() => setShowQuickSale(true)}>
+            <BadgeTurkishLira size={17} strokeWidth={1.75} />
+            Satış
+          </button>
+          {editMode && (
+            <button type="button" className="secondary home-btn" onClick={handleReset}>
+              <RotateCcw size={16} strokeWidth={1.75} />
+              Sıfırla
+            </button>
+          )}
+          <button
+            type="button"
+            className={`${editMode ? "primary" : "secondary"} home-btn home-btn-icon`}
+            onClick={() => setEditMode((v) => !v)}
+            title={editMode ? "Düzeni Kaydet" : "Kartların yerini düzenle"}
+            aria-label={editMode ? "Düzeni Kaydet" : "Kartların yerini düzenle"}
+          >
+            {editMode ? <Check size={17} strokeWidth={1.75} /> : <LayoutGrid size={17} strokeWidth={1.75} />}
+          </button>
+        </div>
+      </div>
 
-        <div style={{ position: "relative", flex: 1, maxWidth: 420, marginLeft: "auto" }}>
-          <Search
-            size={15}
-            strokeWidth={1.75}
-            style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.5 }}
-          />
+      {/* Genel arama: her yerden Ctrl+K ya da "/" ile odaklanır. */}
+        <div className="home-search">
+          <Search className="home-search-icon" size={18} strokeWidth={1.75} />
           <input
+            ref={searchRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Müşteri, ürün veya teklif ara…"
-            style={{
-              width: "100%",
-              padding: "0.5rem 0.75rem 0.5rem 2.1rem",
-              borderRadius: 999,
-              border: "1px solid var(--border)",
-              background: "var(--card-bg)",
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                clearSearch();
+                e.currentTarget.blur();
+              }
             }}
+            placeholder="Müşteri, telefon, ürün kodu ya da teklif ara…"
           />
+          {!term && <kbd className="home-search-kbd">Ctrl K</kbd>}
           {term && (
             <div
               className="no-scrollbar"
@@ -415,80 +460,50 @@ export default function HomePage({
             </div>
           )}
         </div>
-      </div>
 
-      <div className="stats-strip">
-        <div className="stats-strip-item">
-          <span
-            className="stats-strip-number"
-            style={{ color: pendingCollection === 0 ? "var(--success)" : undefined }}
-          >
-            ₺{formatMoney(pendingCollection)}
+      {/* Günün özeti: dört eşit kart, tıklanınca ilgili sayfaya gider. */}
+      <div className="home-metrics">
+        <button type="button" className="home-metric" onClick={() => onNavigate("appointments")}>
+          <span className="home-metric-icon" style={{ "--tone": "var(--accent)" }}>
+            <CalendarDays size={18} strokeWidth={1.75} />
           </span>
-          <span className="stats-strip-label">Bekleyen Tahsilat</span>
-        </div>
-        <div className="stats-strip-divider" />
-        <div className="stats-strip-item">
-          <span className="stats-strip-number">%{weekCompletionRate}</span>
-          <span className="stats-strip-label">Bu Hafta Tamamlandı</span>
-        </div>
-        <div className="stats-strip-divider" />
-        <div className="stats-strip-item">
-          <span
-            className="stats-strip-number"
-            style={{ color: criticalStockCount === 0 ? "var(--success)" : "var(--danger)" }}
-          >
-            {criticalStockCount}
+          <span className="home-metric-label">Bugünkü Randevular</span>
+          <span className="home-metric-value">
+            {todayActive.length}
+            {todayActive.length > 0 && <small> · {todayDone} tamamlandı</small>}
           </span>
-          <span className="stats-strip-label">Kritik Stok</span>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setShowQuickSale(true)}
-            style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-          >
-            <BadgeTurkishLira size={16} strokeWidth={1.75} />
-            Satış
-          </button>
-        </div>
-
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setShowQuickAppointment(true)}
-            style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-          >
-            <CalendarPlus size={16} strokeWidth={1.75} />
-            Randevu Oluştur
-          </button>
-          {editMode && (
-            <button
-              type="button"
-              className="secondary"
-              onClick={handleReset}
-              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-            >
-              <RotateCcw size={15} strokeWidth={1.75} />
-              Sıfırla
-            </button>
-          )}
-          <button
-            type="button"
-            className={editMode ? "primary" : "secondary"}
-            onClick={() => setEditMode((v) => !v)}
-            title={editMode ? "Düzeni Kaydet" : "Düzeni Düzenle"}
-            aria-label={editMode ? "Düzeni Kaydet" : "Düzeni Düzenle"}
-            style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-          >
-            {editMode ? <Check size={15} strokeWidth={1.75} /> : <LayoutGrid size={15} strokeWidth={1.75} />}
-          </button>
-        </div>
+          <span className="home-metric-bar">
+            <span style={{ width: `${todayActive.length ? Math.round((todayDone / todayActive.length) * 100) : 0}%` }} />
+          </span>
+        </button>
+        <button type="button" className="home-metric" onClick={() => onNavigate("feeTracking")}>
+          <span className="home-metric-icon" style={{ "--tone": pendingCollection === 0 ? "var(--success)" : "#ff9500" }}>
+            <Wallet size={18} strokeWidth={1.75} />
+          </span>
+          <span className="home-metric-label">Bekleyen Tahsilat</span>
+          <span className="home-metric-value">₺{formatMoney(pendingCollection)}</span>
+          <span className="home-metric-hint">{pendingCollection === 0 ? "Bugün bekleyen yok" : "Bugünkü randevulardan"}</span>
+        </button>
+        <button type="button" className="home-metric" onClick={() => onNavigate("appointments")}>
+          <span className="home-metric-icon" style={{ "--tone": "var(--teal-1)" }}>
+            <TrendingUp size={18} strokeWidth={1.75} />
+          </span>
+          <span className="home-metric-label">Bu Hafta Tamamlanan</span>
+          <span className="home-metric-value">%{weekCompletionRate}</span>
+          <span className="home-metric-bar">
+            <span style={{ width: `${weekCompletionRate}%`, background: "var(--teal-1)" }} />
+          </span>
+        </button>
+        <button type="button" className="home-metric" onClick={() => onNavigate("stock")}>
+          <span className="home-metric-icon" style={{ "--tone": criticalStockCount === 0 ? "var(--success)" : "var(--danger)" }}>
+            <PackageX size={18} strokeWidth={1.75} />
+          </span>
+          <span className="home-metric-label">Kritik Stok</span>
+          <span className="home-metric-value" style={{ color: criticalStockCount === 0 ? undefined : "var(--danger)" }}>
+            {criticalStockCount.toLocaleString("tr-TR")}
+          </span>
+          <span className="home-metric-hint">{criticalStockCount === 0 ? "Sorun yok" : "ürün azaldı"}</span>
+        </button>
       </div>
 
       <div ref={gridContainerRef}>

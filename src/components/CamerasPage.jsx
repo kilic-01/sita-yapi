@@ -272,7 +272,7 @@ function CameraTile({ dvrId, channel, aspectRatio, large, onExpand, zoom = 1, br
             textShadow: "0 1px 3px rgba(0,0,0,0.8)",
           }}
         >
-          {now.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
+          {now.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" }).replace(/^(\d{2})\.(\d{2})\.(\d{4})/, "$1/$2/$3")}
         </div>
       )}
     </div>

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import {
+  ChevronRight,
+  ChevronLeft,
   TriangleAlert,
   Clock,
   MoreHorizontal,
@@ -17,7 +19,7 @@ import {
 import { colorForTechnician } from "../lib/techColors.js";
 import { TechnicianAvatar } from "../lib/avatars.jsx";
 import { computeTotals } from "../lib/orderTotals.js";
-import { todayISO, toLocalISODate, STATUS_LABELS, isOnLeave, isLowStock, DEFAULT_LOW_STOCK_THRESHOLD } from "../lib/format.js";
+import { todayISO, toLocalISODate, STATUS_LABELS, isOnLeave, isLowStock, DEFAULT_LOW_STOCK_THRESHOLD, formatDayLabelTR } from "../lib/format.js";
 import Modal from "./Modal.jsx";
 import { QuoteHeader, ItemTable, QuoteFooter, PRINT_CONTENT_STYLE } from "./QuotePrintView.jsx";
 
@@ -32,12 +34,9 @@ function tomorrowISO() {
   return toLocalISODate(d);
 }
 
+// "16/11/2026 Pazartesi" (bkz. lib/format.js formatDayLabelTR)
 function formatDayLabel(iso) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("tr-TR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
+  return formatDayLabelTR(iso);
 }
 
 function formatMoney(n) {
@@ -47,7 +46,7 @@ function formatMoney(n) {
 function formatDate(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
-  return `${d}.${m}.${y}`;
+  return `${d}/${m}/${y}`;
 }
 
 function startOfWeekISO() {
@@ -334,12 +333,21 @@ export function TomorrowAppointmentsWidget({ appointments, onNavigate }) {
 
 export function ProgramWidget({ appointments, technicians, currentUser, onEditAppointment }) {
   const today = todayISO();
-  const scheduleWeekStart = startOfWeekISO();
+  // 0 = bu hafta, -1 = geçen hafta, +1 = gelecek hafta…
+  const [weekOffset, setWeekOffset] = useState(0);
+  const scheduleWeekStart = addDaysISO(startOfWeekISO(), weekOffset * 7);
   const scheduleDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDaysISO(scheduleWeekStart, i)),
     [scheduleWeekStart]
   );
   const [selectedDay, setSelectedDay] = useState(today);
+
+  // Bu haftada bugün, başka haftada o haftanın pazartesisi seçili gelir.
+  function changeWeek(offset) {
+    setWeekOffset(offset);
+    setSelectedDay(offset === 0 ? today : addDaysISO(startOfWeekISO(), offset * 7));
+  }
+  const shortDM = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   const [openMenuId, setOpenMenuId] = useState(null);
   const [infoAppointment, setInfoAppointment] = useState(null);
 
@@ -367,6 +375,22 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", flexShrink: 0 }}>
         <CalendarDays size={18} strokeWidth={1.75} />
         <h3 style={{ margin: 0 }}>Program</h3>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+          {weekOffset !== 0 && (
+            <button type="button" className="secondary" style={{ padding: "0.15rem 0.55rem", fontSize: "0.78rem" }} onClick={() => changeWeek(0)}>
+              Bu hafta
+            </button>
+          )}
+          <button type="button" className="icon-btn" title="Önceki hafta" aria-label="Önceki hafta" onClick={() => changeWeek(weekOffset - 1)}>
+            <ChevronLeft size={16} strokeWidth={1.75} />
+          </button>
+          <small style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+            {shortDM(scheduleDays[0])} – {shortDM(scheduleDays[6])}
+          </small>
+          <button type="button" className="icon-btn" title="Sonraki hafta" aria-label="Sonraki hafta" onClick={() => changeWeek(weekOffset + 1)}>
+            <ChevronRight size={16} strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
 
       <div className="week-strip" style={{ flexShrink: 0 }}>

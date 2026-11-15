@@ -14,7 +14,7 @@ function formatDay(iso) {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   if (d.toDateString() === yesterday.toDateString()) return "Dün";
-  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "long" });
+  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" }).replace(/\./g, "/");
 }
 
 // LinkedIn'in sağ-alt köşede sabit duran mesajlaşma çubuğu gibi: sekme

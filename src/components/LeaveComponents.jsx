@@ -59,7 +59,7 @@ export function LeaveRangesEditor({ leaves, onChange, holidays = [] }) {
 function formatDateOnly(iso) {
   if (!iso) return "-";
   const [y, m, d] = iso.split("-");
-  return `${d}.${m}.${y}`;
+  return `${d}/${m}/${y}`;
 }
 
 // Teknisyenler VE ofis çalışanları için ortak yıllık izin tablosu —

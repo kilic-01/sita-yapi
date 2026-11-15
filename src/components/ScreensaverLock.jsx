@@ -7,13 +7,12 @@ function formatClock(date) {
 }
 
 function formatDate(date) {
-  return date.toLocaleDateString("tr-TR", {
-    timeZone: "Europe/Istanbul",
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  // "16/11/2026 Pazartesi"
+  const numeric = date
+    .toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul", day: "2-digit", month: "2-digit", year: "numeric" })
+    .replace(/\./g, "/");
+  const weekday = date.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul", weekday: "long" });
+  return `${numeric} ${weekday}`;
 }
 
 // Fotoğraf çok açık (ör. kar, beyaz duvar) renkteyse beyaz yazı/logo

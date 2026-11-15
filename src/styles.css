@@ -228,71 +228,143 @@ button {
 }
 
 .header-logo {
-  height: 100%;
-  max-height: 88px;
+  /* 82 → 90 → 99 px (kullanıcı isteğiyle iki kez %10). Header 96 px olsa da
+     logo dosyasının üst/altı saydam boşluk (görsel kısım ortadaki ~%50), taşan
+     kısım görünmez; negatif margin yerleşimi itmesin diye. */
+  height: 99px;
+  max-height: 99px;
+  margin: -6px 0;
   width: auto;
   display: block;
 }
 
+/* Ortada yüzen sabit dock (Header.jsx Dock). Hiçbir öğe büyümez ya da
+   kaymaz: ikonlar hep aynı yerde durur, tek tıkla anında basılır. Ad,
+   ikonun altında gecikmesiz ipucu olarak çıkar (yerleşimi etkilemez). */
 .dock {
   display: flex;
-  align-items: flex-end;
-  gap: 0.3rem;
+  align-items: center;
+  /* İki yanda auto: logo ile sağdaki bloğun arasında ortalanır. */
   margin-left: auto;
-  padding: 0.4rem 0.55rem;
-  border-radius: 999px;
+  margin-right: auto;
+  /* Biçim: yüzen dock (I tasarımı). Renkler: eski dock'unki (açık gri). */
+  padding: 6px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--header-text) 6%, transparent);
   border: 1px solid color-mix(in srgb, var(--header-text) 10%, transparent);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 20px rgba(14, 42, 59, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dock-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dock-sep {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: color-mix(in srgb, var(--header-text) 14%, transparent);
 }
 
 .dock-item {
   position: relative;
-  height: 40px;
-  border-radius: 11px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 12px;
   border: none;
   background: transparent;
   color: var(--header-text);
   opacity: 0.72;
-  display: inline-flex;
-  align-items: center;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   padding: 0;
-  overflow: hidden;
-  transform-origin: bottom center;
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease,
-    background 0.15s ease, color 0.15s ease;
+  /* transform yerleşimi etkilemez: büyüyen ikon komşularını itmez. */
+  transition: transform 0.14s ease, background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 
 .dock-item:hover {
   opacity: 1;
-  background: color-mix(in srgb, var(--header-text) 10%, transparent);
+  background: color-mix(in srgb, var(--header-text) 9%, transparent);
+  transform: scale(1.12);
+  z-index: 1;
+}
+
+.dock-item:focus-visible {
+  outline: 2px solid var(--teal-1);
+  outline-offset: 2px;
 }
 
 .dock-item.active {
+  /* Renk: mavi ikon + altında mavi nokta (dolgu yok). */
   opacity: 1;
   color: var(--accent);
 }
 
-.dock-icon {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dock-dot {
+.dock-item.active::after {
+  content: "";
   position: absolute;
-  bottom: 4px;
+  bottom: 3px;
   left: 50%;
   transform: translateX(-50%);
   width: 4px;
   height: 4px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-item:hover {
+    transform: none;
+  }
+}
+
+/* Dar pencerede (ör. 1200 px) header sağdan taşmasın: ikonlar ve logo küçülür. */
+@media (max-width: 1400px) {
+  .dock-item {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+  .dock-group {
+    gap: 2px;
+  }
+  .dock-sep {
+    margin: 0 3px;
+  }
+  .header-logo {
+    height: 77px;
+    max-height: 77px;
+    margin: 0;
+  }
+}
+
+.dock-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--navy);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 120;
+}
+
+.dock-item:hover .dock-tip,
+.dock-item:focus-visible .dock-tip {
+  opacity: 1;
 }
 
 .msg-unread-badge {
@@ -454,40 +526,6 @@ button {
   opacity: 1;
 }
 
-/* İmleç ikona geldiğinde ismi ikonun SAĞINDA, gerçek bir genişleme
-   olarak açılır — üstüne binen bir balon değil, komşu ikonları iterek
-   yer açan bir kayma (21st.dev "icon bar" bileşenindeki hover davranışı). */
-.dock-label {
-  display: inline-block;
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  white-space: nowrap;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  padding-right: 0;
-  transition: max-width 0.22s ease, opacity 0.18s ease, padding-right 0.22s ease;
-}
-
-.dock-item:hover .dock-label,
-.dock-item:focus-visible .dock-label {
-  max-width: 140px;
-  opacity: 1;
-  padding-right: 0.9rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dock-item {
-    transform: none !important;
-    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-  }
-
-  .dock-label {
-    transition: opacity 0.15s ease;
-  }
-}
-
 /* MarqueeText.jsx — uzun bir etiket (ör. "Firmalardan Gelen Siparişler")
    kendi kutusuna sığmadığında sessizce kırpmak yerine, üzerine gelindiğinde
    soldan sağa kayıp geri dönerek TAM metni okutur. --marquee-distance sıfır
@@ -506,8 +544,6 @@ button {
   white-space: nowrap;
 }
 
-.dock-item:hover .marquee-text,
-.dock-item:focus-visible .marquee-text,
 .sidebar-item:hover .marquee-text,
 .sidebar-item:focus-visible .marquee-text,
 .sidebar-user-info:hover .marquee-text {
@@ -529,8 +565,6 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dock-item:hover .marquee-text,
-  .dock-item:focus-visible .marquee-text,
   .sidebar-item:hover .marquee-text,
   .sidebar-item:focus-visible .marquee-text,
   .sidebar-user-info:hover .marquee-text {
@@ -783,6 +817,7 @@ button {
 
 .home-grid-item {
   margin-bottom: 0;
+  border-radius: 16px;
   height: 100%;
   box-sizing: border-box;
   display: flex;
@@ -1707,3 +1742,205 @@ td {
   background-color: #1a1a1a !important;
 }
 
+
+/* ===================== Ana sayfa (HomePage.jsx) =====================
+   Üst bölüm (selamlama + hızlı işlemler), büyük genel arama ve dört eşit
+   özet kartı. Kart ızgarası (react-grid-layout) bunların altında. */
+.home-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+.home-hero-greeting {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.home-hero-greeting h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.home-hero-greeting p {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.home-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.home-btn {
+  /* Renkler uygulamanın kendi "secondary"/"primary" düğmelerinden gelir (eski
+     açık mavi görünüm); burada yalnız yerleşim. */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.home-btn-icon {
+  justify-content: center;
+}
+
+.home-search {
+  position: relative;
+  margin-bottom: 1.1rem;
+}
+
+.home-search input {
+  width: 100%;
+  height: 54px;
+  box-sizing: border-box;
+  padding: 0 5.5rem 0 3rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 1rem;
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.home-search input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--teal-1) 70%, var(--border));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal-1) 18%, transparent);
+}
+
+.home-search-icon {
+  position: absolute;
+  left: 1.05rem;
+  top: 27px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.home-search-kbd {
+  position: absolute;
+  right: 1rem;
+  top: 27px;
+  transform: translateY(-50%);
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: var(--bg);
+  pointer-events: none;
+}
+
+.home-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 900px) {
+  .home-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.home-metric {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto;
+  column-gap: 0.75rem;
+  row-gap: 0.2rem;
+  align-items: center;
+  text-align: left;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.home-metric:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+  box-shadow: 0 6px 18px rgba(14, 42, 59, 0.08);
+  transform: translateY(-1px);
+}
+
+.home-metric-icon {
+  grid-row: 1 / span 2;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+}
+
+.home-metric-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-metric-value small {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.home-metric-hint,
+.home-metric-bar {
+  grid-column: 1 / -1;
+  margin-top: 0.45rem;
+}
+
+.home-metric-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  height: 6px;
+  line-height: 6px;
+}
+
+.home-metric-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  overflow: hidden;
+}
+
+.home-metric-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}

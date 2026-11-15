@@ -157,16 +157,27 @@ export function totalDeductibleLeaveDaysUpTo(leaves, asOfDateISO, holidays = [])
   }, 0);
 }
 
+// Uygulamanın her yerinde tarih GG/AA/YYYY: tr-TR "16.11.2026 14:30" verir,
+// noktalar eğik çizgiye çevrilir → "16/11/2026 14:30".
 export function formatDateTime(iso) {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("tr-TR", {
-    timeZone: "Europe/Istanbul",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(iso)
+    .toLocaleString("tr-TR", {
+      timeZone: "Europe/Istanbul",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    .replace(/^(\d{2})\.(\d{2})\.(\d{4})/, "$1/$2/$3");
+}
+
+// "YYYY-MM-DD" -> "GG/AA/YYYY Pazartesi"
+export function formatDayLabelTR(iso) {
+  if (!iso) return "-";
+  const weekday = new Date(`${iso}T00:00:00`).toLocaleDateString("tr-TR", { weekday: "long" });
+  return `${formatDateTR(iso)} ${weekday}`;
 }
 
 // Verilen tarihten (YYYY-MM-DD ya da tam ISO zaman damgası) bu yana geçen

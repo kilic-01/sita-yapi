@@ -950,7 +950,7 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
                     <div style={{ fontSize: "0.85rem" }}>{entry.description}</div>
                     <small style={{ opacity: 0.6 }}>
                       {entry.createdAt
-                        ? new Date(entry.createdAt).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })
+                        ? new Date(entry.createdAt).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" }).replace(/^(\d{2})\.(\d{2})\.(\d{4})/, "$1/$2/$3")
                         : ""}
                     </small>
                   </div>

@@ -65,6 +65,10 @@ export function startChannel(rawId, rtspUrl) {
     const playlistPath = path.join(dir, "index.m3u8");
 
     const args = [
+      // Yalnız hatalar yazılsın: eskiden sürüm/kütüphane başlığı da stderr'e
+      // düşüyor ve hata mesajı olarak "libswresample 4.10…" görünüyordu.
+      "-hide_banner",
+      "-loglevel", "error",
       "-rtsp_transport", "tcp",
       "-timeout", "8000000",
       "-i", rtspUrl,
@@ -85,12 +89,16 @@ export function startChannel(rawId, rtspUrl) {
       stderrTail = (stderrTail + chunk.toString()).slice(-4000);
     });
 
-    proc.on("exit", () => {
+    proc.on("exit", (_code, signal) => {
       channels.delete(id);
       if (!settled) {
         settled = true;
-        const lastLines = stderrTail.trim().split("\n").slice(-2).join(" ");
-        reject(new Error(`Kameraya bağlanılamadı${lastLines ? ": " + lastLines : "."}`));
+        // Sayfadan çıkılınca kanalı biz durduruyoruz (SIGKILL) — hata değil.
+        if (signal === "SIGKILL") {
+          reject(new Error("Kamera durduruldu."));
+          return;
+        }
+        reject(new Error(describeFfmpegError(stderrTail)));
       }
     });
 
@@ -114,6 +122,24 @@ export function startChannel(rawId, rtspUrl) {
       }
     }, 300);
   });
+}
+
+// ffmpeg çıktısı → kullanıcıya gösterilecek Türkçe mesaj. RTSP adresindeki
+// kullanıcı adı/şifre ("rtsp://admin:sifre@…") ekrana ya da günlüğe sızmasın
+// diye her durumda silinir.
+function describeFfmpegError(stderrText) {
+  const detail = String(stderrText || "")
+    .replace(/rtsp:\/\/[^@\s/]*@/gi, "rtsp://")
+    .trim()
+    .split("\n")
+    .slice(-2)
+    .join(" ");
+  if (/timed out|Connection refused|No route to host|Network is unreachable|Host is down/i.test(detail)) {
+    return "Kayıt cihazına (DVR) ulaşılamıyor. İnternet bağlantısını, DVR'ın ve ofis modeminin açık olduğunu ve Ayarlar > Kameralar'daki adresi kontrol edin.";
+  }
+  if (/401|Unauthorized/i.test(detail)) return "DVR kullanıcı adı ya da şifresi hatalı (Ayarlar > Kameralar).";
+  if (/404|Not Found|Invalid data found/i.test(detail)) return "Bu kanal DVR'da bulunamadı (kanal numarasını kontrol edin).";
+  return `Kameraya bağlanılamadı${detail ? ": " + detail : "."}`;
 }
 
 export function stopChannel(rawId) {

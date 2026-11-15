@@ -28,7 +28,7 @@ export const PRINT_CONTENT_STYLE = {
 export function formatDate(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
-  return `${d}.${m}.${y}`;
+  return `${d}/${m}/${y}`;
 }
 
 export const CURRENCY_SYMBOLS = { TRY: "₺", USD: "$", EUR: "€" };
