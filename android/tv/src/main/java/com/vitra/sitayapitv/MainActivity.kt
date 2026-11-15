@@ -651,6 +651,9 @@ private fun IdleScreen(pinWeather: Boolean = false) {
                 model = photo,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // İnternet fotoğrafı inmezse (bağlantı anlık kesildiğinde) slayt süresince
+                // boş koyu ekran kalıyordu: hemen sıradakine geç.
+                onError = { if (index == i && slides.size > 1) index = (i + 1) % slides.size },
                 // Dikey fotoğraf tam ekranda kötü kırpılır: listeden düşür, hemen sıradakine geç.
                 onSuccess = { state ->
                     val d = state.result.drawable
