@@ -70,7 +70,7 @@ struct AppointmentEditView: View {
                     .environment(\.locale, Locale(identifier: "tr_TR"))
                 Toggle("Acil", isOn: $isUrgent)
             }
-            Section("Teknisyen") {
+            Section {
                 Picker("Teknisyen", selection: $technicianId) {
                     Text("Otomatik rota").tag(String?.none)
                     ForEach(technicians) { tech in
@@ -78,6 +78,15 @@ struct AppointmentEditView: View {
                     }
                 }
                 .pickerStyle(.menu)
+            } header: {
+                Text("Teknisyen")
+            } footer: {
+                // Masaüstüyle aynı (kullanıcı kararı): "Otomatik rota" mevcut atamayı
+                // hemen kaldırmaz; bir sonraki "Rota Oluştur"da sistem yeniden dağıtır.
+                if technicianId == nil, let current = appointment.assignedTechnicianId,
+                   let name = technicians.first(where: { $0.id == current })?.name {
+                    Text("\(name) şimdilik atanmış kalır; bir sonraki Rota Oluştur'da sistem yeniden atar.")
+                }
             }
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
