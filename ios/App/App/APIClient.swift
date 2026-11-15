@@ -37,7 +37,9 @@ actor APIClient {
     #if targetEnvironment(simulator)
     nonisolated static let defaultServerAddress = "127.0.0.1:4173"
     #else
-    nonisolated static let defaultServerAddress = "192.168.1.120:4173"
+    // Gerçek cihaz: canlı sunucu (Render, veri Supabase PROD). Geliştirme için
+    // giriş ekranındaki Sunucu alanından ofis Mac'inin LAN adresi yazılabilir.
+    nonisolated static let defaultServerAddress = "https://sita-yapi-api.onrender.com"
     #endif
 
     /// Gerçek cihazda Mac'in LAN IP'si Wi-Fi değiştikçe kayıyor — sabit
