@@ -52,6 +52,114 @@ export async function initDb(_userDataPath) {
 // çağrılacak fonksiyonu kaydeder — main.js bunu renderer'a iletmek için kullanır.
 export function onChange(callback) {
   onChangeCallback = callback;
+  // Yalnız masaüstü bu fonksiyonu çağırır (mobil API sunucusu çağırmaz):
+  // bağlantı bekçisi ve kaçan değişiklikleri tamamlama yalnız orada çalışır.
+  startSyncSafetyNet();
+}
+
+// ---------- Senkron güvenlik ağı (masaüstü) ----------
+// Sorun: Realtime WebSocket'i bazen SESSİZCE ölüyor (uyku, ağ değişimi,
+// sunucu tarafı zaman aşımı) — hata olayı gelmediği için otomatik yeniden
+// bağlanma tetiklenmiyor ve başka cihazdan (ör. iOS) yapılan değişiklikler
+// ancak program kapatılıp açılınca görünüyordu.
+//  1) Bekçi: dakikada bir bağlantı gerçekten açık ve kanal "joined" mı bakar;
+//     değilse yeniden bağlanır.
+//  2) Tamamlama: 90 sn'de bir, değişiklik zamanı sütunu olan tablolarda
+//     yalnız son kontrolden beri değişen satırları sorar (tüm tabloyu değil);
+//     Realtime'ın kaçırdığı bir değişiklik varsa renderer'a aynı "data:changed"
+//     olayıyla iletir. Realtime'dan zaten gelenler tekrar gönderilmez.
+const DELTA_TABLES = {
+  appointments: "updatedAt",
+  stockItems: "updatedAt",
+  quotes: "updatedAt",
+  pendingParts: "updatedAt",
+  partCheckouts: "updatedAt",
+  feeEntries: "updatedAt",
+  fuelTransactions: "updatedAt",
+  messages: "createdAt",
+  activityLog: "createdAt",
+};
+// Saatleri biraz farklı cihazların yazdığı zaman damgaları kaçmasın diye
+// her sorgu son görülen zamandan 2 dk geriden başlar (tekrarlar ayıklanır).
+const DELTA_OVERLAP_MS = 2 * 60 * 1000;
+const DELTA_INTERVAL_MS = 90 * 1000;
+const WATCHDOG_INTERVAL_MS = 60 * 1000;
+const deltaWatermark = {}; // tablo -> en son görülen zaman (ISO)
+const deltaSeen = {}; // tablo -> Set("id|zaman")
+let safetyNetStarted = false;
+
+function markSeen(table, row) {
+  const col = DELTA_TABLES[table];
+  if (!col || !row?.id || !row[col]) return false;
+  const key = `${row.id}|${row[col]}`;
+  const seen = (deltaSeen[table] ||= new Set());
+  if (seen.has(key)) return false;
+  seen.add(key);
+  if (seen.size > 2000) {
+    // Bellek sınırı: en eski yarısını at (Set ekleme sırasını korur).
+    const drop = [...seen].slice(0, 1000);
+    for (const k of drop) seen.delete(k);
+  }
+  if (!deltaWatermark[table] || row[col] > deltaWatermark[table]) deltaWatermark[table] = row[col];
+  return true;
+}
+
+async function initDeltaWatermarks() {
+  for (const [table, col] of Object.entries(DELTA_TABLES)) {
+    try {
+      const { data } = await supabase.from(table).select(col).order(col, { ascending: false }).limit(1);
+      // Tablo boşsa "şimdi"den başla.
+      deltaWatermark[table] = data?.[0]?.[col] || new Date().toISOString();
+    } catch {
+      // Bir sonraki turda tekrar denenir.
+    }
+  }
+}
+
+export async function catchUpMissedChanges() {
+  if (!supabase || !onChangeCallback) return;
+  for (const [table, col] of Object.entries(DELTA_TABLES)) {
+    const wm = deltaWatermark[table];
+    if (!wm) continue;
+    try {
+      const since = new Date(Date.parse(wm) - DELTA_OVERLAP_MS).toISOString();
+      const { data, error } = await supabase.from(table).select("*").gt(col, since).order(col).limit(500);
+      if (error || !data?.length) continue;
+      const fresh = data.filter((row) => markSeen(table, row));
+      if (fresh.length === 0) continue;
+      if (table === "appointments") {
+        // Renderer satır bazında işler: INSERT yoksa ekler, UPDATE varsa değiştirir.
+        for (const row of fresh) {
+          onChangeCallback(table, { eventType: "INSERT", new: row });
+          onChangeCallback(table, { eventType: "UPDATE", new: row });
+        }
+      } else {
+        // Diğer tablolarda renderer tabloyu yeniden çeker — bir kez yeter.
+        onChangeCallback(table, { eventType: "UPDATE" });
+      }
+    } catch {
+      // Ağ hatası: bir sonraki turda tekrar denenir.
+    }
+  }
+}
+
+function realtimeLooksDead() {
+  if (!supabase?.realtime?.isConnected()) return true;
+  if (realtimeChannels.size === 0) return true;
+  for (const channel of realtimeChannels.values()) if (channel.state !== "joined") return true;
+  return false;
+}
+
+function startSyncSafetyNet() {
+  if (safetyNetStarted) return;
+  safetyNetStarted = true;
+  initDeltaWatermarks();
+  setInterval(() => {
+    if (supabase && realtimeLooksDead()) subscribeToRealtime();
+  }, WATCHDOG_INTERVAL_MS).unref?.();
+  setInterval(() => {
+    catchUpMissedChanges();
+  }, DELTA_INTERVAL_MS).unref?.();
 }
 
 // Realtime kanalının bağlantı durumu değiştiğinde ("SUBSCRIBED",
@@ -97,24 +205,65 @@ let reconnectTimer = null;
 // bunu gerçekten yapan kod hiç yoktu). Bu yüzden durum CHANNEL_ERROR/
 // TIMED_OUT/CLOSED olduğunda kütüphaneyi beklemek yerine kanalı KENDİMİZ
 // birkaç saniye sonra sıfırdan kurup yeniden abone oluyoruz.
+// Her tablo AYRI kanaldan dinlenir. Eskiden 19 tablo tek kanaldaydı: içlerinden
+// biri (ör. fuelTransactions) Supabase'de Realtime'a açık değilse sunucu
+// kanalı "SUBSCRIBED" gösterip postgres_changes uzantısını tümden hatayla
+// kapatıyordu — HİÇBİR tablonun değişikliği gelmiyor, başka cihazdan (iOS)
+// yapılanlar ancak program yeniden açılınca görünüyordu.
+// Realtime'a açık olmayan tablo bir kez tespit edilip kayda geçer ve
+// bağlantı durumunu (header'daki gösterge) bozmaz.
+const realtimeChannels = new Map(); // tablo -> kanal
+const realtimeDisabledTables = new Set();
+const realtimeTableStatus = new Map(); // tablo -> son durum
+
+function reportRealtimeStatus() {
+  const active = REALTIME_TABLES.filter((t) => !realtimeDisabledTables.has(t));
+  const statuses = active.map((t) => realtimeTableStatus.get(t));
+  if (statuses.some((st) => st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED")) {
+    onSyncStatusCallback?.(statuses.find((st) => st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED"));
+  } else if (statuses.every((st) => st === "SUBSCRIBED")) {
+    onSyncStatusCallback?.("SUBSCRIBED");
+  }
+}
+
 function subscribeToRealtime() {
   clearTimeout(reconnectTimer);
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel);
-  }
-  const channel = supabase.channel("db-changes");
+  for (const channel of realtimeChannels.values()) supabase.removeChannel(channel);
+  realtimeChannels.clear();
+  realtimeTableStatus.clear();
   for (const table of REALTIME_TABLES) {
+    if (realtimeDisabledTables.has(table)) continue;
+    const channel = supabase.channel(`db-changes-${table}`);
     channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+      // Realtime'dan gelen satır "görüldü" sayılır, tamamlama turunda tekrar gönderilmez.
+      if (payload?.new) markSeen(table, payload.new);
       onChangeCallback?.(table, payload);
     });
+    // Tablo Realtime'a açık değilse sunucu bunu "system" mesajıyla bildirir.
+    channel.on("system", {}, (msg) => {
+      if (msg?.status === "error" && msg?.extension === "postgres_changes") {
+        if (!realtimeDisabledTables.has(table)) {
+          console.warn(`[realtime] "${table}" tablosu Supabase'de Realtime'a açık değil; bu tablo yalnız tamamlama turlarıyla güncellenecek.`);
+        }
+        realtimeDisabledTables.add(table);
+        realtimeTableStatus.delete(table);
+        supabase.removeChannel(channel);
+        realtimeChannels.delete(table);
+        reportRealtimeStatus();
+      }
+    });
+    channel.subscribe((status) => {
+      if (realtimeDisabledTables.has(table)) return;
+      realtimeTableStatus.set(table, status);
+      reportRealtimeStatus();
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(subscribeToRealtime, 5000);
+      }
+    });
+    realtimeChannels.set(table, channel);
   }
-  channel.subscribe((status) => {
-    onSyncStatusCallback?.(status);
-    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-      reconnectTimer = setTimeout(subscribeToRealtime, 5000);
-    }
-  });
-  realtimeChannel = channel;
+  realtimeChannel = realtimeChannels.get("appointments") || null;
 }
 
 // Sistem uykudan uyandığında (ör. laptop kapağı açıldığında) mevcut
