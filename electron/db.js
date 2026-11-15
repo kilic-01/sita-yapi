@@ -150,6 +150,11 @@ let onlineTvs = [];
 let onTvPresenceCallback = null;
 // Kişisel veri içeren, yalnız "ofis" modundaki TV'lerde gösterilen yayınlar.
 const OFFICE_ONLY_KINDS = new Set(["routes", "dashboard"]);
+// Yayın gönderildikten sonra TV'nin "shown" onayı için beklenen süre. Onay
+// vermeyen (eski sürüm) TV'ler için beklenmez, sadece bağlı olmaları aranır.
+const TV_ACK_TIMEOUT_MS = 6000;
+const tvAckListeners = new Set();
+let tvPresenceSynced = false;
 
 export function onTvStateChange(callback) {
   onTvStateCallback = callback;
@@ -376,20 +381,67 @@ function subscribeToTvChannel() {
       channel.send({ type: "broadcast", event: "show", payload: currentTvPayload });
     }
   });
+  // TV yayını ekrana aldı (bkz. waitForTvAck).
+  channel.on("broadcast", { event: "shown" }, ({ payload }) => {
+    for (const listener of tvAckListeners) listener(payload);
+  });
   channel.on("presence", { event: "sync" }, () => {
     const state = channel.presenceState();
+    tvPresenceSynced = true;
     onlineTvs = Object.values(state)
       .flat()
       .filter((p) => p?.tvId)
-      .map(({ tvId, name, mode, version }) => ({ tvId, name, mode, version }));
+      .map(({ tvId, name, mode, version, ack }) => ({ tvId, name, mode, version, ack: ack === true }));
     onTvPresenceCallback?.(onlineTvs);
   });
+  tvPresenceSynced = false;
   channel.subscribe((status) => {
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
       tvReconnectTimer = setTimeout(subscribeToTvChannel, 5000);
     }
   });
   tvChannel = channel;
+}
+
+// Kanala yeni katıldıysak (ör. test sunucusu yeni açıldı) bağlı TV listesi
+// (presence) birkaç yüz ms sonra gelir — "bağlı TV yok" demeden önce bekle.
+async function waitForTvPresence() {
+  if (!tvChannel) subscribeToTvChannel();
+  const deadline = Date.now() + 4000;
+  while (!tvPresenceSynced && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+// Yayının gideceği, şu an bağlı TV'ler (hedef ve ofis/mağaza moduna göre).
+async function expectedTvsFor(kind) {
+  await waitForTvPresence();
+  let tvs = onlineTvs.filter((t) => !tvTarget || t.tvId === tvTarget);
+  if (OFFICE_ONLY_KINDS.has(kind)) {
+    const devices = await getTvDevices();
+    tvs = tvs.filter((t) => (devices[t.tvId]?.mode ?? t.mode) === "office");
+  }
+  return tvs;
+}
+
+// Onay verebilen TV'lerden "shown" bekler; onay verenlerin kimliklerini döndürür.
+function waitForTvAck(sentAt, tvs) {
+  const waiting = new Set(tvs.map((t) => t.tvId));
+  const shown = new Set();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      tvAckListeners.delete(listener);
+      resolve(shown);
+    };
+    const listener = (payload) => {
+      if (payload?.sentAt !== sentAt || !waiting.has(payload?.tvId)) return;
+      shown.add(payload.tvId);
+      if (shown.size === waiting.size) finish();
+    };
+    const timer = setTimeout(finish, TV_ACK_TIMEOUT_MS);
+    tvAckListeners.add(listener);
+  });
 }
 
 async function sendTvEvent(event, payload) {
@@ -401,7 +453,7 @@ async function sendTvEvent(event, payload) {
 // "kind" TV'de hangi ekranın açılacağını belirler: "product" (tek ürün) ya
 // da "quote" (fiyat teklifi). Eski TV sürümleri "kind" alanını bilmez ama
 // "product" alanına baktıkları için ürün yayını onlarda da çalışmaya devam eder.
-async function sendToTv(content, actingUserId, entityType, activityText) {
+async function sendToTv(content, actingUserId, entityType, activityText, sentFrom) {
   // Kişisel veri içeren yayınlar mağaza modundaki TV'de gösterilmez (TV de
   // ayrıca reddeder) — gönderen kişi boşuna beklemesin diye burada uyarılır.
   if (OFFICE_ONLY_KINDS.has(content.kind)) {
@@ -416,23 +468,49 @@ async function sendToTv(content, actingUserId, entityType, activityText) {
       );
     }
   }
+  // TV kapalıysa ya da internete bağlı değilse yayın "gönderildi" görünüp ekrana
+  // düşmüyordu — gönderen kişi (masaüstü ya da mobil) bunu hemen görsün.
+  const expected = await expectedTvsFor(content.kind);
+  if (expected.length === 0) {
+    throw new Error(
+      tvTarget
+        ? "Seçilen TV şu an bağlı değil — yayın gösterilemedi. TV'nin açık ve internete bağlı olduğunu kontrol edin."
+        : "Bağlı TV yok — yayın gösterilemedi. TV'nin açık ve internete bağlı olduğunu kontrol edin."
+    );
+  }
   const payload = {
     ...content,
     target: tvTarget,
     sentBy: await actorDisplayName(actingUserId),
     // TV'deki ürün ekranında küçük "Yayınlayan: …" yazısı (macOS'taki ".local" eki atılır).
-    sentFrom: os.hostname().replace(/\.local$/i, ""),
+    // Mobil uygulamadan gelen yayında telefonun adı (bkz. server/index.js /api/tv/broadcast).
+    sentFrom: sentFrom || os.hostname().replace(/\.local$/i, ""),
     sentAt: new Date().toISOString(),
   };
+  const ackers = expected.filter((t) => t.ack);
+  const ackWait = ackers.length ? waitForTvAck(payload.sentAt, ackers) : null;
   await sendTvEvent("show", payload);
+  let warning = null;
+  if (ackWait) {
+    const shown = await ackWait;
+    const missed = ackers.filter((t) => !shown.has(t.tvId));
+    // Onay verebilen TV'lerin hiçbiri göstermediyse (ve onaysız eski TV yoksa) yayın başarısız.
+    if (shown.size === 0 && ackers.length === expected.length) {
+      await sendTvEvent("clear", { target: tvTarget }).catch(() => {});
+      throw new Error("TV yayını ekrana alamadı — TV'nin internet bağlantısını kontrol edip tekrar deneyin.");
+    }
+    if (missed.length) {
+      warning = `${missed.map((t) => t.name || "TV").join(", ")} yayını gösteremedi — internet bağlantısını kontrol edin.`;
+    }
+  }
   setCurrentTvPayload(payload);
   await logActivity(actingUserId, entityType, activityText);
-  return payload;
+  return warning ? { ...payload, warning } : payload;
 }
 
-export function broadcastToTv(product, actingUserId) {
+export function broadcastToTv(product, actingUserId, sentFrom) {
   return sendToTv({ kind: "product", product }, actingUserId, "stock",
-    `TV'de yayınladı: ${product.code || ""} — ${product.name || ""}`);
+    `TV'de yayınladı: ${product.code || ""} — ${product.name || ""}`, sentFrom);
 }
 
 export function broadcastRoutesToTv(routes, actingUserId) {
@@ -457,9 +535,9 @@ export async function refreshTvContent(kind, isSame, content) {
   return true;
 }
 
-export function broadcastQuoteToTv(quote, actingUserId) {
+export function broadcastQuoteToTv(quote, actingUserId, sentFrom) {
   return sendToTv({ kind: "quote", quote }, actingUserId, "quote",
-    `teklifi TV'de yayınladı: ${quote.quoteNo || ""} (${quote.customerName || ""})`);
+    `teklifi TV'de yayınladı: ${quote.quoteNo || ""} (${quote.customerName || ""})`, sentFrom);
 }
 
 export async function clearTv() {
@@ -666,6 +744,21 @@ export async function getAppointmentsByDate(scheduledDate) {
 // çekmek pratik değil. Bu yüzden kesin/tam eşleştirme değil, "muhtemelen
 // aynı müşteri" yaklaşık bir liste — dispatcher masaüstündeki Müşteri
 // Profili'ne kıyasla burada daha az kesin ama anında kullanılabilir.
+// Mobil Randevular ekranındaki arama: müşteri adı ya da telefonunda geçen
+// metinle (tarihten bağımsız), en yeni 50 randevu.
+export async function searchAppointments(text) {
+  const q = String(text || "").replace(/[,()%*]/g, " ").trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("*")
+    .or(`customerName.ilike.%${q}%,customerPhone.ilike.%${q}%`)
+    .order("scheduledDate", { ascending: false, nullsFirst: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 export async function getAppointmentsByCustomer(name, phone, excludeId) {
   let query = supabase
     .from("appointments")

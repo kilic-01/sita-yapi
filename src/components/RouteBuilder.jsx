@@ -146,8 +146,9 @@ export default function RouteBuilder({ appointments, technicians, holidays, onAp
   async function handleBroadcastSummary() {
     setSendingSummary(true);
     try {
-      await window.api.broadcastDashboardToTv(actingUserId);
-      showToast?.("success", "Günlük özet TV'de yayınlandı.");
+      const result = await window.api.broadcastDashboardToTv(actingUserId);
+      if (result?.warning) showToast?.("warning", result.warning);
+      else showToast?.("success", "Günlük özet TV'de yayınlandı.");
     } catch (err) {
       showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
     } finally {
@@ -160,8 +161,9 @@ export default function RouteBuilder({ appointments, technicians, holidays, onAp
   async function handleBroadcast() {
     setBroadcasting(true);
     try {
-      await window.api.broadcastRoutesToTv(routesTvInput(scheduledDate, appointments, technicians), actingUserId);
-      showToast?.("success", "Rotalar TV'de yayınlandı.");
+      const result = await window.api.broadcastRoutesToTv(routesTvInput(scheduledDate, appointments, technicians), actingUserId);
+      if (result?.warning) showToast?.("warning", result.warning);
+      else showToast?.("success", "Rotalar TV'de yayınlandı.");
     } catch (err) {
       showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
     } finally {

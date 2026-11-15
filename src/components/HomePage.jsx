@@ -136,8 +136,9 @@ export default function HomePage({
   async function broadcastToTv(item) {
     setBroadcastingCode(item.code);
     try {
-      await window.api.broadcastToTv(item, currentUser?.id);
-      showToast?.("success", `TV'de yayınlandı: ${item.code}`);
+      const result = await window.api.broadcastToTv(item, currentUser?.id);
+      if (result?.warning) showToast?.("warning", result.warning);
+      else showToast?.("success", `TV'de yayınlandı: ${item.code}`);
     } catch (err) {
       showToast?.("error", (err.message || "TV'ye gönderilemedi.").replace(/^.*Error: /, ""));
     } finally {

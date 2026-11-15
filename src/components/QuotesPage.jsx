@@ -69,8 +69,9 @@ export default function QuotesPage({ quotes, onSaved, stockItems = [], currentUs
   async function handleBroadcast(quote) {
     setBroadcastingId(quote.id);
     try {
-      await window.api.broadcastQuoteToTv(quote, computeTotals(quote.items || [], quote.discountRate), currentUser?.id);
-      showToast?.("success", `Teklif TV'de yayınlandı: ${quote.quoteNo}`);
+      const result = await window.api.broadcastQuoteToTv(quote, computeTotals(quote.items || [], quote.discountRate), currentUser?.id);
+      if (result?.warning) showToast?.("warning", result.warning);
+      else showToast?.("success", `Teklif TV'de yayınlandı: ${quote.quoteNo}`);
     } catch (err) {
       showToast?.("error", err.message || "TV'ye gönderilemedi.");
     } finally {

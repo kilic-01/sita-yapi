@@ -184,8 +184,9 @@ export default function StockPage({ stockItems, onSaved, depots = [], initialSea
   async function broadcastToTv(item) {
     setBroadcastingId(item.id);
     try {
-      await window.api.broadcastToTv(item, currentUser?.id);
-      showToast?.("success", `TV'de yayınlandı: ${item.code}`);
+      const result = await window.api.broadcastToTv(item, currentUser?.id);
+      if (result?.warning) showToast?.("warning", result.warning);
+      else showToast?.("success", `TV'de yayınlandı: ${item.code}`);
     } catch (err) {
       showToast?.("error", err.message || "TV'ye gönderilemedi.");
     } finally {

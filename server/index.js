@@ -38,6 +38,14 @@ app.get("/api/appointments/by-date/:date", async (req, res, next) => {
     next(err);
   }
 });
+// Mobil Randevular ekranındaki arama kutusu — müşteri adı/telefonu, tarihten bağımsız.
+app.get("/api/appointments/search", async (req, res, next) => {
+  try {
+    res.json(await handlers.searchAppointments(req.query.q));
+  } catch (err) {
+    next(err);
+  }
+});
 // Mobil "Müşteri Geçmişi" ekranı için — tüm tabloyu değil, aynı müşteriye
 // (telefon veya isimle) ait küçük bir sonuç çeker.
 app.get("/api/appointments/by-customer", async (req, res, next) => {
@@ -282,7 +290,9 @@ app.post("/api/stock", async (req, res, next) => {
     // — masaüstü IPC üzerinden doğrudan handlers.addStockItem'ı çağırıyor)
     // depo seçimi olmadan ürün eklenmesin diye bilerek SADECE burada
     // zorunlu kılındı; masaüstündeki Stok sayfası hâlâ depo opsiyonel.
-    if (!item.depotId) {
+    // Çoklu depo desteğiyle "depots" (dizi) ile de gelebilir.
+    const hasDepots = Array.isArray(item.depots) && item.depots.length > 0;
+    if (!item.depotId && !hasDepots) {
       return res.status(400).json({ message: "Depo seçimi zorunlu." });
     }
     res.json(await handlers.addStockItem(item, actingUserId));
@@ -329,6 +339,24 @@ app.delete("/api/stock/:id/depots/:depotId", async (req, res, next) => {
   try {
     await handlers.removeStockItemDepot(req.params.id, req.params.depotId, req.body?.actingUserId);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+// Ürün sayfasındaki "info" butonu için — bu ürüne ait depo/miktar
+// değişikliklerinin detaylı geçmişi.
+app.get("/api/stock/:id/activity", async (req, res, next) => {
+  try {
+    res.json(await handlers.getStockItemActivity(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+// Depo Transferi (stok kaydırma) — ör. depodaki bir ürünü dükkana getirme.
+app.post("/api/stock/:id/transfer", async (req, res, next) => {
+  try {
+    const { fromDepotId, toDepotId, qty, actingUserId } = req.body;
+    res.json(await handlers.transferStockItemDepot(req.params.id, fromDepotId, toDepotId, qty, actingUserId));
   } catch (err) {
     next(err);
   }
@@ -598,6 +626,41 @@ app.put("/api/incoming-orders/:id/dismiss-reminder", async (req, res, next) => {
 // iOS/Android native uygulamalarının giriş sonrası kaydettiği push bildirim
 // cihaz token'ı (bkz. electron/db.js registerDeviceToken, platform alanına
 // göre electron/handlers.js'teki notifyUserPush APNs/FCM'e yönlendirir).
+// Mobil stok detayındaki "TV'de Göster" — masaüstündeki "Yayınla" ile aynı iş
+// (VitrA görselleri, özellikler); TV'de yayınlayan olarak telefonun adı görünür.
+app.post("/api/tv/broadcast", async (req, res, next) => {
+  try {
+    const { item, actingUserId, deviceName } = req.body;
+    res.json(await handlers.broadcastToTv(item, actingUserId, String(deviceName || "").slice(0, 40) || null));
+  } catch (err) {
+    next(err);
+  }
+});
+// Mobil teklif detayındaki "TV'de Göster" — toplamlar masaüstüyle aynı hesapla (computeTotals).
+app.post("/api/tv/broadcast-quote", async (req, res, next) => {
+  try {
+    const { quoteId, actingUserId, deviceName } = req.body;
+    const quote = (await handlers.listQuotes()).find((q) => q.id === quoteId);
+    if (!quote) return res.status(404).json({ message: "Teklif bulunamadı." });
+    const { computeTotals } = await import("../src/lib/orderTotals.js");
+    const totals = computeTotals(quote.items || [], quote.discountRate);
+    res.json(await handlers.broadcastQuoteToTv(quote, totals, actingUserId, String(deviceName || "").slice(0, 40) || null));
+  } catch (err) {
+    next(err);
+  }
+});
+// Mobil "TV'de yayında" şeridi: bu sunucunun (telefonların) son yayını; başka bir
+// bilgisayar yayın yapınca ya da durdurulunca null olur (bkz. electron/db.js TV Yayını).
+app.get("/api/tv/current", (req, res) => res.json(handlers.getCurrentTvPayload() || null));
+app.post("/api/tv/clear", async (req, res, next) => {
+  try {
+    await handlers.clearTv();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post("/api/device-tokens", async (req, res, next) => {
   try {
     const { userId, token, platform, actingUserId } = req.body;

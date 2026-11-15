@@ -191,6 +191,10 @@ export function listAppointmentsByDate(date) {
   return db.getAppointmentsByDate(date);
 }
 
+export function searchAppointments(text) {
+  return db.searchAppointments(text);
+}
+
 export function listAppointmentsByCustomer(name, phone, excludeId) {
   return db.getAppointmentsByCustomer(name, phone, excludeId);
 }
@@ -1029,7 +1033,7 @@ export function deleteMessage(id, actingUserId) {
 // bilgisi gibi iç veriler müşterinin gördüğü ekrana gitmez). Ürün kodu
 // vitra.com.tr'de bulunursa sitedeki TÜM fotoğraflar gönderilir (TV'de slider);
 // bulunamazsa ya da site açılmazsa stoktaki tek fotoğrafla yayınlanır.
-export async function broadcastToTv(item, actingUserId) {
+export async function broadcastToTv(item, actingUserId, sentFrom) {
   if (!item?.code && !item?.name) throw new Error("Yayınlanacak ürün seçilmedi.");
   const { images: siteImages, code: vitraCode, url: vitraUrl, name: vitraName, features } = await vitraImagesForStockItem(item);
   // Ürün videosu yalnız VitrA'da eşleşen ürünlerde aranır (yedek parçalarda değil).
@@ -1050,14 +1054,14 @@ export async function broadcastToTv(item, actingUserId) {
     priceExVat: null,
     priceIncVat: null,
   };
-  return db.broadcastToTv(product, actingUserId);
+  return db.broadcastToTv(product, actingUserId, sentFrom);
 }
 
 // Fiyat teklifini TV'ye gönderir. Toplamlar renderer'da (src/lib/orderTotals.js
 // computeTotals — yazdırma/PDF ile aynı hesap) hesaplanıp gelir. Müşterinin
 // telefon/e-posta/adres bilgisi bilerek gönderilmez: ekran ofisteki herkese açık.
-export async function broadcastQuoteToTv(quote, totals, actingUserId) {
-  return db.broadcastQuoteToTv(await buildQuotePayload(quote, totals), actingUserId);
+export async function broadcastQuoteToTv(quote, totals, actingUserId, sentFrom) {
+  return db.broadcastQuoteToTv(await buildQuotePayload(quote, totals), actingUserId, sentFrom);
 }
 
 // Yayındaki teklif düzenlenince (bkz. src/components/TvLiveRefresh.jsx).

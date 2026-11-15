@@ -34,8 +34,8 @@ android {
         applicationId "com.vitra.sitayapitv"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 3
+        versionName "1.0.2"
         buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
         buildConfigField "String", "SUPABASE_KEY", "\"${supabaseKey}\""
         buildConfigField "String", "UNSPLASH_KEY", "\"${photoProps.getProperty('unsplash', '')}\""

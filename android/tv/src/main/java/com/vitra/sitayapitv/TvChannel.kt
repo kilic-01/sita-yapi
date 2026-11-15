@@ -293,6 +293,20 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
         }, joinRef)
     }
 
+    /** Yayın ekrana alındı onayı (bkz. electron/db.js waitForTvAck). */
+    private fun sendShown(ws: WebSocket, sentAt: String?) {
+        val c = settings.config.value
+        send(ws, topic, "broadcast", buildJsonObject {
+            put("type", "broadcast")
+            put("event", "shown")
+            putJsonObject("payload") {
+                put("tvId", c.tvId)
+                put("name", c.name)
+                put("sentAt", sentAt)
+            }
+        }, joinRef)
+    }
+
     /** Kanala bu TV'nin kimliğini/adını/modunu bildirir (Supabase presence). */
     private fun trackPresence(ws: WebSocket) {
         val c = settings.config.value
@@ -304,6 +318,9 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
                 put("name", c.name)
                 put("mode", c.mode)
                 put("version", BuildConfig.VERSION_NAME)
+                // Bu sürüm yayını ekrana aldığında "shown" onayı yollar — gönderen
+                // (masaüstü/mobil) onay gelmezse "TV'de gösterilemedi" uyarısı verir.
+                put("ack", true)
             }
         }, joinRef)
     }
@@ -352,7 +369,12 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
                     "show" -> {
                         val inner = payload["payload"] ?: return
                         runCatching { json.decodeFromJsonElement<TvPayload>(inner) }
-                            .onSuccess { if (isForMe(it)) _current.value = it }
+                            .onSuccess {
+                                if (isForMe(it)) {
+                                    _current.value = it
+                                    sendShown(ws, it.sentAt)
+                                }
+                            }
                     }
                     "clear" -> {
                         val target = (payload["payload"] as? JsonObject)?.get("target")?.jsonPrimitive?.contentOrNull
