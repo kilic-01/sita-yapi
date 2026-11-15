@@ -53,7 +53,7 @@ fun MoreScreen(appState: AppState, appLockState: AppLockState, navController: Na
     val context = LocalContext.current
     val items = listOf(
         MoreItem(ROUTE_ZIMMET, "Zimmet", "Parça zimmetleme", Icons.Filled.Inventory),
-        MoreItem(ROUTE_TEKLIFLER, "Teklifler", null, Icons.Filled.Description),
+        MoreItem(ROUTE_TEKLIFLER, "Fiyat Teklifi", null, Icons.Filled.Description),
         MoreItem(ROUTE_BEKLEYEN_PARCALAR, "Bekleyen Parçalar", null, Icons.Filled.Schedule),
         MoreItem(ROUTE_GELEN_SIPARISLER, "Gelen Siparişler", null, Icons.Filled.MoveToInbox),
         MoreItem(ROUTE_DEPOLAR, "Depolar", null, Icons.Filled.Warehouse),

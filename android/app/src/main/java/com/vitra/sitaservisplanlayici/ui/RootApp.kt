@@ -233,6 +233,16 @@ private fun AuthenticatedApp(appState: AppState, appLockState: AppLockState) {
     }
 
     val navController = rememberNavController()
+    // Mesaj bildirimine basıldı: Mesajlar sekmesine geç ve gönderenle olan sohbeti aç.
+    LaunchedEffect(appState.pendingChat) {
+        val (senderId, senderName) = appState.pendingChat ?: return@LaunchedEffect
+        appState.pendingChat = null
+        navController.navigate(Tab.MESSAGES) {
+            popUpTo(navController.graph.findStartDestination().id)
+            launchSingleTop = true
+        }
+        navController.navigate(chatRoute(senderId, senderName.ifBlank { "Mesaj" }))
+    }
     val tabs = listOf(
         Triple(Tab.HOME, "Ana Sayfa", Icons.Filled.Home),
         Triple(Tab.APPOINTMENTS, "Randevular", Icons.Filled.DateRange),
@@ -350,6 +360,9 @@ private fun AuthenticatedApp(appState: AppState, appLockState: AppLockState) {
             composable(Route.ZIMMET) { ZimmetScreen(appState = appState, navController = navController) }
             composable(Route.TEKLIFLER) { TekliflerScreen(navController) }
             composable(ROUTE_TEKLIF_YENI) { QuoteCreateScreen(appState = appState, navController = navController) }
+            composable(ROUTE_TEKLIF_DUZENLE) { backStackEntry ->
+                QuoteCreateScreen(appState = appState, navController = navController, editQuoteId = backStackEntry.arguments?.getString("id"))
+            }
             composable(Route.BEKLEYEN_PARCALAR) { BekleyenParcalarScreen(appState = appState, navController = navController) }
             composable(Route.GELEN_SIPARISLER) { GelenSiparislerScreen(appState = appState, navController = navController) }
             composable(Route.DEPOLAR) { DepolarScreen(navController) }
@@ -395,6 +408,8 @@ fun chatRoute(userId: String, name: String) = "chat/$userId/${java.net.URLEncode
 const val ROUTE_ZIMMET = "zimmet"
 const val ROUTE_TEKLIFLER = "teklifler"
 const val ROUTE_TEKLIF_YENI = "teklif-yeni"
+const val ROUTE_TEKLIF_DUZENLE = "teklif-duzenle/{id}"
+fun quoteEditRoute(id: String) = "teklif-duzenle/$id"
 const val ROUTE_BEKLEYEN_PARCALAR = "bekleyen-parcalar"
 const val ROUTE_GELEN_SIPARISLER = "gelen-siparisler"
 const val ROUTE_DEPOLAR = "depolar"

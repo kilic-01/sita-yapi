@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,7 +53,7 @@ fun CustomerHistoryScreen(customerName: String, navController: NavController) {
                     items(history, key = { it.id }) { appt ->
                         Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Column(Modifier.padding(16.dp)) {
-                                Text(appt.scheduledDate ?: "-", style = MaterialTheme.typography.titleMedium)
+                                Text(trDate(appt.scheduledDate, "-"), style = MaterialTheme.typography.titleMedium)
                                 if (!appt.complaint.isNullOrBlank()) Text(appt.complaint)
                                 if (!appt.address.isNullOrBlank()) {
                                     Text(appt.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

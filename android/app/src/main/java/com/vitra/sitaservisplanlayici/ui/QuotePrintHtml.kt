@@ -31,7 +31,7 @@ object QuotePrintHtml {
         if (iso.isNullOrBlank()) return ""
         val parts = iso.split("-")
         if (parts.size != 3) return iso
-        return "${parts[2]}.${parts[1]}.${parts[0]}"
+        return "${parts[2]}/${parts[1]}/${parts[0]}"
     }
 
     private fun formatMoney(n: Double): String =

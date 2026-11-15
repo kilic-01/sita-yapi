@@ -47,6 +47,18 @@
              kimlik bilgisi değil — zaten kimliksiz herkese açık uçtan
              döndürülüyor, platform kısıtlaması Google Cloud Console
              tarafında yapılıyor). -->
+        <!-- Uygulama kapalıyken gelen FCM bildirimleri: "Mesajlar" kanalı, tek renkli
+             ikon ve marka rengi (yoksa Android yedek "Diğer" kanalına ve renkli
+             uygulama ikonuna düşüyordu). Kanal MainActivity açılışında oluşturulur. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />

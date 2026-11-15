@@ -31,9 +31,9 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** "15 Kasım 2026 Pazar" — formlarda gösterilen tarih biçimi. */
+/** "15/11/2026 Pazar" — formlarda gösterilen tarih biçimi (GG/AA/YYYY + gün adı). */
 fun trLongDate(date: LocalDate): String =
-    date.format(DateTimeFormatter.ofPattern("d MMMM yyyy EEEE", Locale("tr")))
+    date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy EEEE", Locale("tr")))
 
 /** Takvimden gün seçtiren pencere (iOS'taki DatePicker'ın karşılığı). */
 @OptIn(ExperimentalMaterial3Api::class)

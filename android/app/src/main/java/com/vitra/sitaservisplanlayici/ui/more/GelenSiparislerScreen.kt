@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui.more
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,7 +79,7 @@ fun GelenSiparislerScreen(appState: AppState, navController: NavController) {
                             androidx.compose.foundation.layout.Row(Modifier.padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(order.customerName ?: "-", style = MaterialTheme.typography.titleMedium)
-                                    val meta = listOfNotNull(order.orderNo, order.orderDate).joinToString(" · ")
+                                    val meta = listOfNotNull(order.orderNo, order.orderDate?.let { trDate(it) }).joinToString(" · ")
                                     if (meta.isNotBlank()) Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     if (!order.notes.isNullOrBlank()) Text(order.notes, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }

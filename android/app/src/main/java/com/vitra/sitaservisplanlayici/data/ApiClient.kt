@@ -66,25 +66,34 @@ object ApiClient {
         .build()
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
+    /** Sunucu 401 dönünce (oturum bitti) çağrılır — AppState çıkış yapar. */
+    @Volatile var onSessionExpired: (() -> Unit)? = null
+
+    /** Her isteğe oturum anahtarı (giriş isteğinde anahtar yoktur). */
+    private fun Request.Builder.withAuth(): Request.Builder {
+        AuthToken.value?.let { header("Authorization", "Bearer $it") }
+        return this
+    }
+
     suspend fun getRaw(path: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(baseUrl + path).get().build()
+        val request = Request.Builder().url(baseUrl + path).withAuth().get().build()
         executeRaw(request)
     }
 
     suspend fun postRaw(path: String, bodyJson: String): String = withContext(Dispatchers.IO) {
         val requestBody = bodyJson.toRequestBody(jsonMedia)
-        val request = Request.Builder().url(baseUrl + path).post(requestBody).build()
+        val request = Request.Builder().url(baseUrl + path).withAuth().post(requestBody).build()
         executeRaw(request)
     }
 
     suspend fun putRaw(path: String, bodyJson: String): String = withContext(Dispatchers.IO) {
         val requestBody = bodyJson.toRequestBody(jsonMedia)
-        val request = Request.Builder().url(baseUrl + path).put(requestBody).build()
+        val request = Request.Builder().url(baseUrl + path).withAuth().put(requestBody).build()
         executeRaw(request)
     }
 
     suspend fun deleteRaw(path: String, bodyJson: String? = null): String = withContext(Dispatchers.IO) {
-        val builder = Request.Builder().url(baseUrl + path)
+        val builder = Request.Builder().url(baseUrl + path).withAuth()
         if (bodyJson != null) builder.delete(bodyJson.toRequestBody(jsonMedia)) else builder.delete()
         executeRaw(builder.build())
     }
@@ -92,6 +101,11 @@ object ApiClient {
     private fun executeRaw(request: Request): String {
         client.newCall(request).execute().use { resp ->
             val bodyStr = resp.body?.string().orEmpty()
+            if (resp.code == 401) {
+                // Anahtar geçersiz/süresi dolmuş ya da kullanıcı silinmiş: anahtarı sil, çıkış yap.
+                AuthToken.clear()
+                onSessionExpired?.invoke()
+            }
             if (!resp.isSuccessful) throw ApiException(errorMessage(bodyStr, resp.code))
             return bodyStr
         }

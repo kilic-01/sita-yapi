@@ -200,7 +200,8 @@ private fun vibrateOnScan(context: android.content.Context) {
     }
 }
 
-@OptIn(ExperimentalGetImage::class)
+// CameraX androidx.annotation.OptIn bekliyor (Kotlin @OptIn lint hatası veriyordu)
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 private fun analyzeFrame(scanner: com.google.mlkit.vision.barcode.BarcodeScanner, imageProxy: ImageProxy, onDetected: (String) -> Unit) {
     val mediaImage = imageProxy.image
     if (mediaImage == null) {

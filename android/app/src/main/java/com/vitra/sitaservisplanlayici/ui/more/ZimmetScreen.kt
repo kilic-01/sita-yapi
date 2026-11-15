@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui.more
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -204,7 +205,7 @@ fun ZimmetScreen(appState: AppState, navController: NavController) {
                                 ) {
                                     Column(Modifier.weight(1f)) {
                                         Text(partName, style = MaterialTheme.typography.titleMedium)
-                                        Text("${checkout.qtyTaken ?: 0} adet · ${checkout.date ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${checkout.qtyTaken ?: 0} adet · ${trDate(checkout.date, "-")}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     if (checkout.status == "reconciled") {
                                         AssistChip(onClick = {}, label = { Text("Mutabık") })

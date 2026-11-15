@@ -8,8 +8,21 @@ import kotlinx.serialization.json.put
 
 /** iOS'taki her ekranın API çağrılarının tek yerden toplandığı katman. */
 object Repository {
-    suspend fun login(name: String, password: String): AppUser? =
-        ApiClient.post<LoginRequest, AppUser?>("/login", LoginRequest(name, password))
+    /**
+     * Başarılıysa kullanıcıyı döndürür ve sunucunun verdiği oturum anahtarını
+     * şifreli saklar (bkz. AuthToken); ad/şifre hatalıysa null.
+     */
+    suspend fun login(name: String, password: String): AppUser? {
+        val raw = ApiClient.postRaw("/login", ApiClient.json.encodeToString(LoginRequest(name, password)))
+        val user = ApiClient.json.decodeFromString<AppUser?>(raw) ?: return null
+        val token = ApiClient.json.decodeFromString<LoginToken>(raw).token
+        if (token.isNullOrBlank()) throw ApiException("Sunucu oturum anahtarı vermedi. Sunucu güncel mi?")
+        AuthToken.save(token)
+        return user
+    }
+
+    @Serializable
+    private data class LoginToken(val token: String? = null)
 
     suspend fun listUsers(): List<AppUser> = ApiClient.get("/users")
 
@@ -207,7 +220,9 @@ object Repository {
     suspend fun listDepots(): List<Depot> = ApiClient.get("/depots")
 
     // ---- Teklifler ----
-    suspend fun listQuotes(): List<Quote> = ApiClient.get("/quotes")
+    // En yeni teklif en üstte (iOS ile aynı): önce tarih, aynı gün içinde teklif no.
+    suspend fun listQuotes(): List<Quote> = ApiClient.get<List<Quote>>("/quotes")
+        .sortedWith(compareByDescending<Quote> { it.quoteDate.orEmpty() }.thenByDescending { it.quoteNo.orEmpty() })
 
     // iOS'taki QuoteCreateView / NewQuote ile aynı sözleşme.
     @Serializable
@@ -228,6 +243,22 @@ object Repository {
     )
 
     suspend fun createQuote(body: NewQuote): Quote = ApiClient.post("/quotes", body)
+
+    // Mobil formdaki alanlar güncellenir; masaüstünde girilen diğer alanlar
+    // (e-posta, ödeme/garanti şartları, IBAN, genel indirim…) gönderilmediği
+    // için sunucuda olduğu gibi kalır (PUT /quotes/:id kısmi güncelleme yapıyor).
+    @Serializable
+    data class QuotePatch(
+        val customerName: String,
+        val contactName: String,
+        val customerPhone: String,
+        val customerAddress: String,
+        val validityDays: Int,
+        val items: List<QuoteItem>,
+        val actingUserId: String
+    )
+
+    suspend fun updateQuote(id: String, patch: QuotePatch): Quote = ApiClient.put("/quotes/$id", patch)
 
     // ---- Bekleyen Parçalar ----
     suspend fun listPendingParts(): List<PendingPart> = ApiClient.get("/pending-parts")

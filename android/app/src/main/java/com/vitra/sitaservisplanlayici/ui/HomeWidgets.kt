@@ -1,5 +1,12 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -131,6 +138,10 @@ private fun formatMoneyShort(n: Double): String {
 @Composable
 fun ProgramWidgetCard(
     weekStart: LocalDate,
+    isCurrentWeek: Boolean,
+    onPrevWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    onThisWeek: () -> Unit,
     dayCounts: Map<LocalDate, Int>,
     selectedDay: LocalDate,
     onSelectDay: (LocalDate) -> Unit,
@@ -144,9 +155,40 @@ fun ProgramWidgetCard(
                 Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = Color(0xFF8E44AD))
                 Spacer(Modifier.width(8.dp))
                 Text("Program", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                if (!isCurrentWeek) {
+                    androidx.compose.material3.TextButton(onClick = onThisWeek, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
+                        Text("Bu hafta", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                androidx.compose.material3.IconButton(onClick = onPrevWeek, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Önceki hafta")
+                }
+                val end = weekStart.plusDays(6)
+                Text(
+                    "%02d/%02d – %02d/%02d".format(weekStart.dayOfMonth, weekStart.monthValue, end.dayOfMonth, end.monthValue),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                androidx.compose.material3.IconButton(onClick = onNextWeek, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Sonraki hafta")
+                }
             }
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Gün şeridini sağa/sola kaydırarak da hafta değişir.
+            var dragTotal by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+            Row(
+                Modifier.fillMaxWidth().pointerInput(weekStart) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragTotal = 0f },
+                        onHorizontalDrag = { _, d -> dragTotal += d },
+                        onDragEnd = {
+                            if (dragTotal < -80f) onNextWeek() else if (dragTotal > 80f) onPrevWeek()
+                        }
+                    )
+                },
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 for (i in 0..6) {
                     val day = weekStart.plusDays(i.toLong())
                     val isSelected = day == selectedDay
@@ -250,7 +292,7 @@ fun TomorrowAppointmentsWidgetCard(upcoming: List<Appointment>, technicians: Lis
             }
             Text("$count", style = MaterialTheme.typography.displaySmall)
             Text(
-                tomorrow.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("tr"))) + " " +
+                tomorrow.format(DateTimeFormatter.ofPattern("dd/MM/yyyy ", Locale("tr"))) + " " +
                     tomorrow.dayOfWeek.getDisplayName(TextStyle.FULL, Locale("tr")),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -322,7 +364,7 @@ fun QuotesWidgetCard(quotes: List<Quote>, onSeeAll: () -> Unit) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(quote.customerName ?: "(isimsiz)", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${quote.quoteNo ?: "-"} · ${quote.quoteDate ?: "-"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${quote.quoteNo ?: "-"} · ${trDate(quote.quoteDate, "-")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("₺${formatMoneyShort(quoteGrandTotal(quote.items))}", style = MaterialTheme.typography.bodySmall)
                     }
@@ -354,7 +396,7 @@ fun OutstandingCheckoutsWidgetCard(checkouts: List<PartCheckout>, technicians: L
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(techName, style = MaterialTheme.typography.bodyMedium)
-                                Text("En eskisi: ${list.minOf { it.date ?: "-" }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("En eskisi: ${trDate(list.minOf { it.date ?: "-" }, "-")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text(
                                 "${list.size} zimmet",

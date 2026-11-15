@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -109,7 +110,7 @@ fun AppointmentsScreen(appState: AppState, navController: NavController) {
         isSearching = false
     }
 
-    // "Geri al": tamamlandı işaretlendikten sonra 5 saniye boyunca önceki duruma dönülebilir.
+    // "Geri al": durum değiştikten (tamamlandı ↔ bekliyor) sonra kısa süre önceki duruma dönülebilir.
     val snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
     val view = androidx.compose.ui.platform.LocalView.current
 
@@ -122,16 +123,18 @@ fun AppointmentsScreen(appState: AppState, navController: NavController) {
                 Repository.updateAppointmentStatus(appt.id, newStatus, myId)
                 view.hapticConfirm()
                 afterwards()
-                if (newStatus == "completed") {
-                    val result = snackbar.showSnackbar(
-                        message = "${appt.customerName ?: "Randevu"} tamamlandı",
-                        actionLabel = "Geri al",
-                        duration = androidx.compose.material3.SnackbarDuration.Short
-                    )
-                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                        Repository.updateAppointmentStatus(appt.id, previous, myId)
-                        afterwards()
-                    }
+                // Önceki bildirim hâlâ ekrandaysa kapat: showSnackbar sıraya girer,
+                // yeni işlemin "Geri al"ı eskisi bitene kadar görünmüyordu.
+                snackbar.currentSnackbarData?.dismiss()
+                val label = if (newStatus == "completed") "tamamlandı" else "bekliyor olarak işaretlendi"
+                val result = snackbar.showSnackbar(
+                    message = "${appt.customerName ?: "Randevu"} $label",
+                    actionLabel = "Geri al",
+                    duration = androidx.compose.material3.SnackbarDuration.Short
+                )
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    Repository.updateAppointmentStatus(appt.id, previous, myId)
+                    afterwards()
                 }
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, "Durum güncellenemedi: ${e.toUserMessage()}", android.widget.Toast.LENGTH_SHORT).show()
@@ -168,7 +171,22 @@ fun AppointmentsScreen(appState: AppState, navController: NavController) {
     }
 
     Box(Modifier.fillMaxSize()) {
-    androidx.compose.material3.SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).zIndex(1f))
+    // Sağ altta "Randevu Oluştur" butonu; "Geri al" bildirimi çıkınca butonun altına
+    // yerleşir ve buton yukarı kayar (üst üste binmezler).
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth().zIndex(1f),
+        horizontalAlignment = Alignment.End
+    ) {
+        if (!searchActive && !searchFocused) {
+            androidx.compose.material3.FloatingActionButton(
+                onClick = { navController.navigate(ROUTE_APPOINTMENT_CREATE) },
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Randevu Oluştur")
+            }
+        }
+        androidx.compose.material3.SnackbarHost(snackbar)
+    }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Randevular", style = MaterialTheme.typography.headlineSmall)
@@ -228,7 +246,7 @@ fun AppointmentsScreen(appState: AppState, navController: NavController) {
                 searchResults.isEmpty() -> Text("“${query.trim()}” ile eşleşen randevu yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> LazyColumn {
                     item { Text("${searchResults.size} randevu", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    items(searchResults) { appt ->
+                    items(searchResults, key = { it.id }) { appt ->
                         AppointmentCard(
                             appt = appt,
                             technicians = technicians,
@@ -267,8 +285,8 @@ fun AppointmentsScreen(appState: AppState, navController: NavController) {
                         androidx.compose.material3.Button(onClick = { navController.navigate(ROUTE_APPOINTMENT_CREATE) }) { Text("Randevu Oluştur") }
                     }
                 } else {
-                    LazyColumn {
-                        items(appointments) { appt ->
+                    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) { // son kart "+" butonunun altında kalmasın
+                        items(appointments, key = { it.id }) { appt ->
                             AppointmentCard(
                                 appt = appt,
                                 technicians = technicians,
@@ -330,12 +348,18 @@ private fun AppointmentCard(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val phoneDigits = appt.customerPhone.orEmpty().filter { it.isDigit() || it == '+' }
+    // rememberSwipeToDismissBoxState, confirmValueChange'i İLK çizimde yakalayıp saklıyor.
+    // Liste yenilenip kartlar yer değiştirince kaydırma, o konumdaki ESKİ randevuya
+    // uygulanıyordu (yanlış randevu değişiyor, "Geri al" çıkmıyordu). Güncel değerler
+    // rememberUpdatedState ile okunur; liste öğeleri de randevu id'siyle anahtarlanır.
+    val currentToggle by androidx.compose.runtime.rememberUpdatedState(onToggleStatus)
+    val currentPhone by androidx.compose.runtime.rememberUpdatedState(phoneDigits)
     val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
-                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onToggleStatus()
-                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> if (phoneDigits.isNotEmpty()) {
-                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$phoneDigits")))
+                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> currentToggle()
+                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> if (currentPhone.isNotEmpty()) {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$currentPhone")))
                 }
                 else -> {}
             }
@@ -420,7 +444,7 @@ private fun AppointmentCardContent(
                     }
                 }
                 val date = if (showDate) appt.scheduledDate?.let {
-                    runCatching { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("d MMM", Locale("tr"))) }.getOrNull()
+                    runCatching { LocalDate.parse(it.take(10)).format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) }.getOrNull()
                 } else null
                 val complaint = appt.complaint?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() }
                 Text(

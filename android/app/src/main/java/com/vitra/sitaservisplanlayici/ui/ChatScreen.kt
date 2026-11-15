@@ -1,5 +1,8 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -100,7 +103,23 @@ fun ChatScreen(appState: AppState, contactId: String, contactName: String, navCo
                             )
                             .padding(horizontal = 14.dp, vertical = 9.dp)
                     ) {
-                        Text(message.body, color = if (mine) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(message.body, color = if (mine) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                            // Saat + (benim mesajımsa) okundu bilgisi: tek tik gönderildi,
+                            // yeşil çift tik okundu — masaüstündeki MessagesDock ile aynı.
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val meta = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                Text(chatTime(message.createdAt), style = MaterialTheme.typography.labelSmall, color = meta)
+                                if (mine) {
+                                    Spacer(Modifier.width(3.dp))
+                                    if (message.readAt != null) {
+                                        Icon(androidx.compose.material.icons.Icons.Filled.DoneAll, contentDescription = "Okundu", tint = Color(0xFF8CF5A8), modifier = Modifier.size(15.dp))
+                                    } else {
+                                        Icon(androidx.compose.material.icons.Icons.Filled.Done, contentDescription = "Gönderildi", tint = meta, modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -144,3 +163,8 @@ fun ChatScreen(appState: AppState, contactId: String, contactName: String, navCo
     }
     }
 }
+
+/** ISO zaman damgası → yerel saat "HH:mm". */
+private fun chatTime(iso: String?): String = runCatching {
+    com.vitra.sitaservisplanlayici.data.serverTimeLocal(iso)!!.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+}.getOrDefault("")

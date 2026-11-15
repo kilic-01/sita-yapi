@@ -29,6 +29,7 @@ class FcmService : FirebaseMessagingService() {
         // Bu servis MainActivity hiç açılmadan (süreç FCM tarafından
         // başlatılınca) çalışabilir — kayıtlı sunucu adresini okuyabilmek için.
         ApiClient.init(applicationContext)
+        AuthToken.init(applicationContext) // servis uygulama açılmadan başlayabilir; istek anahtarlı gitsin
         val userId = SessionHolder.userId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -44,29 +45,40 @@ class FcmService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         val title = message.notification?.title ?: message.data["title"] ?: "Yeni mesaj"
         val body = message.notification?.body ?: message.data["body"] ?: ""
-        showNotification(title, body)
+        showNotification(title, body, message.data)
     }
 
-    private fun showNotification(title: String, body: String) {
+    private fun showNotification(title: String, body: String, data: Map<String, String> = emptyMap()) {
         val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Mesajlar", NotificationManager.IMPORTANCE_HIGH)
-            manager.createNotificationChannel(channel)
-        }
+        ensureMessageChannel(this)
         val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            // Basılınca doğrudan gönderenle olan sohbet açılsın (bkz. AppState.handleNotificationIntent).
+            data.forEach { (k, v) -> putExtra(k, v) }
         }
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+            this, (data["senderId"] ?: "").hashCode(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_notification)
+            .setColor(getColor(R.color.notification_accent))
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
         manager.notify(System.currentTimeMillis().toInt(), notification)
+    }
+}
+
+/** "Mesajlar" bildirim kanalı (varsa dokunmaz). MainActivity açılışında ve bildirim gösterirken çağrılır. */
+fun ensureMessageChannel(context: android.content.Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(CHANNEL_ID, "Mesajlar", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Uygulama içi mesajlar"
+        }
+        manager.createNotificationChannel(channel)
     }
 }

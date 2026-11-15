@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui.more
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,7 +48,7 @@ fun TekliflerScreen(navController: NavController) {
     }
 
     SimpleScreenScaffold(
-        title = "Teklifler",
+        title = "Fiyat Teklifi",
         navController = navController,
         floatingActionButton = {
             FloatingActionButton(onClick = { navController.navigate(ROUTE_TEKLIF_YENI) }) {
@@ -70,7 +71,7 @@ fun TekliflerScreen(navController: NavController) {
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Text(quote.customerName ?: "(isimsiz)", style = MaterialTheme.typography.titleMedium)
-                                Text("${quote.quoteNo ?: "-"} · ${quote.quoteDate ?: "-"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${quote.quoteNo ?: "-"} · ${trDate(quote.quoteDate, "-")}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

@@ -74,6 +74,10 @@ fun HomeScreen(appState: AppState, navController: NavController) {
     var outstandingCheckouts by remember { mutableStateOf<List<PartCheckout>>(emptyList()) }
     var technicians by remember { mutableStateOf<List<Technician>>(emptyList()) }
     var selectedProgramDay by remember { mutableStateOf(LocalDate.now()) }
+    // Program widget'ında gösterilen hafta: 0 = bu hafta, -1 geçen, +1 gelecek…
+    var programWeekOffset by remember { mutableStateOf(0) }
+    var programAppts by remember { mutableStateOf<Map<String, List<Appointment>>>(emptyMap()) }
+    var programReloadKey by remember { mutableStateOf(0) }
 
     val today = LocalDate.now()
     val tomorrow = today.plusDays(1)
@@ -145,11 +149,27 @@ fun HomeScreen(appState: AppState, navController: NavController) {
     val weekCompletionRate = if (weekAppointments.isEmpty()) 0 else
         Math.round(weekAppointments.count { it.status == "completed" } * 100.0 / weekAppointments.size).toInt()
 
-    val programDayCounts = (0..6).associate { i ->
-        val day = weekStart.plusDays(i.toLong())
-        day to (apptByDate[day.format(fmt)]?.size ?: 0)
+    val programWeekStart = weekStart.plusWeeks(programWeekOffset.toLong())
+    // Seçili haftanın 7 günü: önbellekte varsa anında, sonra sunucudan tazelenir.
+    LaunchedEffect(programWeekStart, programReloadKey) {
+        val isos = (0..6).map { programWeekStart.plusDays(it.toLong()).format(fmt) }
+        programAppts = isos.associateWith { AppointmentsCache.peek(it) ?: apptByDate[it] ?: emptyList() }
+        programAppts = coroutineScope {
+            isos.associateWith { d -> async { try { AppointmentsCache.refresh(d) } catch (_: Exception) { programAppts[d] ?: emptyList() } } }
+                .mapValues { it.value.await() }
+        }
     }
-    val selectedDayAppointments = apptByDate[selectedProgramDay.format(fmt)] ?: emptyList()
+    fun programDay(day: LocalDate) = programAppts[day.format(fmt)] ?: apptByDate[day.format(fmt)] ?: emptyList()
+    val programDayCounts = (0..6).associate { i ->
+        val day = programWeekStart.plusDays(i.toLong())
+        day to programDay(day).size
+    }
+    val selectedDayAppointments = programDay(selectedProgramDay)
+    fun changeProgramWeek(offset: Int) {
+        programWeekOffset = offset
+        // Bu haftada bugün, başka haftada o haftanın pazartesisi seçili gelir.
+        selectedProgramDay = if (offset == 0) today else weekStart.plusWeeks(offset.toLong())
+    }
 
     fun toggleCompleted(appt: Appointment) {
         val myId = user?.id ?: return
@@ -158,6 +178,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
             try {
                 Repository.updateAppointmentStatus(appt.id, newStatus, myId)
                 reload()
+                programReloadKey++
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, "Durum güncellenemedi: ${e.toUserMessage()}", android.widget.Toast.LENGTH_SHORT).show()
             }
@@ -217,7 +238,11 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                 WidgetFrame(editMode = editMode, onRemove = { widgetPrefs.remove(widgetId) }) {
                     when (widgetId) {
                         HomeWidgetId.PROGRAM -> ProgramWidgetCard(
-                            weekStart = weekStart,
+                            weekStart = programWeekStart,
+                            isCurrentWeek = programWeekOffset == 0,
+                            onPrevWeek = { changeProgramWeek(programWeekOffset - 1) },
+                            onNextWeek = { changeProgramWeek(programWeekOffset + 1) },
+                            onThisWeek = { changeProgramWeek(0) },
                             dayCounts = programDayCounts,
                             selectedDay = selectedProgramDay,
                             onSelectDay = { selectedProgramDay = it },

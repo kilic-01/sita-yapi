@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import com.vitra.sitaservisplanlayici.data.trDateTime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
@@ -288,7 +289,7 @@ private fun StockHistoryDialog(stockId: String, onDismiss: () -> Unit) {
                             // aynı basit yaklaşım: ilk 16 karakteri okunur hale getir.
                             entry.createdAt?.takeIf { it.length >= 16 }?.let {
                                 Text(
-                                    it.take(16).replace("T", " "),
+                                    trDateTime(it),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

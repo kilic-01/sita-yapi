@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -31,6 +32,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +79,10 @@ fun QuoteDetailScreen(quoteId: String, appState: AppState, navController: NavCon
     var error by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(quoteId) {
+    // Düzenleme ekranından dönünce ("quoteUpdated" işareti) teklif yeniden yüklenir.
+    val updatedAt by (navController.currentBackStackEntry?.savedStateHandle?.getStateFlow("quoteUpdated", 0L)
+        ?: kotlinx.coroutines.flow.MutableStateFlow(0L)).collectAsState()
+    LaunchedEffect(quoteId, updatedAt) {
         try {
             quote = Repository.listQuotes().firstOrNull { it.id == quoteId }
             if (quote == null) error = "Teklif bulunamadı."
@@ -102,6 +108,7 @@ fun QuoteDetailScreen(quoteId: String, appState: AppState, navController: NavCon
                             .onFailure { android.widget.Toast.makeText(context, it.message ?: "Gönderilemedi.", android.widget.Toast.LENGTH_SHORT).show() }
                     }
                 }) { Icon(Icons.Filled.Cast, contentDescription = "TV'de Göster") }
+                IconButton(onClick = { navController.navigate(quoteEditRoute(q.id)) }) { Icon(Icons.Filled.Edit, contentDescription = "Teklifi Düzenle") }
                 IconButton(onClick = { showDeleteConfirm = true }) { Icon(Icons.Filled.Delete, contentDescription = "Teklifi Sil") }
             }
         }
@@ -143,7 +150,7 @@ fun QuoteDetailScreen(quoteId: String, appState: AppState, navController: NavCon
                     item {
                         Section("Teklif Bilgisi") {
                             InfoLine("Teklif No", q.quoteNo ?: "—")
-                            InfoLine("Tarih", q.quoteDate ?: "—")
+                            InfoLine("Tarih", trDate(q.quoteDate))
                             q.validityDays?.let { InfoLine("Geçerlilik", "$it gün") }
                             q.preparedBy?.takeIf { it.isNotBlank() }?.let { InfoLine("Hazırlayan", it) }
                         }

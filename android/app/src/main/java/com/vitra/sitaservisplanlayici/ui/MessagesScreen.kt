@@ -171,12 +171,12 @@ fun MessagesScreen(appState: AppState, navController: NavController) {
 /** Mesaj listesindeki saat: bugün "14:05", dün "Dün", bu hafta gün adı, daha eski "3 Kas". */
 fun messageTimeLabel(iso: String?): String = runCatching {
     val tr = java.util.Locale("tr")
-    val time = java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
+    val time = com.vitra.sitaservisplanlayici.data.serverTimeLocal(iso)!!
     val days = java.time.temporal.ChronoUnit.DAYS.between(time.toLocalDate(), java.time.LocalDate.now())
     when {
         days == 0L -> time.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
         days == 1L -> "Dün"
         days < 7 -> time.format(java.time.format.DateTimeFormatter.ofPattern("EEEE", tr))
-        else -> time.format(java.time.format.DateTimeFormatter.ofPattern("d MMM", tr))
+        else -> time.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy", tr))
     }
 }.getOrDefault("")

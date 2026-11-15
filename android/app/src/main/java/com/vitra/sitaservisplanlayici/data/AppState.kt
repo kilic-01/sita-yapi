@@ -53,6 +53,16 @@ class AppState(private val context: Context) {
     // sekmesinde arama kutusunu açtırmak için (ilgili ekran okuyup sıfırlar).
     var pendingStockScan by mutableStateOf(false)
     var pendingAppointmentSearch by mutableStateOf(false)
+    // Mesaj bildirimine basıldı: (gönderen id, ad) — RootApp Mesajlar'a geçip bu sohbeti açar.
+    var pendingChat by mutableStateOf<Pair<String, String>?>(null)
+
+    /** Bildirim intent'indeki (FCM data ya da kendi bildirimimiz) mesaj bilgisini okur. */
+    fun handleNotificationIntent(intent: android.content.Intent?) {
+        val extras = intent?.extras ?: return
+        if (extras.getString("type") != "message") return
+        val senderId = extras.getString("senderId")?.takeIf { it.isNotBlank() } ?: return
+        pendingChat = senderId to (extras.getString("senderName") ?: "")
+    }
 
     suspend fun refreshTvOnAir() {
         val mine = tvOnAir ?: return
@@ -96,12 +106,23 @@ class AppState(private val context: Context) {
 
     fun logout() {
         currentUser = null
+        AuthToken.clear()
         SessionHolder.userId = null
         prefs.edit().remove("user_json").apply()
     }
 
     init {
+        // Oturum anahtarı olmayan eski girişler (anahtar sisteminden önceki sürüm)
+        // geçersiz: kullanıcıdan bir kez yeniden giriş istenir.
+        if (currentUser != null && AuthToken.value == null) {
+            currentUser = null
+            prefs.edit().remove("user_json").apply()
+        }
         SessionHolder.userId = currentUser?.id
+        // Sunucu 401 dönerse çıkış (ağ iş parçacığından ana iş parçacığına geçilir).
+        ApiClient.onSessionExpired = {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { logout() }
+        }
     }
 }
 

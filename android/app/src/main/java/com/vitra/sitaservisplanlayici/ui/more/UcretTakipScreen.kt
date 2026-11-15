@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui.more
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -117,7 +118,7 @@ fun UcretTakipScreen(appState: AppState, navController: NavController) {
                                         Modifier.weight(1f).clickable { editingEntry = entry }
                                     ) {
                                         Text(feeCategoryLabel(entry.category), style = MaterialTheme.typography.titleMedium)
-                                        val subtitle = listOfNotNull(entry.date, entry.description?.takeIf { it.isNotBlank() }).joinToString(" · ")
+                                        val subtitle = listOfNotNull(entry.date?.let { trDate(it) }, entry.description?.takeIf { it.isNotBlank() }).joinToString(" · ")
                                         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Text(

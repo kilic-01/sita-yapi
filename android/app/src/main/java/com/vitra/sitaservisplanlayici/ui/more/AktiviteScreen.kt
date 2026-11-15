@@ -74,6 +74,6 @@ fun AktiviteScreen(appState: AppState, navController: NavController) {
 
 /** "2026-11-14T13:22:05.123Z" → "14 Kas 2026, 16:22" (cihazın saat diliminde). */
 private fun formatActivityDate(iso: String): String = runCatching {
-    java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
-        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", java.util.Locale("tr")))
+    com.vitra.sitaservisplanlayici.data.serverTimeLocal(iso)!!
+        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", java.util.Locale("tr")))
 }.getOrDefault(iso)

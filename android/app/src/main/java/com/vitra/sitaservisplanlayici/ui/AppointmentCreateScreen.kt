@@ -1,5 +1,6 @@
 package com.vitra.sitaservisplanlayici.ui
 
+import com.vitra.sitaservisplanlayici.data.trDate
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -96,7 +97,7 @@ fun AppointmentCreateScreen(appState: AppState, navController: NavController) {
                     Text("Bu müşteri daha önce ${history.size} kez servis almış", style = MaterialTheme.typography.titleSmall, color = androidx.compose.ui.graphics.Color(0xFFD97706))
                     history.take(3).forEach { a ->
                         Spacer(Modifier.height(4.dp))
-                        Text((a.scheduledDate ?: "—") + " · " + (a.complaint?.takeIf { it.isNotBlank() } ?: "(şikâyet yok)"), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                        Text(trDate(a.scheduledDate) + " · " + (a.complaint?.takeIf { it.isNotBlank() } ?: "(şikâyet yok)"), style = MaterialTheme.typography.bodySmall, maxLines = 2)
                     }
                     if (history.size > 3) Text("+${history.size - 3} ziyaret daha", style = MaterialTheme.typography.bodySmall)
                 }
