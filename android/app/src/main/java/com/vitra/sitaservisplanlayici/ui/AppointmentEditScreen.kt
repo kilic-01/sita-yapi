@@ -135,6 +135,17 @@ private fun AppointmentEditForm(appState: AppState, appt: Appointment, navContro
                 }
             }
         }
+        // Masaüstüyle aynı (kullanıcı kararı): "Otomatik rota" mevcut atamayı hemen
+        // kaldırmaz; bir sonraki "Rota Oluştur"da sistem yeniden dağıtır.
+        val currentTechName = appt.assignedTechnicianId?.let { id -> technicians.firstOrNull { it.id == id }?.name }
+        if (technicianId == null && currentTechName != null) {
+            Text(
+                "$currentTechName şimdilik atanmış kalır; bir sonraki Rota Oluştur'da sistem yeniden atar.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+            )
+        }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(error!!, color = MaterialTheme.colorScheme.error)
