@@ -8,6 +8,15 @@ struct LoginView: View {
     @State private var showPassword: Bool = false
     @State private var errorMessage: String?
     @State private var isLoading: Bool = false
+    @State private var serverAddress: String = APIClient.serverAddress
+    @State private var editingServer: Bool = false
+    // Sunucu adresi kullanıcıya gösterilmez (mağaza sürümünde kafa karıştırıyor):
+    // geliştirme derlemesinde görünür; diğerlerinde logoya 5 kez dokununca açılır.
+    #if DEBUG
+    @State private var showServerSettings = true
+    #else
+    @State private var showServerSettings = false
+    #endif
     @FocusState private var focusedField: Field?
 
     private enum Field { case name, password }
@@ -20,6 +29,7 @@ struct LoginView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 220)
+                .onTapGesture(count: 5) { showServerSettings = true }
 
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
@@ -60,7 +70,7 @@ struct LoginView: View {
                 }
                 .padding(14)
             }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal, 32)
 
             Button {
@@ -85,6 +95,31 @@ struct LoginView: View {
                     .foregroundStyle(.red)
             }
 
+            // Sunucu (Mac'in LAN IP'si) Wi-Fi değişince kayabiliyor — yeniden
+            // derlemeden buradan güncellenebilsin.
+            if editingServer {
+                HStack {
+                    TextField("ör. 192.168.1.103:4173", text: $serverAddress)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                    Button("Kaydet") {
+                        APIClient.serverAddress = serverAddress
+                        serverAddress = APIClient.serverAddress
+                        editingServer = false
+                    }
+                }
+                .padding(.horizontal, 32)
+            } else if showServerSettings {
+                Button {
+                    editingServer = true
+                } label: {
+                    Text("Sunucu: \(APIClient.serverAddress)").font(.footnote)
+                }
+                .foregroundStyle(.secondary)
+            }
+
             Spacer()
             Spacer()
         }
@@ -106,7 +141,7 @@ struct LoginView: View {
             }
             appState.login(user)
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Giriş yapılamadı."
+            errorMessage = error.turkishMessage
         }
     }
 }

@@ -104,7 +104,7 @@ struct CustomerHistoryView: View {
                 return (part.customerName ?? "").caseInsensitiveCompare(customerName) == .orderedSame
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Yüklenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }

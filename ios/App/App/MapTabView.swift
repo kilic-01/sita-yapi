@@ -12,6 +12,17 @@ struct MapTabView: View {
     @State private var errorMessage: String?
     @State private var selected: Appointment?
     @State private var cameraPosition: MapCameraPosition = .automatic
+    // Masaüstündeki MapPage.jsx'te zaten bir tarih seçici var (bkz.
+    // selectedDate) — burada sadece "bugün" sabit kodlanmıştı, dev
+    // veritabanında bugüne ait randevu yoksa harita hep boş görünüyordu ve
+    // kullanıcının başka bir güne geçmesinin hiçbir yolu yoktu.
+    @State private var selectedDate = Date()
+    private var selectedDateISO: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = .current
+        return formatter.string(from: selectedDate)
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -37,16 +48,22 @@ struct MapTabView: View {
             } else if let errorMessage {
                 Text(errorMessage).font(.caption).padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 8)
             } else if pinned.isEmpty {
-                Text("Bugün konumlu randevu yok.").font(.caption).padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 8)
+                Text("Bu tarihte konumlu randevu yok.").font(.caption).padding(10).background(.regularMaterial, in: Capsule()).padding(.top, 8)
             }
         }
         .navigationTitle("Harita")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                DatePicker("Tarih", selection: $selectedDate, displayedComponents: .date)
+                    .labelsHidden()
+            }
+        }
         .sheet(item: $selected) { appt in
             MapAppointmentSheet(appointment: appt)
                 .presentationDetents([.height(220)])
         }
-        .task { await load() }
+        .task(id: selectedDateISO) { await load() }
     }
 
     private var pinned: [Appointment] {
@@ -67,14 +84,19 @@ struct MapTabView: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            async let apptsReq: [Appointment] = APIClient.shared.get("/appointments/by-date/\(todayISODate())")
+            async let apptsReq: [Appointment] = APIClient.shared.get("/appointments/by-date/\(selectedDateISO)")
             async let shopReq: ShopLocation = APIClient.shared.get("/shop-location")
             let (appts, shop) = try await (apptsReq, shopReq)
             appointments = appts
+            // Kamera SADECE dükkan konumu ilk yüklendiğinde ortalanır — tarih
+            // değiştirmek kullanıcının o anki yakınlaştırma/kaydırmasını
+            // sıfırlamamalı.
+            if shopLocation == nil {
+                cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: shop.lat, longitude: shop.lng), span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
+            }
             shopLocation = shop
-            cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: shop.lat, longitude: shop.lng), span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Harita verisi yüklenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -95,6 +117,11 @@ private struct MapAppointmentSheet: View {
                     }
                 } else {
                     Label(phone, systemImage: "phone.fill")
+                }
+            }
+            if let url = appointment.directionsURL {
+                Link(destination: url) {
+                    Label("Yol Tarifi", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                 }
             }
             Spacer()

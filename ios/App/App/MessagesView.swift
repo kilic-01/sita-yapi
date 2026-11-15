@@ -3,14 +3,46 @@ import SwiftUI
 private struct Contact: Identifiable, Hashable {
     let id: String
     let name: String
+    let photo: String?
     static func == (lhs: Contact, rhs: Contact) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// `data:image/...;base64,...` URL'lerini çözer — ProfileView'daki aynı
+/// basit yaklaşım (AsyncImage bu şemayı desteklemiyor, Android'deki Coil
+/// sorunuyla aynı sebepten burada da doğrudan Data/UIImage kullanıyoruz).
+private func decodedAvatar(_ dataUrl: String?) -> UIImage? {
+    guard let dataUrl, let range = dataUrl.range(of: "base64,") else { return nil }
+    let base64 = String(dataUrl[range.upperBound...])
+    guard let data = Data(base64Encoded: base64) else { return nil }
+    return UIImage(data: data)
+}
+
+private struct ContactAvatar: View {
+    let contact: Contact
+    var body: some View {
+        if let image = decodedAvatar(contact.photo) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 38, height: 38)
+                .clipShape(Circle())
+        } else {
+            Text(String(contact.name.first ?? "?"))
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(.tint, in: Circle())
+        }
+    }
 }
 
 struct MessagesView: View {
     @Environment(AppState.self) private var appState
     @State private var contacts: [Contact] = []
     @State private var unreadByContact: [String: Int] = [:]
+    // Kişi başına son mesaj — satırda önizleme ve saat (WhatsApp benzeri).
+    @State private var lastMessageByContact: [String: ChatMessage] = [:]
     @State private var isLoading = false
     @State private var hasLoadedOnce = false
     @State private var errorMessage: String?
@@ -28,13 +60,25 @@ struct MessagesView: View {
                     ForEach(contacts) { contact in
                         NavigationLink(value: contact) {
                             HStack(spacing: 12) {
-                                Text(String(contact.name.first ?? "?"))
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(.white)
-                                    .frame(width: 38, height: 38)
-                                    .background(.tint, in: Circle())
-                                Text(contact.name)
-                                Spacer()
+                                ContactAvatar(contact: contact)
+                                let unread = (unreadByContact[contact.id] ?? 0) > 0
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack {
+                                        Text(contact.name).fontWeight(unread ? .semibold : .regular)
+                                        Spacer()
+                                        if let last = lastMessageByContact[contact.id] {
+                                            Text(messageTimeLabel(last.createdAt))
+                                                .font(.caption)
+                                                .foregroundStyle(unread ? Color.accentColor : .secondary)
+                                        }
+                                    }
+                                    if let last = lastMessageByContact[contact.id] {
+                                        Text((last.senderId == appState.currentUser?.id ? "Sen: " : "") + last.body)
+                                            .font(.subheadline)
+                                            .foregroundStyle(unread ? .primary : .secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
                                 if let count = unreadByContact[contact.id], count > 0 {
                                     Text("\(count)")
                                         .font(.caption.bold())
@@ -79,18 +123,34 @@ struct MessagesView: View {
             async let usersReq: [AppUser] = APIClient.shared.get("/users")
             async let msgs: [ChatMessage] = APIClient.shared.get("/messages/\(myId)")
             let (userList, messageList) = try await (usersReq, msgs)
-            contacts = userList.map { Contact(id: $0.id, name: $0.name) }.filter { $0.id != myId }
             var counts: [String: Int] = [:]
-            for m in messageList where m.senderId != myId && m.recipientId == myId && m.readAt == nil {
-                counts[m.senderId, default: 0] += 1
+            // En son mesajın zamanını, sohbetin iki tarafından da (gönderen/alan)
+            // bakarak kişi id'sine göre topluyoruz — en yeni sohbet en üstte.
+            var lastMessageAt: [String: String] = [:]
+            var lastMessage: [String: ChatMessage] = [:]
+            for m in messageList {
+                let otherId = m.senderId == myId ? m.recipientId : (m.recipientId == myId ? m.senderId : nil)
+                guard let otherId, let createdAt = m.createdAt else { continue }
+                if createdAt > (lastMessageAt[otherId] ?? "") {
+                    lastMessageAt[otherId] = createdAt
+                    lastMessage[otherId] = m
+                }
+                if m.senderId != myId && m.recipientId == myId && m.readAt == nil {
+                    counts[m.senderId, default: 0] += 1
+                }
             }
+            contacts = userList
+                .filter { $0.id != myId }
+                .map { Contact(id: $0.id, name: $0.name, photo: $0.photo) }
+                .sorted { (lastMessageAt[$0.id] ?? "") > (lastMessageAt[$1.id] ?? "") }
             unreadByContact = counts
+            lastMessageByContact = lastMessage
             errorMessage = nil
         } catch {
             // Periyodik yenilemede geçici bir ağ hatası, mevcut listeyi bir
             // hata ekranıyla değiştirmemeli — sadece ilk yüklemede göster.
             if !hasLoadedOnce {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kişiler yüklenemedi."
+                errorMessage = error.turkishMessage
             }
         }
     }
@@ -160,7 +220,7 @@ struct ChatView: View {
             Text(message.body)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
-                .background(mine ? AnyShapeStyle(.tint) : AnyShapeStyle(.regularMaterial), in: RoundedRectangle(cornerRadius: 16))
+                .background(mine ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.secondarySystemBackground)), in: RoundedRectangle(cornerRadius: 16))
                 .foregroundStyle(mine ? .white : .primary)
             if !mine { Spacer(minLength: 40) }
         }
@@ -181,7 +241,7 @@ struct ChatView: View {
             // Periyodik yenilemede geçici bir hata, zaten açık olan sohbeti
             // bir hata mesajıyla değiştirmemeli.
             if messages.isEmpty {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Sohbet yüklenemedi."
+                errorMessage = error.turkishMessage
             }
         }
     }
@@ -198,7 +258,7 @@ struct ChatView: View {
             draft = ""
             await load()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Gönderilemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -206,3 +266,19 @@ struct ChatView: View {
 /// PUT /messages/read gövdesi anlamlı bir JSON döndürmeyebilir — kesin bir
 /// şekil beklemeden "her neyse" decode edebilmek için boş bir yer tutucu.
 struct EmptyResponse: Decodable {}
+
+/// Mesaj listesindeki saat: bugün "14:05", dün "Dün", bu hafta gün adı, daha eski "3 Kas".
+func messageTimeLabel(_ iso: String?) -> String {
+    guard let iso else { return "" }
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
+    let cal = Calendar.current
+    let out = DateFormatter()
+    out.locale = Locale(identifier: "tr_TR")
+    if cal.isDateInToday(date) { out.dateFormat = "HH:mm" }
+    else if cal.isDateInYesterday(date) { return "Dün" }
+    else if let days = cal.dateComponents([.day], from: date, to: Date()).day, days < 7 { out.dateFormat = "EEEE" }
+    else { out.dateFormat = "d MMM" }
+    return out.string(from: date)
+}

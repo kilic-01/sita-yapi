@@ -17,6 +17,23 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <!-- android:background SADECE API 31 altında (androidx.core.splashscreen
+             "compat" yolunda) etkili — tam logo + yazı burada gösteriliyor. -->
+        <item name="android:background">@drawable/splash_centered</item>
+        <!-- API 31+ (Android 12+) cihazlarda gerçek sistem SplashScreen API'si
+             devreye girip android:background'ı TAMAMEN görmezden geliyor —
+             bu iki özellik ayarlanmadan sistem kendi varsayılanına (sadece
+             uygulama simgesi, markasız) düşüyordu. windowSplashScreenAnimatedIcon
+             küçük bir ikon alanı için tasarlandığı için burada TAM logoyu
+             (yazı dahil) değil, sadece marka sembolünü kullanıyoruz —
+             platformun beklediği "ikon + düz zemin" deseni bu. -->
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- Native MainActivity.kt artık installSplashScreen() çağırıyor — bu
+             olmadan aktivite SÜREKLİ Theme.SplashScreen'de kalıyordu (asla
+             gerçek içerik temasına geçmiyordu), bu da üst çubukta uygulama
+             simgesinin yatay olarak gerilmiş/bozulmuş görünmesine ve başlığın
+             "Sita Y..." diye kesilmesine sebep oluyordu. -->
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

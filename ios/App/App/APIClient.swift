@@ -34,10 +34,39 @@ actor APIClient {
     // (bunu değiştirmenin bir yolu yok, telefon fiziksel olarak ayrı bir ağ
     // arayüzü).
     #if targetEnvironment(simulator)
-    private let baseURL = URL(string: "http://127.0.0.1:4173/api")!
+    nonisolated static let defaultServerAddress = "127.0.0.1:4173"
     #else
-    private let baseURL = URL(string: "http://192.168.1.28:4173/api")!
+    nonisolated static let defaultServerAddress = "192.168.1.120:4173"
     #endif
+
+    /// Gerçek cihazda Mac'in LAN IP'si Wi-Fi değiştikçe kayıyor — sabit
+    /// yazılı adres her seferinde yeniden derleme gerektiriyordu. Artık giriş
+    /// ekranından değiştirilebilen kalıcı bir tercih (boşsa varsayılan).
+    nonisolated static let serverAddressKey = "sita-yapi-server-address"
+
+    nonisolated static var serverAddress: String {
+        get {
+            let stored = UserDefaults.standard.string(forKey: serverAddressKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return stored.isEmpty ? defaultServerAddress : stored
+        }
+        set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: serverAddressKey) }
+    }
+
+    /// "192.168.1.5", "192.168.1.5:4173", "http://host:4173/api" → "http://host:port/api"
+    nonisolated static func baseURL(for address: String) -> URL? {
+        var a = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        while a.hasSuffix("/") { a.removeLast() }
+        if !a.hasPrefix("http://") && !a.hasPrefix("https://") { a = "http://" + a }
+        if a.hasSuffix("/api") { a.removeLast(4) }
+        let hostPart = a.components(separatedBy: "://").last ?? a
+        if !hostPart.contains(":") { a += ":4173" }
+        return URL(string: a + "/api")
+    }
+
+    private var baseURL: URL {
+        Self.baseURL(for: Self.serverAddress) ?? Self.baseURL(for: Self.defaultServerAddress)!
+    }
     private let decoder: JSONDecoder = JSONDecoder()
     private let encoder: JSONEncoder = JSONEncoder()
 
@@ -56,7 +85,11 @@ actor APIClient {
     /// Barkod okuma araçları için — ~10 binlik stok listesinin tamamını
     /// çekmeden tek kalemi bulur (bkz. electron/db.js getStockItemByBarcode).
     func stockItem(byBarcode barcode: String) async throws -> StockItem? {
-        let encoded = barcode.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? barcode
+        // .urlPathAllowed "/" karakterini KODLAMIYOR — "/" içeren barkod
+        // fazladan bir yol parçası gibi yanlış uca gidiyordu.
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove("/")
+        let encoded = barcode.addingPercentEncoding(withAllowedCharacters: allowed) ?? barcode
         return try await get("/stock/by-barcode/\(encoded)")
     }
 
@@ -78,14 +111,17 @@ actor APIClient {
 
     private func send<T: Decodable>(path: String, method: String, body: Encodable?) async throws -> T {
         var url = baseURL
-        // path kendi query string'ini taşıyabilir (ör. "/activity-log?actingUserId=...")
-        if let comps = URLComponents(string: path) {
-            url = baseURL.appendingPathComponent(comps.path.hasPrefix("/") ? String(comps.path.dropFirst()) : comps.path)
-            if let query = comps.query {
-                var full = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-                full.query = query
-                url = full.url!
-            }
+        // path kendi query string'ini taşıyabilir (ör. "/activity-log?actingUserId=...").
+        // percentEncodedPath kullanılıyor: comps.path çağıranın kodladığı
+        // karakterleri (ör. barkoddaki %2F) geri çözüp yolu bozuyordu.
+        if let comps = URLComponents(string: path),
+           var full = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) {
+            let suffix = comps.percentEncodedPath.hasPrefix("/") ? comps.percentEncodedPath : "/" + comps.percentEncodedPath
+            full.percentEncodedPath += suffix
+            full.percentEncodedQuery = comps.percentEncodedQuery
+            if let built = full.url { url = built }
+        } else {
+            url = baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -118,4 +154,26 @@ private struct AnyEncodable: Encodable {
     private let value: Encodable
     init(_ value: Encodable) { self.value = value }
     func encode(to encoder: Encoder) throws { try value.encode(to: encoder) }
+}
+
+extension Error {
+    /// Ağ hatalarını (bağlantı yok, zaman aşımı) kullanıcıya gösterilecek
+    /// Türkçe bir mesaja çevirir — `URLError.localizedDescription` cihaz
+    /// diline göre İngilizce de dönebiliyordu. `APIError.server` mesajı
+    /// backend'den geldiği için zaten Türkçe, o durumda olduğu gibi kullanılır.
+    var turkishMessage: String {
+        if let urlError = self as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                return "İnternet bağlantınızı kontrol edin."
+            case .timedOut:
+                return "Sunucuya bağlanırken zaman aşımı oluştu. Lütfen tekrar deneyin."
+            case .cannotFindHost, .cannotConnectToHost:
+                return "Sunucuya ulaşılamıyor. Lütfen tekrar deneyin."
+            default:
+                return "Bağlantı hatası oluştu. Lütfen tekrar deneyin."
+            }
+        }
+        return (self as? LocalizedError)?.errorDescription ?? "Bir hata oluştu, lütfen tekrar deneyin."
+    }
 }

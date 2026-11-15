@@ -22,6 +22,7 @@ struct RouteBuilderView: View {
     @State private var date: Date = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     @State private var isBuilding = false
     @State private var result: BuildRoutesResponse?
+    @State private var builtDateStr = ""
     @State private var errorMessage: String?
 
     var body: some View {
@@ -50,6 +51,16 @@ struct RouteBuilderView: View {
             }
 
             if let result {
+                Section {
+                    NavigationLink {
+                        RouteWebPrintView(
+                            scheduledDate: PrintHTMLHelpers.formatDateTR(builtDateStr),
+                            routes: result.routes
+                        )
+                    } label: {
+                        Label("Rotayı Yazdır / Paylaş", systemImage: "printer")
+                    }
+                }
                 if let skippedCount = result.skippedCount, skippedCount > 0 {
                     Section {
                         Label("\(skippedCount) randevu atanamadı", systemImage: "exclamationmark.triangle.fill")
@@ -95,13 +106,14 @@ struct RouteBuilderView: View {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             let dateStr = formatter.string(from: date)
+            builtDateStr = dateStr
             struct Body: Encodable { let scheduledDate: String; let actingUserId: String }
             result = try await APIClient.shared.post(
                 "/routes",
                 body: Body(scheduledDate: dateStr, actingUserId: appState.currentUser?.id ?? "")
             )
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Rota oluşturulamadı."
+            errorMessage = error.turkishMessage
         }
     }
 }

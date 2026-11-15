@@ -6,7 +6,7 @@ import SwiftUI
 /// hesaplarına açık — requireAdmin ile korunuyor).
 private enum MoreDestination: Hashable {
     case zimmet
-    case quotes, pendingParts, incomingOrders, depots, activityLog
+    case quotes, pendingParts, incomingOrders, depots, activityLog, feeTracking
 }
 
 private struct MoreRow: View {
@@ -59,8 +59,14 @@ struct MoreView: View {
                 NavigationLink(value: MoreDestination.depots) {
                     MoreRow(title: "Depolar", subtitle: nil, systemImage: "archivebox.fill", tint: .indigo)
                 }
-                NavigationLink(value: MoreDestination.activityLog) {
-                    MoreRow(title: "Aktivite", subtitle: "Sadece yönetici hesapları görebilir", systemImage: "chart.bar.fill", tint: .green)
+                // Aktivite yalnız yöneticiye açık (sunucu da reddediyor) — diğerlerine hiç gösterilmez.
+                if appState.currentUser?.role == "admin" {
+                    NavigationLink(value: MoreDestination.activityLog) {
+                        MoreRow(title: "Aktivite", subtitle: nil, systemImage: "chart.bar.fill", tint: .green)
+                    }
+                }
+                NavigationLink(value: MoreDestination.feeTracking) {
+                    MoreRow(title: "Ücret Takip", subtitle: nil, systemImage: "turkishlirasign.circle.fill", tint: .teal)
                 }
             }
             .navigationTitle("Daha Fazla")
@@ -81,8 +87,10 @@ struct MoreView: View {
                 case .activityLog:
                     let userId = appState.currentUser?.id ?? ""
                     GenericListView(title: "Aktivite", fetch: { try await APIClient.shared.get("/activity-log?actingUserId=\(userId)") as [ActivityLogEntry] }) { (a: ActivityLogEntry) in
-                        (a.description ?? "İşlem", a.createdAt ?? "", nil)
+                        (a.description ?? "İşlem", formatActivityDate(a.createdAt), nil)
                     }
+                case .feeTracking:
+                    FeeTrackingView()
                 }
             }
         }
@@ -135,9 +143,22 @@ struct GenericListView<Item: Decodable & Identifiable>: View {
             do {
                 items = try await fetch()
             } catch {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Yüklenemedi."
+                errorMessage = error.turkishMessage
             }
             isLoading = false
         }
     }
+}
+
+/// "2026-11-14T13:22:05.123Z" → "14 Kas 2026, 16:22" (cihazın saat diliminde).
+func formatActivityDate(_ iso: String?) -> String {
+    guard let iso else { return "" }
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    guard let date else { return iso }
+    let out = DateFormatter()
+    out.locale = Locale(identifier: "tr_TR")
+    out.dateFormat = "d MMM yyyy, HH:mm"
+    return out.string(from: date)
 }

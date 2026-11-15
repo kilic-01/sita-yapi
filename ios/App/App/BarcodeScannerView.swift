@@ -1,5 +1,7 @@
 import SwiftUI
 import VisionKit
+import UIKit
+import AVFoundation
 
 /// Stok/Zimmet/Satış ekranlarının ortak barkod tarama sayfası — VisionKit'in
 /// canlı DataScannerViewController'ını tam ekran sunar. Simülatörde gerçek
@@ -18,18 +20,30 @@ struct BarcodeScannerSheet: View {
     let onScan: (String) -> Void
 
     @State private var manualCode = ""
+    @State private var scanStartFailed = false
 
+    // "isAvailable" sadece donanım/yazılım desteğini kontrol ediyor, kamera
+    // İZNİNİ DEĞİL — izin reddedilmişse bu hâlâ true dönüyor, tarayıcı açılıp
+    // kameradan hiç görüntü gelmeden sessizce takılı kalıyordu (ne ürün
+    // ekleniyor ne "bulunamadı" uyarısı çıkıyordu, çünkü hiçbir barkod asla
+    // okunamıyordu). İzin durumunu burada AYRICA kontrol ediyoruz.
     private var cameraAvailable: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+        DataScannerViewController.isSupported
+            && DataScannerViewController.isAvailable
+            && AVCaptureDevice.authorizationStatus(for: .video) != .denied
+            && AVCaptureDevice.authorizationStatus(for: .video) != .restricted
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if cameraAvailable {
-                    ScannerRepresentable { code in
-                        dismissThenReport(code)
-                    }
+                if scanStartFailed {
+                    cameraErrorFallback
+                } else if cameraAvailable {
+                    ScannerRepresentable(
+                        onScan: { code in dismissThenReport(code) },
+                        onStartFailed: { scanStartFailed = true }
+                    )
                     .ignoresSafeArea()
                 } else {
                     manualEntryFallback
@@ -48,8 +62,41 @@ struct BarcodeScannerSheet: View {
     private var manualEntryFallback: some View {
         Form {
             Section {
-                Label("Bu cihazda/simülatörde kamera taraması kullanılamıyor.", systemImage: "camera.fill.badge.ellipsis")
-                    .foregroundStyle(.secondary)
+                if AVCaptureDevice.authorizationStatus(for: .video) == .denied
+                    || AVCaptureDevice.authorizationStatus(for: .video) == .restricted {
+                    Label("Kameraya erişim izni verilmemiş.", systemImage: "camera.fill.badge.ellipsis")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                    Button("Ayarlar'da İzni Aç") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                } else {
+                    Label("Bu cihazda/simülatörde kamera taraması kullanılamıyor.", systemImage: "camera.fill.badge.ellipsis")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
+            }
+            Section("Barkod Numarasını Gir") {
+                TextField("Barkod", text: $manualCode)
+                    .keyboardType(.numberPad)
+                    .submitLabel(.search)
+                    .onSubmit { submitManual() }
+                Button("Ara") { submitManual() }
+                    .disabled(manualCode.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+
+    /// `startScanning()` beklenmedik şekilde başarısız olursa (ör. izin tam o
+    /// sırada reddedildiyse) — önceden sessizce yutulan (`try?`) bu hata artık
+    /// kullanıcıya gösteriliyor, elle giriş alanına yönlendiriyor.
+    private var cameraErrorFallback: some View {
+        Form {
+            Section {
+                Label("Kamera başlatılamadı.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
                     .font(.footnote)
             }
             Section("Barkod Numarasını Gir") {
@@ -88,6 +135,7 @@ struct BarcodeScannerSheet: View {
 
 private struct ScannerRepresentable: UIViewControllerRepresentable {
     let onScan: (String) -> Void
+    let onStartFailed: () -> Void
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let vc = DataScannerViewController(
@@ -103,9 +151,21 @@ private struct ScannerRepresentable: UIViewControllerRepresentable {
         return vc
     }
 
+    // ÖNEMLİ: `startScanning()` kamera izni tam bu anda reddedilmişse (ya da
+    // başka bir sebeple) hata fırlatabiliyor — önceden `try?` ile sessizce
+    // yutuluyordu, kamera görüntüsü hiç gelmeden ekran takılı kalıyor,
+    // kullanıcı ne barkod okutabiliyor ne de bir hata görüyordu. Artık hata
+    // durumunda elle giriş ekranına düşüyoruz (bkz. onStartFailed).
     func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
         if !uiViewController.isScanning {
-            try? uiViewController.startScanning()
+            do {
+                try uiViewController.startScanning()
+            } catch {
+                // View güncelleme döngüsü SIRASINDA SwiftUI state'i değiştirmek
+                // tanımsız davranışa yol açabiliyor — bir sonraki run loop
+                // turuna erteliyoruz.
+                DispatchQueue.main.async { onStartFailed() }
+            }
         }
     }
 
@@ -125,6 +185,10 @@ private struct ScannerRepresentable: UIViewControllerRepresentable {
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     handled = true
+                    // VisionKit'in kendi "hedef kutusu" vurgusu var ama dokunsal
+                    // bir onay yok — başarılı okumayı kullanıcı ekrana bakmadan
+                    // da hissedebilsin.
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                     onScan(payload)
                     break
                 }

@@ -15,7 +15,7 @@ struct AppointmentEditView: View {
     @State private var appointment: Appointment
     @State private var customerName: String
     @State private var customerPhone: String
-    @State private var address: String
+    @State private var addressDetail: AddressDetail
     @State private var complaint: String
     @State private var scheduledDate: Date
     @State private var isUrgent: Bool
@@ -33,7 +33,7 @@ struct AppointmentEditView: View {
         self.onDeleted = onDeleted
         _customerName = State(initialValue: appointment.customerName ?? "")
         _customerPhone = State(initialValue: appointment.customerPhone ?? "")
-        _address = State(initialValue: appointment.address ?? "")
+        _addressDetail = State(initialValue: appointment.addressDetail ?? AddressDetail())
         _complaint = State(initialValue: appointment.complaint ?? "")
         _isUrgent = State(initialValue: appointment.urgency == "acil")
         _technicianId = State(initialValue: appointment.assignedTechnicianId)
@@ -55,7 +55,14 @@ struct AppointmentEditView: View {
             Section("Müşteri") {
                 TextField("Ad Soyad", text: $customerName)
                 TextField("Telefon", text: $customerPhone).keyboardType(.phonePad)
-                TextField("Adres", text: $address, axis: .vertical).lineLimit(2...5)
+            }
+            Section("Adres") {
+                if addressDetail.isEmpty, let existing = appointment.address, !existing.isEmpty {
+                    Text("Mevcut adres: \(existing) — konum tabanlı özellikler (harita, rota) için aşağıdan il/ilçe/mahalle seçin.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                AddressDetailFields(detail: $addressDetail)
             }
             Section("İş") {
                 TextField("Şikayet", text: $complaint, axis: .vertical).lineLimit(2...4)
@@ -118,10 +125,25 @@ struct AppointmentEditView: View {
         defer { isSaving = false }
         do {
             let dateStr = Self.dateFormatter.string(from: scheduledDate)
+            // Mevcut (bu özellikten önce oluşturulmuş) randevuların addressDetail'i
+            // boş — kullanıcı İl/İlçe/Mahalle alanlarına hiç dokunmadıysa düz
+            // adres metnini SIFIRLAMAMAK için orijinal appointment.address'i
+            // koruyoruz; aksi halde her "sadece telefonu güncelle" kaydında
+            // adres silinirdi.
+            let finalAddress: String
+            let finalAddressDetail: AddressDetail?
+            if addressDetail.isEmpty {
+                finalAddress = appointment.address ?? ""
+                finalAddressDetail = nil
+            } else {
+                finalAddress = composeAddress(addressDetail)
+                finalAddressDetail = addressDetail
+            }
             let body = EditBody(
                 customerName: customerName.trimmingCharacters(in: .whitespaces),
                 customerPhone: customerPhone,
-                address: address,
+                address: finalAddress,
+                addressDetail: finalAddressDetail,
                 complaint: complaint,
                 scheduledDate: dateStr,
                 urgency: isUrgent ? "acil" : "normal",
@@ -138,7 +160,7 @@ struct AppointmentEditView: View {
             onSaved(response.appointment)
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kaydedilemedi."
+            errorMessage = error.turkishMessage
         }
     }
 
@@ -152,6 +174,7 @@ struct AppointmentEditView: View {
         let customerName: String
         let customerPhone: String
         let address: String
+        let addressDetail: AddressDetail?
         let complaint: String
         let scheduledDate: String
         let urgency: String
@@ -160,7 +183,7 @@ struct AppointmentEditView: View {
         let assignedTechnicianId: String?
 
         enum CodingKeys: String, CodingKey {
-            case customerName, customerPhone, address, complaint, scheduledDate, urgency, actingUserId, assignedTechnicianId
+            case customerName, customerPhone, address, addressDetail, complaint, scheduledDate, urgency, actingUserId, assignedTechnicianId
         }
 
         func encode(to encoder: Encoder) throws {
@@ -168,6 +191,7 @@ struct AppointmentEditView: View {
             try c.encode(customerName, forKey: .customerName)
             try c.encode(customerPhone, forKey: .customerPhone)
             try c.encode(address, forKey: .address)
+            try c.encodeIfPresent(addressDetail, forKey: .addressDetail)
             try c.encode(complaint, forKey: .complaint)
             try c.encode(scheduledDate, forKey: .scheduledDate)
             try c.encode(urgency, forKey: .urgency)
@@ -187,7 +211,7 @@ struct AppointmentEditView: View {
             onDeleted()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Silinemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }

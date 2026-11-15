@@ -28,16 +28,20 @@ final class AppLockState {
         guard isEnabled else { isUnlocked = true; return }
         let context = LAContext()
         var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            // Biyometri bu cihazda kurulmamış/kullanılamıyor (ör. simülatörde
-            // Face ID etkinleştirilmemiş) — bu durumda kilitte kullanıcıyı
-            // sonsuza dek dışarıda bırakmak yerine erişime izin veriyoruz.
+        // .deviceOwnerAuthentication (sadece biyometri DEĞİL): Face ID
+        // başarısız/kilitlenmiş olursa cihaz parolasına düşer. Eskiden sadece
+        // biyometri kullanılıyordu — art arda 5 hatalı Face ID denemesinden
+        // sonra (biometryLockout) canEvaluatePolicy false dönüyor ve aşağıdaki
+        // dal kilidi DOĞRUDAN açıyordu, yani kilit atlatılabiliyordu.
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            // Cihazda hiç parola yok (ör. simülatör) — korunacak bir kimlik
+            // olmadığı için kullanıcıyı sonsuza dek dışarıda bırakmıyoruz.
             isUnlocked = true
             return
         }
         do {
             let success = try await context.evaluatePolicy(
-                .deviceOwnerAuthenticationWithBiometrics,
+                .deviceOwnerAuthentication,
                 localizedReason: "Sita Yapı'ya erişmek için kimliğinizi doğrulayın"
             )
             isUnlocked = success

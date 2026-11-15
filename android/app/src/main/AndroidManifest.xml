@@ -6,13 +6,15 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/AppTheme">
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -27,9 +29,41 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- google-services.json eklenip plugin etkinleşmeden bu servis sistem
+             tarafından hiç tetiklenmez (bkz. data/FcmService.kt üstündeki not). -->
+        <service
+            android:name=".data.FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- GET /api/maps/api-key ile aynı anahtar — masaüstü (Google Maps JS)
+             ve iOS (GMSServices) ile paylaşılıyor. Android Maps SDK, iOS'un
+             aksine anahtarı çalışma zamanında değil derleme zamanında
+             manifest'te ister; bu yüzden burada sabit yazılı (gizli bir
+             kimlik bilgisi değil — zaten kimliksiz herkese açık uçtan
+             döndürülüyor, platform kısıtlaması Google Cloud Console
+             tarafında yapılıyor). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Barkod okununca kısa titreşim (BarcodeScannerDialog.vibrateOnScan) — izinsiz sessizce başarısız oluyordu. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Push bildirimlerini göstermek için (API 33+) — iOS'taki
+         UNUserNotificationCenter.requestAuthorization iznine karşılık gelir,
+         giriş sonrası RootApp.kt'de istenir. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Kamerasız cihazlarda da (ör. bazı tabletler) uygulamanın Play Store'da
+         listelenebilmesi için zorunlu değil — kamera yoksa manuel barkod
+         girişine düşülüyor (bkz. BarcodeScanner.kt). -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

@@ -7,6 +7,7 @@ struct StockView: View {
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var showScanner = false
+    @Environment(TabRouter.self) private var router: TabRouter?
     @State private var scannedItem: StockItem?
     @State private var scanErrorMessage: String?
     @State private var depots: [Depot] = []
@@ -37,6 +38,13 @@ struct StockView: View {
                     // StockPage.jsx gibi, hiç arama yapmadan az stoklu ürünleri
                     // varsayılan olarak gösteriyoruz ki ürünlere hiç yazı
                     // yazmadan da (ör. arama kutusuna dokunmadan) ulaşılabilsin.
+                    if !appState.recentStock.isEmpty {
+                        Section("Son Bakılanlar") {
+                            ForEach(appState.recentStock) { item in
+                                stockRow(item)
+                            }
+                        }
+                    }
                     if isLoadingDefault {
                         ProgressView()
                     } else if lowStockItems.isEmpty {
@@ -51,7 +59,7 @@ struct StockView: View {
                 }
             }
             .navigationTitle("Stok")
-            .searchable(text: $query, prompt: "Kod veya isimle ara")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Kod veya isimle ara")
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
             .toolbar {
@@ -65,6 +73,10 @@ struct StockView: View {
                         Image(systemName: "plus.circle.fill")
                     }
                 }
+            }
+            // Ana sayfadaki "Barkod" hızlı işlemi: okuyucu doğrudan açılır.
+            .onChange(of: router?.pendingStockScan ?? false, initial: true) { _, pending in
+                if pending { router?.pendingStockScan = false; showScanner = true }
             }
             .sheet(isPresented: $showScanner) {
                 BarcodeScannerSheet(title: "Barkod Tara") { code in
@@ -133,13 +145,31 @@ struct StockView: View {
             HStack(spacing: 10) {
                 stockThumbnail(item)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name ?? item.code ?? "(isimsiz)").font(.body)
-                    Text("\(item.code ?? "") · \(formattedQty(item)) \(item.unit ?? "adet")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // Ürün kodu ad ile AYNI puntoda ve ÖNÜNDE (dispatcher'lar için kod
+                    // en az ad kadar önemli) — artık kendi satırında kalın; uzun ad
+                    // altında en fazla 2 satır.
+                    if let code = item.code, !code.isEmpty {
+                        Text(code).fontWeight(.semibold).lineLimit(1)
+                        Text(item.name ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    } else {
+                        Text(item.name ?? "(isimsiz)").lineLimit(2)
+                    }
                 }
+                Spacer(minLength: 6)
+                quantityBadge(item)
             }
         }
+    }
+
+    /// Miktar rozeti: 0 kırmızı, eşik altı turuncu, diğerleri nötr.
+    private func quantityBadge(_ item: StockItem) -> some View {
+        let qty = item.quantity ?? 0
+        let color: Color = qty <= 0 ? .red : (qty <= Double(item.lowStockThreshold ?? 2) ? .orange : .secondary)
+        return Text("\(formattedQty(item)) \(item.unit ?? "adet")")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(qty > Double(item.lowStockThreshold ?? 2) ? 0.12 : 0.14), in: Capsule())
     }
 
     private func removeFromLists(_ id: String) {
@@ -196,19 +226,21 @@ struct StockView: View {
             }.prefix(20).map { $0 }
         } catch {
             guard term == query else { return }
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
+            errorMessage = error.turkishMessage
         }
     }
 
     private func lookupBarcode(_ code: String) async {
         do {
             if let item = try await APIClient.shared.stockItem(byBarcode: code) {
+                Haptics.success()
                 scannedItem = item
             } else {
+                Haptics.warning()
                 scanErrorMessage = "Bu barkoda ait ürün bulunamadı: \(code)"
             }
         } catch {
-            scanErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Arama başarısız."
+            scanErrorMessage = error.turkishMessage
         }
     }
 }
@@ -225,8 +257,6 @@ struct StockItemDetailView: View {
     let onDeleted: () -> Void
 
     @State private var current: StockItem
-    @State private var quantity: Int
-    @State private var isSaving = false
     @State private var isDeleting = false
     @State private var errorMessage: String?
     @State private var showEdit = false
@@ -234,17 +264,50 @@ struct StockItemDetailView: View {
     @State private var showFinalDeleteConfirm = false
     @State private var showBarcodeScanner = false
     @State private var barcodeErrorMessage: String?
+    // Bir ürün birden fazla depoda farklı miktarlarda durabiliyor — eskiden
+    // burada sadece tekil (ve artık güncellenmeyen) "current.depotId" alanı
+    // okunuyordu, gerçek dağılım hiç gösterilmiyordu.
+    @State private var depotRows: [StockItemDepot] = []
+    @State private var showTransfer = false
+    // Ürün sayfasında "Son İşlem" artık AÇIK gösterilmiyor — kullanıcı bunu
+    // gürültülü buldu, yerine bir "info" butonu + detaylı geçmiş sayfası var.
+    @State private var showHistory = false
+    // "TV'de Göster": ürün ofis TV'sinde açılır (masaüstündeki "Yayınla" ile aynı).
+    @State private var isBroadcasting = false
+    @State private var tvMessage: String?
 
     init(item: StockItem, depots: [Depot], onDeleted: @escaping () -> Void = {}) {
         self.depots = depots
         self.onDeleted = onDeleted
         _current = State(initialValue: item)
-        _quantity = State(initialValue: Int(item.quantity ?? 0))
     }
 
-    private var depotName: String? {
-        guard let id = current.depotId else { return nil }
-        return depots.first { $0.id == id }?.name
+    private func broadcastToTv() async {
+        struct Body: Encodable { let item: StockItem; let actingUserId: String; let deviceName: String }
+        struct Payload: Decodable { let sentAt: String?; let warning: String? }
+        isBroadcasting = true
+        tvMessage = nil
+        defer { isBroadcasting = false }
+        do {
+            // TV'deki "yayınlayan" etiketi: cihaz + kullanıcı adı (ör. "iPhone · Emre").
+            let device = [UIDevice.current.name, appState.currentUser?.name].compactMap { $0 }.joined(separator: " · ")
+            let payload: Payload = try await APIClient.shared.post(
+                "/tv/broadcast",
+                body: Body(item: current, actingUserId: appState.currentUser?.id ?? "", deviceName: device)
+            )
+            // Bazı TV'ler gösteremediyse (internet yok vb.) sunucunun uyarısı kalır.
+            tvMessage = payload.warning
+            if payload.warning == nil { Haptics.success() } else { Haptics.warning() }
+            if let sentAt = payload.sentAt {
+                appState.tvOnAir = TvOnAir(sentAt: sentAt, title: current.code ?? current.name ?? "Ürün", subtitle: current.code == nil ? nil : current.name)
+            }
+        } catch {
+            tvMessage = error.turkishMessage
+        }
+    }
+
+    private func depotNameFor(_ id: String?) -> String? {
+        depots.first { $0.id == id }?.name
     }
 
     var body: some View {
@@ -260,26 +323,29 @@ struct StockItemDetailView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                Text(current.code ?? "").font(.caption).foregroundStyle(.secondary)
-                Text(current.name ?? "(isimsiz)").font(.title3.bold())
+                // Kod artık adın ÜSTÜNDE küçük bir altyazı değil, aynı
+                // puntoda ve adın ÖNÜNDE — dispatcher'lar için kod en az ad
+                // kadar önemli.
+                Text(current.codeAndName).font(.title3.bold())
+            }
+            // TV'ye gönderilemezse küçük uyarı (başarıda alttaki yayın şeridi çıkar).
+            if let tvMessage {
+                Section {
+                    Label(tvMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
             }
             Section {
                 LabeledContent("Fiyat (KDV hariç)") {
-                    Text(current.price.map { $0.formatted(.currency(code: "TRY")) } ?? "—")
+                    Text(current.price.map { $0.formatted(.currency(code: "TRY").locale(Locale(identifier: "tr_TR"))) } ?? "—")
                 }
                 if let price = current.price {
                     LabeledContent("Fiyat (KDV dahil, %20)") {
-                        Text((price * 1.2).formatted(.currency(code: "TRY")))
+                        Text((price * 1.2).formatted(.currency(code: "TRY").locale(Locale(identifier: "tr_TR"))))
                     }
-                }
-                LabeledContent("Mevcut miktar") {
-                    Text("\(Int(current.quantity ?? 0)) \(current.unit ?? "adet")")
                 }
                 if let category = current.category, !category.isEmpty {
                     LabeledContent("Kategori", value: category)
-                }
-                if let depotName {
-                    LabeledContent("Depo", value: depotName)
                 }
                 if let barcode = current.barcode, !barcode.isEmpty {
                     LabeledContent("Barkod", value: barcode)
@@ -292,15 +358,29 @@ struct StockItemDetailView: View {
                 }
             }
             Section {
-                Stepper(value: $quantity, in: 0...100000) {
-                    Text("\(quantity)").font(.title2.bold().monospacedDigit())
+                LabeledContent("Mevcut miktar (toplam)") {
+                    Text("\(Int(current.quantity ?? 0)) \(current.unit ?? "adet")").bold()
                 }
-                Button {
-                    Task { await save() }
-                } label: {
-                    if isSaving { ProgressView() } else { Text("Miktarı Güncelle") }
+                if depotRows.filter({ ($0.quantity ?? 0) > 0 }).isEmpty {
+                    Text("Hiçbir depoda stokta değil.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(depotRows.filter({ ($0.quantity ?? 0) > 0 }), id: \.id) { row in
+                        LabeledContent(depotNameFor(row.depotId) ?? "Bilinmeyen depo") {
+                            Text("\(Int(row.quantity ?? 0)) \(current.unit ?? "adet")")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(isSaving)
+                if depots.count >= 2 {
+                    Button {
+                        showTransfer = true
+                    } label: {
+                        Label("Depo Transferi", systemImage: "arrow.left.arrow.right")
+                    }
+                }
+            } header: {
+                Text("Depo Dağılımı")
             }
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
@@ -319,15 +399,34 @@ struct StockItemDetailView: View {
         .navigationTitle(current.name ?? "Ürün")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // "TV'de Göster": yalnız ikon (masaüstündeki AirPlay düğmesi gibi).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await broadcastToTv() }
+                } label: {
+                    if isBroadcasting { ProgressView() } else { Image(systemName: "airplayvideo") }
+                }
+                .disabled(isBroadcasting)
+                .accessibilityLabel("TV'de Göster")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showHistory = true } label: {
+                    Image(systemName: "info.circle")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Düzenle") { showEdit = true }
+            }
+        }
+        .sheet(isPresented: $showHistory) {
+            NavigationStack {
+                StockHistoryView(item: current)
             }
         }
         .sheet(isPresented: $showEdit) {
             NavigationStack {
                 StockEditView(item: current, depots: depots, onSaved: { updated in
                     current = updated
-                    quantity = Int(updated.quantity ?? 0)
                 })
             }
         }
@@ -363,6 +462,20 @@ struct StockItemDetailView: View {
         } message: {
             Text(barcodeErrorMessage ?? "")
         }
+        .sheet(isPresented: $showTransfer) {
+            NavigationStack {
+                StockTransferView(item: current, depots: depots, onDone: { updated in
+                    current = updated
+                    Task { await loadDepotRows() }
+                })
+            }
+        }
+        .task { await loadDepotRows() }
+        .task { appState.addRecentStock(current) }
+    }
+
+    private func loadDepotRows() async {
+        depotRows = (try? await APIClient.shared.get("/stock/\(current.id)/depots")) ?? []
     }
 
     /// Barkodu olmayan ürünlere kamerayla hızlıca yeni barkod atamak için —
@@ -382,27 +495,9 @@ struct StockItemDetailView: View {
                 body: Body(barcode: code, actingUserId: appState.currentUser?.id ?? "")
             )
             current = updated
-            try? await StockCache.shared.reload()
+            _ = try? await StockCache.shared.reload()
         } catch {
-            barcodeErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Barkod kaydedilemedi."
-        }
-    }
-
-    private func save() async {
-        isSaving = true
-        errorMessage = nil
-        defer { isSaving = false }
-        do {
-            struct Body: Encodable { let quantity: Int; let actingUserId: String }
-            let updated: StockItem = try await APIClient.shared.put(
-                "/stock/\(current.id)",
-                body: Body(quantity: quantity, actingUserId: appState.currentUser?.id ?? "")
-            )
-            current = updated
-            await StockCache.shared.invalidate(id: current.id, newQuantity: Double(quantity))
-            dismiss()
-        } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Güncellenemedi."
+            barcodeErrorMessage = error.turkishMessage
         }
     }
 
@@ -419,7 +514,7 @@ struct StockItemDetailView: View {
             onDeleted()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Silinemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -430,31 +525,42 @@ struct StockItemDetailView: View {
 struct StockEditView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    let depots: [Depot]
+    // "let" DEĞİL: barkod taramasından hızlıca açılan ekranlarda üst
+    // görünümün "/depots" çağrısı henüz bitmeden bu form sunuluyorsa boş
+    // bir liste burada SONSUZA DEK kalıyordu (SwiftUI sheet içeriği bir kez
+    // kurulup üst view'daki sonraki güncellemeleri izlemiyor) — bu yüzden
+    // boşsa kendi çağrısını kendi yapıyor (aşağıdaki .task).
+    @State private var depots: [Depot]
     let onSaved: (StockItem) -> Void
 
     @State private var code: String
     @State private var name: String
     @State private var unit: String
     @State private var category: String
-    @State private var depotId: String?
     @State private var price: String
     @State private var barcode: String
     @State private var lowStockThreshold: String
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showBarcodeScanner = false
+
+    // Bir ürün birden fazla depoda farklı miktarlarda durabiliyor — eskiden
+    // burada tek bir "depotId"/"quantity" Picker+Stepper vardı, aynı ürünün
+    // ikinci bir depoda da stoklu olduğu asla gösterilemez/düzenlenemezdi.
+    @State private var depotRows: [DepotRow] = []
+    @State private var originalRows: [DepotRow] = []
+    @State private var isLoadingDepotRows = true
 
     private let itemId: String
 
     init(item: StockItem, depots: [Depot], onSaved: @escaping (StockItem) -> Void) {
         self.itemId = item.id
-        self.depots = depots
+        _depots = State(initialValue: depots)
         self.onSaved = onSaved
         _code = State(initialValue: item.code ?? "")
         _name = State(initialValue: item.name ?? "")
         _unit = State(initialValue: item.unit ?? "adet")
         _category = State(initialValue: item.category ?? "")
-        _depotId = State(initialValue: item.depotId)
         _price = State(initialValue: item.price.map { String($0) } ?? "")
         _barcode = State(initialValue: item.barcode ?? "")
         _lowStockThreshold = State(initialValue: item.lowStockThreshold.map { String($0) } ?? "")
@@ -469,18 +575,30 @@ struct StockEditView: View {
             }
             Section("Sınıflandırma") {
                 TextField("Kategori", text: $category)
-                Picker("Depo", selection: $depotId) {
-                    Text("Belirtilmemiş").tag(String?.none)
-                    ForEach(depots) { depot in
-                        Text(depot.name ?? "(isimsiz)").tag(Optional(depot.id))
-                    }
+            }
+            Section {
+                if isLoadingDepotRows {
+                    ProgressView()
+                } else {
+                    DepotRowsEditorView(rows: $depotRows, depots: depots)
                 }
+            } header: {
+                Text("Depo Dağılımı")
+            } footer: {
+                Text("Bu ürün birden fazla depoda farklı miktarlarda durabilir — her depo için ayrı bir miktar girin.")
             }
             Section("Fiyat / Barkod") {
                 TextField("Fiyat (KDV hariç)", text: $price)
                     .keyboardType(.decimalPad)
-                TextField("Barkod", text: $barcode)
-                    .keyboardType(.numberPad)
+                HStack {
+                    TextField("Barkod", text: $barcode)
+                        .keyboardType(.numberPad)
+                    Button {
+                        showBarcodeScanner = true
+                    } label: {
+                        Image(systemName: "barcode.viewfinder")
+                    }
+                }
                 TextField("Az Stok Eşiği", text: $lowStockThreshold)
                     .keyboardType(.numberPad)
             }
@@ -503,6 +621,26 @@ struct StockEditView: View {
                 .disabled(isSaving || code.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+        .sheet(isPresented: $showBarcodeScanner) {
+            BarcodeScannerSheet(title: "Barkod Tara") { code in
+                barcode = code
+            }
+        }
+        .task {
+            if depots.isEmpty {
+                depots = (try? await APIClient.shared.get("/depots")) ?? []
+            }
+        }
+        .task {
+            let rows: [StockItemDepot] = (try? await APIClient.shared.get("/stock/\(itemId)/depots")) ?? []
+            let mapped = rows.map { row -> DepotRow in
+                let qty = Int(row.quantity ?? 0)
+                return DepotRow(depotId: row.depotId, quantity: qty > 0 ? String(qty) : "")
+            }
+            depotRows = mapped
+            originalRows = mapped
+            isLoadingDepotRows = false
+        }
     }
 
     private func save() async {
@@ -515,31 +653,55 @@ struct StockEditView: View {
                 let name: String
                 let unit: String
                 let category: String
-                let depotId: String?
                 let price: Double?
                 let barcode: String
                 let lowStockThreshold: Double?
                 let actingUserId: String
             }
-            let updated: StockItem = try await APIClient.shared.put(
+            let actingUserId = appState.currentUser?.id ?? ""
+            var updated: StockItem = try await APIClient.shared.put(
                 "/stock/\(itemId)",
                 body: Body(
                     code: code.trimmingCharacters(in: .whitespaces),
                     name: name.trimmingCharacters(in: .whitespaces),
                     unit: unit.trimmingCharacters(in: .whitespaces),
                     category: category.trimmingCharacters(in: .whitespaces),
-                    depotId: depotId,
                     price: Double(price.replacingOccurrences(of: ",", with: ".")),
                     barcode: barcode.trimmingCharacters(in: .whitespaces),
-                    lowStockThreshold: Double(lowStockThreshold),
-                    actingUserId: appState.currentUser?.id ?? ""
+                    lowStockThreshold: Double(lowStockThreshold.replacingOccurrences(of: ",", with: ".")),
+                    actingUserId: actingUserId
                 )
             )
-            try? await StockCache.shared.reload()
+
+            struct QuantityBody: Encodable { let quantity: Int; let actingUserId: String }
+            struct DeleteBody: Encodable { let actingUserId: String }
+
+            let removed = originalRows.filter { o in
+                guard let depotId = o.depotId else { return false }
+                return !depotRows.contains { $0.depotId == depotId }
+            }
+            for row in removed {
+                guard let depotId = row.depotId else { continue }
+                _ = try? await APIClient.shared.delete("/stock/\(itemId)/depots/\(depotId)", body: DeleteBody(actingUserId: actingUserId))
+            }
+            for row in depotRows {
+                guard let depotId = row.depotId else { continue }
+                let qty = Int(row.quantity) ?? 0
+                let original = originalRows.first { $0.depotId == depotId }
+                if original == nil || (Int(original!.quantity) ?? 0) != qty {
+                    let _: [StockItemDepot] = try await APIClient.shared.put(
+                        "/stock/\(itemId)/depots/\(depotId)",
+                        body: QuantityBody(quantity: qty, actingUserId: actingUserId)
+                    )
+                }
+            }
+            let newTotal = depotRows.reduce(0) { $0 + (Int($1.quantity) ?? 0) }
+            updated.quantity = Double(newTotal)
+            _ = try? await StockCache.shared.reload()
             onSaved(updated)
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kaydedilemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -549,43 +711,57 @@ struct StockEditView: View {
 struct StockCreateView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    let depots: [Depot]
+    // StockEditView'deki aynı not: üst view'ın "/depots" çağrısı bitmeden bu
+    // ekran açılırsa boş liste kalıcı kalmasın diye kendi .task'ı da var.
+    // "private" DEĞİL: struct'taki TÜM stored property'ler private olursa
+    // Swift'in sentezlediği memberwise init de private oluyor ve StockView'daki
+    // çağrı (aynı dosyada ama farklı bir struct) derlenemiyordu.
+    @State var depots: [Depot]
     let onCreated: () -> Void
 
     @State private var code = ""
     @State private var name = ""
-    @State private var quantity = ""
     @State private var unit = "adet"
     @State private var category = ""
-    @State private var depotId: String?
+    // Yeni ürün de ilk eklenişte birden fazla depoya dağıtılabilsin diye
+    // (ör. hem dükkan hem şantiye) tekil bir "depotId"/"quantity" yerine
+    // StockEditView'daki ile aynı satır listesi editörü kullanılıyor.
+    @State private var depotRows: [DepotRow] = []
     @State private var price = ""
     @State private var barcode = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showBarcodeScanner = false
 
     var body: some View {
         Form {
             Section("Ürün") {
                 TextField("Kod", text: $code)
                 TextField("Ad", text: $name)
-                TextField("Miktar", text: $quantity)
-                    .keyboardType(.numberPad)
                 TextField("Birim", text: $unit)
             }
             Section("Sınıflandırma") {
                 TextField("Kategori", text: $category)
-                Picker("Depo", selection: $depotId) {
-                    Text("Belirtilmemiş").tag(String?.none)
-                    ForEach(depots) { depot in
-                        Text(depot.name ?? "(isimsiz)").tag(Optional(depot.id))
-                    }
-                }
+            }
+            Section {
+                DepotRowsEditorView(rows: $depotRows, depots: depots)
+            } header: {
+                Text("Depo Dağılımı")
+            } footer: {
+                Text("Birden fazla depoya dağıtabilirsiniz — her depo için ayrı bir miktar girin.")
             }
             Section("Fiyat / Barkod") {
                 TextField("Fiyat (KDV hariç)", text: $price)
                     .keyboardType(.decimalPad)
-                TextField("Barkod", text: $barcode)
-                    .keyboardType(.numberPad)
+                HStack {
+                    TextField("Barkod", text: $barcode)
+                        .keyboardType(.numberPad)
+                    Button {
+                        showBarcodeScanner = true
+                    } label: {
+                        Image(systemName: "barcode.viewfinder")
+                    }
+                }
             }
             if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
@@ -603,12 +779,33 @@ struct StockCreateView: View {
                 } label: {
                     if isSaving { ProgressView() } else { Text("Ekle").bold() }
                 }
-                .disabled(isSaving || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(isSaving || code.trimmingCharacters(in: .whitespaces).isEmpty || validDepotRows.isEmpty)
+            }
+        }
+        .sheet(isPresented: $showBarcodeScanner) {
+            BarcodeScannerSheet(title: "Barkod Tara") { code in
+                barcode = code
+            }
+        }
+        .task {
+            if depots.isEmpty {
+                depots = (try? await APIClient.shared.get("/depots")) ?? []
             }
         }
     }
 
+    private var validDepotRows: [StockDepotAllocation] {
+        depotRows.compactMap { row in
+            guard let depotId = row.depotId, let qty = Int(row.quantity), qty > 0 else { return nil }
+            return StockDepotAllocation(depotId: depotId, quantity: Double(qty))
+        }
+    }
+
     private func submit() async {
+        guard !validDepotRows.isEmpty else {
+            errorMessage = "Depo seçimi zorunlu."
+            return
+        }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
@@ -616,9 +813,8 @@ struct StockCreateView: View {
             let body = NewStockItem(
                 code: code.trimmingCharacters(in: .whitespaces),
                 name: name.trimmingCharacters(in: .whitespaces),
-                quantity: Double(quantity) ?? 0,
                 unit: unit.trimmingCharacters(in: .whitespaces).isEmpty ? "adet" : unit,
-                depotId: depotId,
+                depots: validDepotRows,
                 category: category.trimmingCharacters(in: .whitespaces),
                 price: Double(price.replacingOccurrences(of: ",", with: ".")),
                 imageUrl: "",
@@ -626,11 +822,11 @@ struct StockCreateView: View {
                 actingUserId: appState.currentUser?.id ?? ""
             )
             let _: StockItem = try await APIClient.shared.post("/stock", body: body)
-            try? await StockCache.shared.reload()
+            _ = try? await StockCache.shared.reload()
             onCreated()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Eklenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }

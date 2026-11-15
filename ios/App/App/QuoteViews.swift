@@ -36,7 +36,9 @@ struct QuoteListView: View {
             }
         }
         .navigationDestination(for: Quote.self) { quote in
-            QuoteDetailView(quote: quote)
+            QuoteDetailView(quote: quote, onDeleted: {
+                quotes.removeAll { $0.id == quote.id }
+            })
         }
         .sheet(isPresented: $showCreate) {
             NavigationStack {
@@ -55,7 +57,7 @@ struct QuoteListView: View {
             let all: [Quote] = try await APIClient.shared.get("/quotes")
             quotes = all.sorted { ($0.quoteDate ?? "") > ($1.quoteDate ?? "") }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Teklifler yüklenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -66,8 +68,16 @@ extension Quote: Hashable {
 }
 
 struct QuoteDetailView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     let quote: Quote
+    var onDeleted: () -> Void = {}
     @State private var showPrintPreview = false
+    // "TV'de Göster": teklif ofis TV'sinde müşteriye gösterilir (masaüstündeki gibi).
+    @State private var isBroadcasting = false
+    @State private var tvMessage: String?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
 
     private var totals: QuoteTotals { computeQuoteTotals(quote.items ?? []) }
 
@@ -78,6 +88,11 @@ struct QuoteDetailView: View {
                     showPrintPreview = true
                 } label: {
                     Label("Çıktı Formatını Görüntüle", systemImage: "doc.richtext")
+                }
+                // TV'ye gönderilemezse küçük uyarı (başarıda alttaki yayın şeridi çıkar).
+                if let tvMessage {
+                    Label(tvMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
                 }
             }
             Section {
@@ -131,11 +146,72 @@ struct QuoteDetailView: View {
                     Text(money(totals.genelToplam)).font(.headline)
                 }
             }
+            Section {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    if isDeleting { ProgressView() } else { Text("Teklifi Sil") }
+                }
+                .disabled(isDeleting)
+            }
+        }
+        .confirmationDialog("\(quote.quoteNo ?? "Bu teklif") silinsin mi?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Sil", role: .destructive) { Task { await deleteQuote() } }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text("Bu işlem geri alınamaz.")
         }
         .navigationTitle(quote.quoteNo ?? "Teklif")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // "TV'de Göster": yalnız ikon (masaüstündeki AirPlay düğmesi gibi).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await broadcastToTv() }
+                } label: {
+                    if isBroadcasting { ProgressView() } else { Image(systemName: "airplayvideo") }
+                }
+                .disabled(isBroadcasting)
+                .accessibilityLabel("TV'de Göster")
+            }
+        }
         .navigationDestination(isPresented: $showPrintPreview) {
             QuoteWebPrintView(quote: quote)
+        }
+    }
+
+    private func broadcastToTv() async {
+        struct Body: Encodable { let quoteId: String; let actingUserId: String; let deviceName: String }
+        struct Payload: Decodable { let sentAt: String?; let warning: String? }
+        isBroadcasting = true
+        tvMessage = nil
+        defer { isBroadcasting = false }
+        do {
+            let device = [UIDevice.current.name, appState.currentUser?.name].compactMap { $0 }.joined(separator: " · ")
+            let payload: Payload = try await APIClient.shared.post(
+                "/tv/broadcast-quote",
+                body: Body(quoteId: quote.id, actingUserId: appState.currentUser?.id ?? "", deviceName: device)
+            )
+            // Bazı TV'ler gösteremediyse (internet yok vb.) sunucunun uyarısı kalır.
+            tvMessage = payload.warning
+            if payload.warning == nil { Haptics.success() } else { Haptics.warning() }
+            if let sentAt = payload.sentAt {
+                appState.tvOnAir = TvOnAir(sentAt: sentAt, title: "Teklif \(quote.quoteNo ?? "")", subtitle: quote.customerName)
+            }
+        } catch {
+            tvMessage = error.turkishMessage
+        }
+    }
+
+    private func deleteQuote() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            _ = try await APIClient.shared.delete("/quotes/\(quote.id)")
+            onDeleted()
+            dismiss()
+        } catch {
+            tvMessage = error.turkishMessage
         }
     }
 
@@ -150,7 +226,7 @@ struct QuoteDetailView: View {
     }
 
     private func money(_ n: Double) -> String {
-        n.formatted(.currency(code: "TRY"))
+        n.formatted(.currency(code: "TRY").locale(Locale(identifier: "tr_TR")))
     }
 }
 
@@ -207,7 +283,7 @@ struct QuoteCreateView: View {
             }
             Section("Toplam") {
                 LabeledContent("Genel Toplam") {
-                    Text(totals.genelToplam.formatted(.currency(code: "TRY"))).font(.headline)
+                    Text(totals.genelToplam.formatted(.currency(code: "TRY").locale(Locale(identifier: "tr_TR")))).font(.headline)
                 }
             }
             if let errorMessage {
@@ -255,7 +331,7 @@ struct QuoteCreateView: View {
             onCreated()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Teklif oluşturulamadı."
+            errorMessage = error.turkishMessage
         }
     }
 }

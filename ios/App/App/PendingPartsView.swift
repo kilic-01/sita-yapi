@@ -6,6 +6,7 @@ struct PendingPartsView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var showCreate = false
+    @State private var query = ""
 
     var body: some View {
         List {
@@ -15,6 +16,8 @@ struct PendingPartsView: View {
                 Text(errorMessage).foregroundStyle(.red)
             } else if parts.isEmpty {
                 Text("Bekleyen parça yok.").foregroundStyle(.secondary)
+            } else if sorted.isEmpty {
+                Text("Aramanızla eşleşen parça yok.").foregroundStyle(.secondary)
             } else {
                 ForEach(sorted) { part in
                     HStack {
@@ -39,6 +42,7 @@ struct PendingPartsView: View {
             }
         }
         .navigationTitle("Bekleyen Parçalar")
+        .searchable(text: $query, prompt: "Müşteri adı veya parça ara")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreate = true } label: { Image(systemName: "plus.circle.fill") }
@@ -54,7 +58,12 @@ struct PendingPartsView: View {
     }
 
     private var sorted: [PendingPart] {
-        parts.sorted { ($0.orderedAt ?? "") > ($1.orderedAt ?? "") }
+        let base = parts.sorted { ($0.orderedAt ?? "") > ($1.orderedAt ?? "") }
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return base }
+        return base.filter {
+            ($0.customerName?.localizedCaseInsensitiveContains(query) ?? false) ||
+            ($0.description?.localizedCaseInsensitiveContains(query) ?? false)
+        }
     }
 
     private func load() async {
@@ -64,7 +73,7 @@ struct PendingPartsView: View {
         do {
             parts = try await APIClient.shared.get("/pending-parts")
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Yüklenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 
@@ -77,7 +86,7 @@ struct PendingPartsView: View {
                 parts[idx].status = newStatus
             }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Durum güncellenemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }
@@ -139,7 +148,7 @@ struct PendingPartCreateView: View {
             onCreated()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Kaydedilemedi."
+            errorMessage = error.turkishMessage
         }
     }
 }

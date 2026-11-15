@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Desktop'taki HOME_WIDGETS'ın (src/components/homeWidgets.jsx) native
 /// karşılığı — sürükle-bırak ızgara yerine dikey bir liste, ama masaüstündeki
@@ -24,6 +25,8 @@ struct HomeView: View {
     @State private var widgetPrefs = HomeWidgetPreferences()
     @State private var isEditingWidgets = false
     @State private var showAddWidgetSheet = false
+    @State private var showProfile = false
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
@@ -32,6 +35,15 @@ struct HomeView: View {
                     Text("Merhaba, \(appState.currentUser?.name ?? "")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+
+                    if let loadError {
+                        Text(loadError)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    }
 
                     quickActionsRow
 
@@ -49,7 +61,7 @@ struct HomeView: View {
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
                                 .padding(14)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                         }
                     }
                 }
@@ -65,22 +77,16 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        appState.requestLogoutConfirmation = true
+                        showProfile = true
                     } label: {
-                        Text(String(appState.currentUser?.name.first ?? "?"))
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(.tint, in: Circle())
+                        avatarThumbnail
                     }
                 }
             }
-            .confirmationDialog("Çıkış yapmak istiyor musunuz?", isPresented: Binding(
-                get: { appState.requestLogoutConfirmation },
-                set: { appState.requestLogoutConfirmation = $0 }
-            ), titleVisibility: .visible) {
-                Button("Çıkış Yap", role: .destructive) { appState.logout() }
-                Button("Vazgeç", role: .cancel) {}
+            .sheet(isPresented: $showProfile) {
+                NavigationStack {
+                    ProfileView()
+                }
             }
             .sheet(isPresented: $showCreateAppointment) {
                 NavigationStack {
@@ -169,6 +175,7 @@ struct HomeView: View {
                     Text("\(urgent) acil").font(.caption.bold()).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(.red, in: Capsule())
                 }
+                upcomingList(todayAppts)
             }
 
         case .tomorrowAppointments:
@@ -181,6 +188,7 @@ struct HomeView: View {
                     Text("\(notRouted) iş henüz rotalanmadı").font(.caption.bold()).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(.orange, in: Capsule())
                 }
+                upcomingList(tomorrowAppts)
             }
 
         case .lowStock:
@@ -230,12 +238,48 @@ struct HomeView: View {
                 if overdueCheckouts.isEmpty {
                     Label("Bekleyen mutabakat yok.", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.subheadline)
                 } else {
-                    ForEach(overdueCheckouts.prefix(5)) { c in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(technicians.first { $0.id == c.technicianId }?.name ?? "Bilinmeyen teknisyen").font(.subheadline)
-                            Text("\(c.date ?? "") tarihli zimmet hâlâ mutabakatsız").font(.caption).foregroundStyle(.secondary)
+                    // Teknisyene göre gruplu: aynı kişi alt alta tekrarlanmasın.
+                    let groups = Dictionary(grouping: overdueCheckouts, by: { $0.technicianId ?? "" })
+                        .map { (techId: $0.key, items: $0.value, oldest: $0.value.compactMap(\.date).min() ?? "") }
+                        .sorted { $0.oldest < $1.oldest }
+                    ForEach(groups.prefix(5), id: \.techId) { g in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(technicians.first { $0.id == g.techId }?.name ?? "Bilinmeyen teknisyen").font(.subheadline)
+                                Text("En eskisi: \(g.oldest)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(g.items.count) zimmet")
+                                .font(.caption.bold()).foregroundStyle(.red)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(.red.opacity(0.12), in: Capsule())
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// Widget içindeki sıradaki (tamamlanmamış) en fazla 3 randevu: teknisyen rengi + müşteri + şikâyet.
+    @ViewBuilder
+    private func upcomingList(_ list: [Appointment]) -> some View {
+        let upcoming = list
+            .filter { $0.status != "completed" && $0.status != "cancelled" }
+            .sorted { ($0.stopOrder ?? 999) < ($1.stopOrder ?? 999) }
+            .prefix(3)
+        if !upcoming.isEmpty {
+            Divider()
+            ForEach(Array(upcoming)) { a in
+                HStack(spacing: 8) {
+                    Circle().fill(technicianColor(a.assignedTechnicianId, in: technicians)).frame(width: 8, height: 8)
+                    Text(a.customerName ?? "(isimsiz)").font(.subheadline).lineLimit(1)
+                    if a.urgency == "acil" {
+                        Text("Acil").font(.caption2.bold()).foregroundStyle(.red)
+                    }
+                    if let c = a.complaint?.split(separator: "\n").first, !c.isEmpty {
+                        Text("· \(c)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
             }
         }
@@ -264,34 +308,53 @@ struct HomeView: View {
         return Int((Double(completed) / Double(relevant.count) * 100).rounded())
     }
 
+    // 2×2 gösterge ızgarası: büyük ince rakam, küçük etiket, altında tek satır açıklama.
     private var statsStrip: some View {
-        HStack(spacing: 0) {
-            statItem(value: pendingCollection.formatted(.currency(code: "TRY").precision(.fractionLength(0))), label: "Bekleyen Tahsilat", color: pendingCollection == 0 ? .green : .primary)
-            Divider().frame(height: 30)
-            statItem(value: "%\(weekCompletionRate)", label: "Bu Hafta Tamamlandı", color: .primary)
-            Divider().frame(height: 30)
-            statItem(value: "\(lowStockItems.count)", label: "Kritik Stok", color: lowStockItems.isEmpty ? .green : .red)
+        let today = todayAppts.filter { $0.status != "cancelled" }
+        let done = today.filter { $0.status == "completed" }.count
+        return Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                statTile(value: "\(today.count)", label: "Bugünkü randevu",
+                         detail: today.isEmpty ? "Boş gün" : "\(done) tamamlandı", color: .primary)
+                statTile(value: pendingCollection.formatted(.currency(code: "TRY").locale(Locale(identifier: "tr_TR")).precision(.fractionLength(0))),
+                         label: "Bekleyen tahsilat", detail: "Bugünkü randevulardan", color: pendingCollection == 0 ? .green : .primary)
+            }
+            GridRow {
+                statTile(value: "%\(weekCompletionRate)", label: "Bu hafta", detail: "tamamlanan randevu", color: .primary)
+                statTile(value: "\(lowStockItems.count)", label: "Kritik stok",
+                         detail: lowStockItems.isEmpty ? "Sorun yok" : "ürün azaldı", color: lowStockItems.isEmpty ? .green : .red)
+            }
         }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func statItem(value: String, label: String, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.headline).foregroundStyle(color)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+    private func statTile(value: String, label: String, detail: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 30, weight: .light).monospacedDigit()).foregroundStyle(color)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
+    // Hızlı işlemler: ofiste en sık yapılan dört iş.
     private var quickActionsRow: some View {
-        HStack(spacing: 12) {
-            quickActionButton(title: "Randevu Oluştur", systemImage: "calendar.badge.plus", tint: .blue) {
+        HStack(spacing: 10) {
+            quickActionButton(title: "Randevu", systemImage: "calendar.badge.plus", tint: .blue) {
                 showCreateAppointment = true
             }
             quickActionButton(title: "Satış", systemImage: "turkishlirasign.circle.fill", tint: .green) {
                 showQuickSale = true
+            }
+            quickActionButton(title: "Barkod", systemImage: "barcode.viewfinder", tint: .orange) {
+                router.pendingStockScan = true
+                router.selection = .stock
+            }
+            quickActionButton(title: "Müşteri Ara", systemImage: "person.crop.circle.badge.magnifyingglass", tint: .purple) {
+                router.pendingAppointmentSearch = true
+                router.selection = .appointments
             }
         }
     }
@@ -303,17 +366,42 @@ struct HomeView: View {
                     .font(.title2)
                     .foregroundStyle(tint)
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
     }
 
+    @ViewBuilder
+    private var avatarThumbnail: some View {
+        if let photo = appState.currentUser?.photo, let data = Data(base64Encoded: base64Payload(photo)), let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 30, height: 30)
+                .clipShape(Circle())
+        } else {
+            Text(String(appState.currentUser?.name.first ?? "?"))
+                .font(.caption.bold())
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(.tint, in: Circle())
+        }
+    }
+
+    /// Her istek ayrı ayrı try/catch'e alınıyor ki biri başarısız olsa bile
+    /// diğerlerinin sonucu kullanılabilsin (ör. sadece quotes ucu geçici
+    /// olarak çöktüğünde randevular hâlâ görünsün) — eskiden hepsi `try?`
+    /// ile sessizce yutulup ekran "boş" görünüyordu, kullanıcı hiç uyarılmıyordu.
     private func load() async {
+        loadError = nil
+        var anyFailed = false
         let today = todayISODate()
         let tomorrow = isoDate(daysFromToday: 1)
         async let todayReq: [Appointment] = APIClient.shared.get("/appointments/by-date/\(today)")
@@ -335,18 +423,38 @@ struct HomeView: View {
         async let techsReq: [Technician] = APIClient.shared.get("/technicians")
         async let stockReq = StockCache.shared.all()
 
-        todayAppts = (try? await todayReq) ?? []
-        tomorrowAppts = (try? await tomorrowReq) ?? []
-        weekAppts = ((try? await weekReq) ?? []).flatMap { $0 }
-        quotes = ((try? await quotesReq) ?? []).sorted { ($0.quoteDate ?? "") > ($1.quoteDate ?? "") }
-        checkouts = (try? await checkoutsReq) ?? []
-        technicians = (try? await techsReq) ?? []
-        let stock = (try? await stockReq) ?? []
-        lowStockItems = stock.filter { item in
-            let threshold = item.lowStockThreshold ?? 2
-            return (item.quantity ?? 0) <= threshold
+        do { todayAppts = try await todayReq } catch { anyFailed = true; todayAppts = [] }
+        do { tomorrowAppts = try await tomorrowReq } catch { anyFailed = true; tomorrowAppts = [] }
+        do { weekAppts = (try await weekReq).flatMap { $0 } } catch { anyFailed = true; weekAppts = [] }
+        do {
+            quotes = (try await quotesReq).sorted { ($0.quoteDate ?? "") > ($1.quoteDate ?? "") }
+        } catch { anyFailed = true; quotes = [] }
+        do { checkouts = try await checkoutsReq } catch { anyFailed = true; checkouts = [] }
+        do { technicians = try await techsReq } catch { anyFailed = true; technicians = [] }
+        do {
+            let stock = try await stockReq
+            // "Kritik Stok": katalogdan gelen ve hiç stoğa girmemiş (0) binlerce ürün
+            // sayılmaz — yalnız minimum eşiği tanımlanıp altına düşenler ya da stoğu 1–2'ye inenler.
+            lowStockItems = stock.filter { item in
+                let qty = item.quantity ?? 0
+                if let threshold = item.lowStockThreshold { return qty <= threshold }
+                return qty > 0 && qty <= 2
+            }
+        } catch {
+            anyFailed = true
+            lowStockItems = []
+        }
+        if anyFailed {
+            loadError = "Bazı veriler yüklenemedi, lütfen bağlantınızı kontrol edip tekrar deneyin."
         }
     }
+}
+
+/// Backend'den gelen `data:image/jpeg;base64,...` data-URL'inden saf base64
+/// gövdesini ayırır — `Data(base64Encoded:)` "data:" önekiyle çalışmaz.
+func base64Payload(_ dataURL: String) -> String {
+    guard let commaIndex = dataURL.firstIndex(of: ",") else { return dataURL }
+    return String(dataURL[dataURL.index(after: commaIndex)...])
 }
 
 func isoDate(daysFromToday offset: Int) -> String {
@@ -435,7 +543,7 @@ private struct HomeWidgetCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
