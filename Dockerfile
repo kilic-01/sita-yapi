@@ -11,6 +11,8 @@
 FROM node:22-alpine
 
 ENV NODE_ENV=production
+# TV'ye kendiliğinden ayar/vitrin gönderme (TV'yi masaüstü yönetir; bkz. electron/db.js).
+ENV SITA_TV_AUTORESPOND=off
 WORKDIR /app
 
 # Bağımlılıklar (geliştirme paketleri ve kurulum betikleri olmadan — ör.

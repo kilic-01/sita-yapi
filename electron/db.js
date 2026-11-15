@@ -371,7 +371,11 @@ function subscribeToTvChannel() {
     if (overlaps(payload?.target)) setCurrentTvPayload(null);
   });
   // TV (yeniden) bağlandı: ayarlarını ve — bu TV'ye gidiyorsa — yayındaki içeriği yolla.
+  // Canlı mobil API sunucusunda kapalı (Dockerfile: SITA_TV_AUTORESPOND=off): TV'yi
+  // yalnız masaüstü yönetir, sunucu yalnız iOS'un açık "TV'de göster" isteklerini
+  // yayınlar. Masaüstünde bu değişken yoktur, davranış değişmez.
   channel.on("broadcast", { event: "hello" }, ({ payload }) => {
+    if (process.env.SITA_TV_AUTORESPOND === "off") return;
     const tvId = payload?.tvId;
     if (tvId) sendTvConfigTo(tvId).catch(() => {});
     sendSpecialDays().catch(() => {});
