@@ -159,7 +159,12 @@ enum class ConnectionState { CONNECTING, CONNECTED, DISCONNECTED }
  * tekrar yollar. TV, kanala "presence" ile kimliğini/adını/modunu bildirir —
  * masaüstü bağlı TV'leri buradan görür (birden fazla TV, çalışma durumu).
  */
-class TvChannel(private val supabaseUrl: String, private val apiKey: String, private val settings: TvSettings) {
+class TvChannel(
+    private val supabaseUrl: String,
+    private val apiKey: String,
+    private val settings: TvSettings,
+    private val auth: TvAuth,
+) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -181,6 +186,9 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
     private var reconnectJob: Job? = null
     private var joinRef: String? = null
     private var stopped = false
+    // Kanala en son iletilen erişim anahtarı (süresi dolmadan yenilenip iletilir).
+    @Volatile private var sentToken: String? = null
+    private var connectJob: Job? = null
 
     private val topic = "realtime:$CHANNEL"
 
@@ -191,6 +199,7 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
 
     fun stop() {
         stopped = true
+        connectJob?.cancel()
         heartbeatJob?.cancel()
         watchdogJob?.cancel()
         reconnectJob?.cancel()
@@ -211,8 +220,26 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
     }
 
     private fun connect() {
+        connectJob?.cancel()
         heartbeatJob?.cancel()
         watchdogJob?.cancel()
+        _connection.value = ConnectionState.CONNECTING
+        // Özel kanal: önce TV hesabının geçerli erişim anahtarı alınır. Eşleşme
+        // yoksa bağlanılmaz (MainActivity eşleşince start() çağırır); ağ yoksa
+        // biraz sonra yeniden denenir.
+        connectJob = scope.launch {
+            val token = auth.validAccessToken()
+            if (stopped) return@launch
+            if (token == null) {
+                scheduleReconnect()
+                return@launch
+            }
+            sentToken = token
+            openSocket()
+        }
+    }
+
+    private fun openSocket() {
         // Eski soketin geç gelen olayları (bkz. Listener'daki "webSocket ==
         // socket" kontrolleri) yeni bağlantıyı etkilemesin diye önce null'lanır.
         val old = socket
@@ -272,8 +299,9 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
                 putJsonObject("broadcast") { put("self", false); put("ack", false) }
                 putJsonObject("presence") { put("key", settings.config.value.tvId) }
                 putJsonArray("postgres_changes") {}
-                put("private", false)
+                put("private", true)
             }
+            sentToken?.let { put("access_token", it) }
         }
         val msg = buildJsonObject {
             put("topic", topic)
@@ -339,6 +367,13 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
             while (isActive) {
                 delay(HEARTBEAT_MS)
                 send(ws, "phoenix", "heartbeat", buildJsonObject {})
+                // Erişim anahtarı yenilendiyse kanala bildir (süresi dolan anahtarla
+                // sunucu kanalı kapatır).
+                val token = auth.validAccessToken()
+                if (token != null && token != sentToken) {
+                    sentToken = token
+                    send(ws, topic, "access_token", buildJsonObject { put("access_token", token) }, joinRef)
+                }
             }
         }
     }
@@ -379,6 +414,11 @@ class TvChannel(private val supabaseUrl: String, private val apiKey: String, pri
                     "clear" -> {
                         val target = (payload["payload"] as? JsonObject)?.get("target")?.jsonPrimitive?.contentOrNull
                         if (target == null || target == settings.config.value.tvId) _current.value = null
+                    }
+                    // Masaüstünden "Eşleşmeyi kaldır": hesap silindi, eşleştirme ekranına dön.
+                    "unpair" -> {
+                        val target = (payload["payload"] as? JsonObject)?.get("target")?.jsonPrimitive?.contentOrNull
+                        if (target != null && target.equals(settings.config.value.tvId, ignoreCase = true)) auth.unpair()
                     }
                     // Masaüstünden "Güncellemeleri kontrol et".
                     "update" -> scope.launch { Updater.check() }

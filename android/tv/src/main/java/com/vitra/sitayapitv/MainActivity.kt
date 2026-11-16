@@ -5,6 +5,8 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.layout.FirstBaseline
 import kotlinx.coroutines.launch
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import android.net.ConnectivityManager
@@ -146,9 +148,12 @@ private object NightMode
 
 class MainActivity : ComponentActivity() {
     private val tvSettings by lazy { TvSettings(this) }
-    private val channel: TvChannel? by lazy {
+    private val auth: TvAuth? by lazy {
         if (BuildConfig.SUPABASE_URL.isBlank() || BuildConfig.SUPABASE_KEY.isBlank()) null
-        else TvChannel(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, tvSettings)
+        else TvAuth(this, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, tvSettings)
+    }
+    private val channel: TvChannel? by lazy {
+        auth?.let { TvChannel(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY, tvSettings, it) }
     }
 
     // Kumanda kısayolları (bkz. RemoteKeys); diğer tuşlar (geri, ana sayfa) sisteme bırakılır.
@@ -170,8 +175,17 @@ class MainActivity : ComponentActivity() {
         }
         // Hava durumu sayfasının İstanbul fotoğraflarını şimdiden hazırla (bkz. IstanbulPhotos).
         lifecycleScope.launch { IstanbulPhotos.warmUp(applicationContext) }
+        // Kanal yalnız eşleşmiş TV'de ve uygulama önündeyken açık (özel kanal, TV hesabıyla).
+        auth?.let { a ->
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    a.state.collect { st -> if (st is AuthState.Paired) channel?.start() else channel?.stop() }
+                }
+            }
+        }
         setContent {
             val ch = channel
+            val authState = auth?.state?.collectAsState()?.value
             val pinPage = intent.getStringExtra("pinPage")
             if (intent.getBooleanExtra("screenTest", false)) {
                 // Kurulumda TV'nin görüntüyü kırpıp kırpmadığını görmek için (ScreenFitTest.kt).
@@ -207,6 +221,8 @@ class MainActivity : ComponentActivity() {
                 }
             } else if (ch == null) {
                 MissingConfigScreen()
+            } else if (authState is AuthState.Pairing) {
+                PairingScreen(authState.code, tvSettings.config.collectAsState().value.name)
             } else {
                 TvApp(
                     ch,
@@ -228,7 +244,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        channel?.start()
+        auth?.start()
         getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback)
     }
 
@@ -766,6 +782,34 @@ private fun StatusPill(text: String, color: Color, modifier: Modifier = Modifier
         Box(Modifier.size(6.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(8.dp))
         Text(text, style = TextStyle(fontFamily = Poppins, color = Muted, fontSize = TvCaption2, fontWeight = FontWeight.Medium))
+    }
+}
+
+/** Eşleşmemiş TV: masaüstünde onaylanacak kod (bkz. TvAuth). */
+@Composable
+private fun PairingScreen(code: String, name: String) {
+    FixedCanvas {
+        Column(
+            Modifier.fillMaxSize().padding(64.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("TV Eşleştirme", style = TextStyle(fontFamily = Poppins, color = Ink, fontSize = 32.sp, fontWeight = FontWeight.Medium))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Masaüstünde Ayarlar > TV Ekranları'nda aşağıdaki kodu görüp \"Eşleştir\"e basın.",
+                style = TextStyle(fontFamily = Poppins, color = Muted, fontSize = 15.sp, lineHeight = 22.sp),
+            )
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "${code.take(3)} ${code.drop(3)}",
+                style = TextStyle(fontFamily = Poppins, color = Accent, fontSize = 72.sp, fontWeight = FontWeight.Bold, letterSpacing = 6.sp),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "$name · v${BuildConfig.VERSION_NAME}",
+                style = TextStyle(fontFamily = Poppins, color = Muted, fontSize = 13.sp),
+            )
+        }
     }
 }
 
