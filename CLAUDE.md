@@ -14,6 +14,7 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 `ios/App/App/public`, `android/app/src/main/assets/public` ve capacitor modülleri eski Capacitor sürümünden kalma.
 
 ## Kesin kurallar
+- **⚠️ EN ÖNEMLİ: Paketlenmiş uygulama gerçekten açılıp ekranın geldiği görülmeden HİÇBİR sürüm yayınlanmaz** (masaüstü: asar'da `dist/index.html` + paketli uygulamayı açıp CDP ile sayfayı doğrula; önce draft, doğrulamadan sonra Latest). 2026-11-16'da v1.1.16 bu yüzden Mac+Windows'ta beyaz ekran verdi (`dist` symlink'ti, pakete girmedi). `dist`, `release` gerçek klasör olmalı, symlink OLMAMALI.
 - **PROD'a ASLA dokunma.** Testler yalnız DEV veritabanında. Supabase'de (şema, RLS, veri) değişiklik yapma.
 - DEV sunucusu her zaman `NODE_ENV=development` ile çalışmalı:
   `kill $(lsof -tiTCP:4173 -sTCP:LISTEN); NODE_ENV=development nohup node server/index.js > /tmp/server.log 2>&1 &`
