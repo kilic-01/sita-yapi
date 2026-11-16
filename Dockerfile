@@ -23,6 +23,8 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 # Sunucu kodu + masaüstüyle ortak iş mantığı
 COPY server/ ./server/
 COPY electron/ ./electron/
+# Masaüstüyle ortak teklif toplamı hesabı (server/index.js /api/tv/broadcast-quote)
+COPY src/lib/orderTotals.js ./src/lib/orderTotals.js
 # Canlı yapılandırma: değerler ortam değişkenlerinden (bkz. config.production.js)
 RUN cp server/config.production.js electron/config.js \
  && rm -f server/.token-secret

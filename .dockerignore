@@ -24,6 +24,8 @@ release.nosync/
 android/
 ios/
 src/
+# Sunucunun kullandığı tek ortak hesap dosyası (teklif toplamları — /api/tv/broadcast-quote)
+!src/lib/orderTotals.js
 public/
 assets/
 resources/
