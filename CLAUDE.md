@@ -29,6 +29,8 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 - **Android mobil:**
   `cd android && ./gradlew :app:assembleDebug --no-daemon --console=plain -q`
   `adb -s <cihaz> install -r app/build/outputs/apk/debug/app-debug.apk`
+- **Android yayın (Play):** `scripts/build-android-release.sh` → imzalı AAB (`android/app/build/outputs/bundle/release/app-release.aab`) + APK. Yükleme anahtarı `~/.sita-android/upload-keystore.jks` (iCloud DIŞI, git dışı), şifre Anahtar Zinciri `sita-android-upload`. Her yüklemede `versionCode` artırılmalı. Yayından önce release APK emülatörde/telefonda açılıp denenmeli.
+- **iCloud çakışma kopyaları** ("X 2.kt" gibi) derlemeyi bozar: `find . -name "* [0-9].*" -not -path "./node_modules*" -not -path "*/build/*"` ile kontrol et (2026-11-16'da 75 tane temizlendi, yedek `~/sita-icloud-kopyalar-yedek`).
 - **iOS simülatör** (iPhone 18 Pro `4A9CD359-F413-49FD-8CDE-ECC012D14BB0`):
   `cd ios/App && xcodebuild -project App.xcodeproj -scheme App -configuration Debug -destination "id=<sim>" -derivedDataPath ~/Library/Developer/Xcode/DerivedData/sita-sim build -quiet`
   Hata ararken `grep " error:"` kullan. derivedDataPath iCloud DIŞINDA olmalı: `build/dd*` eski `~/Projeler/test` yolunu tutuyor, iCloud ayrıca cihaz imzasını bozuyor ("resource fork… detritus").
