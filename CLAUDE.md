@@ -5,8 +5,8 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 ## Bileşenler
 | Klasör | Ne | Not |
 |---|---|---|
-| `electron/`, `src/` | Masaüstü uygulaması (Electron + React/Vite) | Ofiste canlı (v1.1.15). Supabase'e doğrudan bağlanır (`electron/config.js`, git'te yok). |
-| `android/tv` | Sita Yapı TV (Android TV, Compose) — ofis TV'sindeki Mi Box | Canlıda tv-v1.0.1. Repo'da 1.0.2 hazır, yayınlanmadı. |
+| `electron/`, `src/` | Masaüstü uygulaması (Electron + React/Vite) | Canlı v1.1.16 (2026-11-16). Supabase'e doğrudan bağlanır (`electron/config.js`, git'te yok). |
+| `android/tv` | Sita Yapı TV (Android TV, Compose) — ofis TV'sindeki Mi Box | tv-v1.0.2 yayında (2026-11-16, eşleştirme + özel kanal). |
 | `ios/App/App` | Mobil iOS (SwiftUI, iOS 26+) | Taslak, mağazada değil. |
 | `android/app` | Mobil Android (Compose, minSdk 26) | Taslak, mağazada değil. |
 | `server/index.js` | Mobil uygulamaların konuştuğu test sunucusu (port 4173) | `electron/db.js` + `handlers.js`'i kullanır. Oturum anahtarı var (`server/auth.js`, 2026-11-15). |
@@ -36,6 +36,8 @@ Kullanıcıyla her zaman **Türkçe** konuş. Proje 2026-11-15'te `~/Projeler/te
 - **Yeni Swift dosyası** eklenince `App.xcodeproj/project.pbxproj`'a da kaydedilmeli (otomatik değil).
 - **TV:** `./gradlew :tv:assembleDebug`. Sürüm çıkarmak: `build.gradle` versionCode/versionName → `scripts/release-tv.sh`.
 - **Masaüstü Windows:** `electron-builder --win --x64` (bu Mac Apple Silicon).
+- **Masaüstü Mac:** `npm run notarize:mac` — Apple kimliği Keychain profili `sita-notary`'den (şifre gerekmez, Claude çalıştırabilir). İmza iCloud dışında (`~/Library/Caches/sita-mac-sign`) yapılır. Sonra `gh release upload v<sürüm> …` ve taslağı yayına al.
+- **Supabase PROD'da TV politikaları var** (2026-11-16, docs/TV-ESLESTIRME.md).
 
 ## Cihazlar ve ağ
 Mac'in LAN IP'si değişebiliyor; son değer 192.168.1.102. Mobil uygulamalardaki varsayılan sunucu 192.168.1.120:4173, gerekirse girişte sunucu alanından değiştirilir.

@@ -35,10 +35,24 @@ SKIP_NOTARIZE="${SKIP_NOTARIZE:-0}"
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Apple kimliği: tercihen Anahtar Zinciri'ndeki notarytool profili (şifre bir
+# kez kaydedilir, betik onu görmez):
+#   xcrun notarytool store-credentials sita-notary --apple-id <id> --team-id FK25J32ZK3
+# Profil yoksa eski yol: APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID.
+NOTARY_PROFILE="${NOTARY_PROFILE:-sita-notary}"
+NOTARY_AUTH=()
 if [ "$SKIP_NOTARIZE" != "1" ]; then
-  : "${APPLE_ID:?APPLE_ID ortam değişkeni tanımlı değil}"
-  : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD ortam değişkeni tanımlı değil}"
-  : "${APPLE_TEAM_ID:?APPLE_TEAM_ID ortam değişkeni tanımlı değil}"
+  if [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+    : "${APPLE_ID:?APPLE_ID ortam değişkeni tanımlı değil}"
+    : "${APPLE_TEAM_ID:?APPLE_TEAM_ID ortam değişkeni tanımlı değil}"
+    NOTARY_AUTH=(--apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID")
+  elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    NOTARY_AUTH=(--keychain-profile "$NOTARY_PROFILE")
+  else
+    echo "HATA: Anahtar Zinciri'nde '$NOTARY_PROFILE' profili yok. Bir kez çalıştırın:" >&2
+    echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <apple-id> --team-id FK25J32ZK3" >&2
+    exit 1
+  fi
 fi
 
 IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*\) ([0-9A-F]+) ".*/\1/')
@@ -66,6 +80,17 @@ rm -rf release
 # oluşmasını tetiklemek.
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac zip
 
+# Masaüstü klasörü iCloud ile eşitleniyor; iCloud dosyalara sürekli
+# genişletilmiş öznitelik ekler ve codesign "resource fork … detritus" hatasıyla
+# durur. İmza, Apple onayı, DMG/zip üretimi iCloud DIŞINDA yapılır; sonuçlar
+# en sonda release/'e kopyalanır.
+WORK="$HOME/Library/Caches/sita-mac-sign"
+OUT="$WORK/out"
+rm -rf "$WORK"
+mkdir -p "$OUT"
+ditto --noextattr --norsrc "$APP" "$WORK/Sita Yapı.app"
+APP="$WORK/Sita Yapı.app"
+xattr -cr "$APP"
 echo "== 2/7: Tek komutla derin imzalama (codesign --deep) =="
 codesign --deep --force --timestamp --options runtime --entitlements "$ENT" --sign "$IDENTITY" "$APP"
 
@@ -99,7 +124,7 @@ else
   rm -f /tmp/sita-notarize-app.zip
   ditto -c -k --keepParent "$APP" /tmp/sita-notarize-app.zip
   xcrun notarytool submit /tmp/sita-notarize-app.zip \
-    --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+    "${NOTARY_AUTH[@]}" \
     --wait
 
   echo "== 5/7: Bilet uygulamaya yapıştırılıyor (staple) =="
@@ -108,34 +133,34 @@ else
 fi
 
 echo "== 6/7: DMG ve zip oluşturuluyor =="
-rm -f "release/$DMG_NAME" "release/$ZIP_NAME"
+rm -f "$OUT/$DMG_NAME" "$OUT/$ZIP_NAME"
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "Sita Yapı" -srcfolder "$STAGE" -ov -format UDZO "release/$DMG_NAME"
+hdiutil create -volname "Sita Yapı" -srcfolder "$STAGE" -ov -format UDZO "$OUT/$DMG_NAME"
 rm -rf "$STAGE"
-ditto -c -k --keepParent "$APP" "release/$ZIP_NAME"
+ditto -c -k --keepParent "$APP" "$OUT/$ZIP_NAME"
 
 echo "DMG imzalanıyor..."
-codesign --sign "$IDENTITY" --timestamp "release/$DMG_NAME"
+codesign --sign "$IDENTITY" --timestamp "$OUT/$DMG_NAME"
 if [ "$SKIP_NOTARIZE" = "1" ]; then
   echo "SKIP_NOTARIZE=1 — DMG notarization/staple ATLANIYOR."
 else
   echo "DMG notarize ediliyor..."
-  xcrun notarytool submit "release/$DMG_NAME" \
-    --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+  xcrun notarytool submit "$OUT/$DMG_NAME" \
+    "${NOTARY_AUTH[@]}" \
     --wait
-  xcrun stapler staple "release/$DMG_NAME"
-  spctl -a -vvv --type open --context context:primary-signature "release/$DMG_NAME"
+  xcrun stapler staple "$OUT/$DMG_NAME"
+  spctl -a -vvv --type open --context context:primary-signature "$OUT/$DMG_NAME"
 fi
 
 echo "== 7/7: latest-mac.yml oluşturuluyor =="
 sha512_b64() { openssl dgst -sha512 -binary "$1" | openssl base64 -A; }
-ZIP_SHA=$(sha512_b64 "release/$ZIP_NAME")
-ZIP_SIZE=$(stat -f%z "release/$ZIP_NAME")
-DMG_SHA=$(sha512_b64 "release/$DMG_NAME")
-DMG_SIZE=$(stat -f%z "release/$DMG_NAME")
-cat > release/latest-mac.yml << EOF
+ZIP_SHA=$(sha512_b64 "$OUT/$ZIP_NAME")
+ZIP_SIZE=$(stat -f%z "$OUT/$ZIP_NAME")
+DMG_SHA=$(sha512_b64 "$OUT/$DMG_NAME")
+DMG_SIZE=$(stat -f%z "$OUT/$DMG_NAME")
+cat > "$OUT/latest-mac.yml" << EOF
 version: ${VERSION}
 files:
   - url: ${ZIP_NAME}
@@ -150,6 +175,7 @@ releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
 EOF
 
 echo ""
+cp "$OUT/$DMG_NAME" "$OUT/$ZIP_NAME" "$OUT/latest-mac.yml" release/
 echo "Tamamlandı. release/ içindeki dosyalar:"
 echo "  - release/$DMG_NAME"
 echo "  - release/$ZIP_NAME"
