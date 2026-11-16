@@ -245,6 +245,12 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("tv:presence", { online });
   });
 
+  // Eşleştirme bekleyen TV'ler (Ayarlar > TV Ekranları). Yalnız masaüstü dinler.
+  db.onTvPairingChange((pairing) => {
+    mainWindow?.webContents.send("tv:pairing", { pairing });
+  });
+  db.watchTvPairing();
+
   // Laptop uyku modundan çıktığında mevcut Realtime WebSocket'i sunucu
   // tarafında zaten kopmuş olabilir — kütüphanenin kendi hata algılamasını
   // beklemeden bağlantıyı hemen tazeliyoruz (bkz. db.js'teki
@@ -644,6 +650,8 @@ ipcMain.handle("tv:uploadImage", (_e, { dataUrl, actingUserId }) => handlers.upl
 ipcMain.handle("tv:refreshRoutes", (_e, input) => handlers.refreshRoutesOnTv(input));
 ipcMain.handle("tv:refreshQuote", (_e, { quote, totals }) => handlers.refreshQuoteOnTv(quote, totals));
 ipcMain.handle("tv:checkUpdate", (_e, actingUserId) => handlers.requestTvUpdateCheck(actingUserId));
+ipcMain.handle("tv:approvePairing", (_e, { tvId, code, actingUserId }) => handlers.approveTvPairing(tvId, code, actingUserId));
+ipcMain.handle("tv:unpair", (_e, { tvId, actingUserId }) => handlers.unpairTv(tvId, actingUserId));
 ipcMain.handle("stock:syncVitraImages", (_e, actingUserId) => handlers.syncVitraStockImages(actingUserId));
 ipcMain.handle("tv:current", () => handlers.getCurrentTvPayload());
 

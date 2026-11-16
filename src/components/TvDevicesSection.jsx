@@ -18,7 +18,67 @@ const WEEK_DAYS = [
 // mesai saatleri. Kaydedilen ayar TV'ye anında gönderilir; TV kapalıysa
 // açıldığında ("hello") alır (bkz. electron/db.js sendTvConfigTo).
 export default function TvDevicesSection({ currentUser, onNotify }) {
-  const { online, devices, setDevices } = useTvDevices();
+  const { online, devices, setDevices, pairing, paired, refresh } = useTvDevices();
+  const [pairingKey, setPairingKey] = useState(null);
+  const [unpairingId, setUnpairingId] = useState(null);
+
+  async function approve(req) {
+    setPairingKey(`${req.tvId}:${req.code}`);
+    try {
+      await window.api.approveTvPairing(req.tvId, req.code, currentUser?.id);
+      onNotify?.("success", "TV eşleştirildi. Birkaç saniye içinde bağlanır.");
+      setTimeout(refresh, 4000);
+    } catch (err) {
+      onNotify?.("error", (err.message || "Eşleştirilemedi.").replace(/^.*Error: /, ""));
+    } finally {
+      setPairingKey(null);
+    }
+  }
+
+  async function unpair(id) {
+    if (!window.confirm(`${tvLabel(id, devices, online)} eşleşmesi kaldırılsın mı? TV, yeniden eşleştirilene kadar yayın alamaz.`)) return;
+    setUnpairingId(id);
+    try {
+      await window.api.unpairTv(id, currentUser?.id);
+      onNotify?.("success", "Eşleşme kaldırıldı.");
+      refresh();
+    } catch (err) {
+      onNotify?.("error", (err.message || "Kaldırılamadı.").replace(/^.*Error: /, ""));
+    } finally {
+      setUnpairingId(null);
+    }
+  }
+
+  const pairingBlock =
+    pairing.length > 0 ? (
+      <div style={{ border: "1px solid var(--warning, #d97706)", borderRadius: 10, padding: "0.75rem" }}>
+        <strong>Eşleştirme bekleyen TV</strong>
+        <p style={{ margin: "0.35rem 0 0.6rem", fontSize: "0.9rem" }}>
+          Yalnız TV ekranında <strong>aynı kod</strong> görünüyorsa eşleştirin. Kodu tanımıyorsanız onaylamayın.
+        </p>
+        {pairing.map((req) => (
+          <div key={`${req.tvId}:${req.code}`} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.35rem 0" }}>
+            <span style={{ fontFamily: "monospace", fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.15em" }}>
+              {req.code.slice(0, 3)} {req.code.slice(3)}
+            </span>
+            <span style={{ opacity: 0.8 }}>
+              {req.name || "TV"}
+              {req.version && <span style={{ opacity: 0.6 }}> · v{req.version}</span>}
+              <span style={{ opacity: 0.5, fontFamily: "monospace", marginLeft: "0.5rem" }}>{req.tvId.slice(0, 8)}</span>
+            </span>
+            <button
+              type="button"
+              className="primary"
+              style={{ marginLeft: "auto" }}
+              onClick={() => approve(req)}
+              disabled={pairingKey !== null}
+            >
+              {pairingKey === `${req.tvId}:${req.code}` ? "Eşleştiriliyor…" : "Eşleştir"}
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : null;
   const [drafts, setDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -70,11 +130,17 @@ export default function TvDevicesSection({ currentUser, onNotify }) {
   }
 
   if (ids.length === 0) {
-    return <p style={{ marginTop: 0 }}>Bağlı TV yok. TV uygulaması açıldığında burada görünür.</p>;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {pairingBlock}
+        <p style={{ marginTop: 0 }}>Bağlı TV yok. TV uygulaması açıldığında burada görünür.</p>
+      </div>
+    );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      {pairingBlock}
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.9rem" }}>
         <span style={{ width: 8, height: 8, borderRadius: 999, background: online.length ? "var(--success)" : "var(--danger)" }} />
         <strong>{online.length ? `${online.length} TV bağlı` : "Bağlı TV yok"}</strong>
@@ -108,7 +174,15 @@ export default function TvDevicesSection({ currentUser, onNotify }) {
               />
               {isOnline ? "Bağlı" : "Bağlı değil"}
               {version && <span style={{ opacity: 0.6 }}>· v{version}</span>}
+              {paired && (
+                <span style={{ opacity: 0.7 }}>· {paired.includes(id) ? "Eşleştirildi" : "Eşleştirilmedi"}</span>
+              )}
               <span style={{ opacity: 0.5, marginLeft: "auto", fontFamily: "monospace" }}>{id.slice(0, 8)}</span>
+              {paired?.includes(id) && (
+                <button type="button" className="secondary" onClick={() => unpair(id)} disabled={unpairingId === id}>
+                  {unpairingId === id ? "Kaldırılıyor…" : "Eşleşmeyi kaldır"}
+                </button>
+              )}
             </div>
             <div className="form-row" style={{ alignItems: "flex-end" }}>
               <label>

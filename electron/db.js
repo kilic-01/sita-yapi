@@ -493,7 +493,174 @@ export async function requestTvUpdateCheck() {
 }
 
 export async function listTvDevices() {
-  return { devices: await getTvDevices(), online: onlineTvs };
+  const pairedIds = await listPairedTvIds().catch(() => null);
+  return { devices: await getTvDevices(), online: onlineTvs, pairing: pendingPairings(), paired: pairedIds };
+}
+
+// ---------- TV eşleştirme ----------
+// Her TV, Supabase Auth'ta kendine ait bir hesapla (app_metadata.role = "tv")
+// özel "tv-yayin" kanalına girer; APK'da gizli değer yoktur. Eşleşmemiş TV
+// ekranda 6 haneli kod gösterir ve açık "tv-eslestirme" kanalına kendi geçici
+// P-256 açık anahtarıyla "pair-request" yollar. Yönetici Ayarlar > TV
+// Ekranları'nda aynı kodu görüp onaylayınca masaüstü TV hesabını oluşturur
+// (rastgele şifre) ve bilgileri yalnız o TV'nin çözebileceği şekilde
+// (ECDH + AES-256-GCM) "pair-grant" olarak yollar. Kod, açık anahtarın
+// özetinden türer: araya giren biri kendi anahtarını koyarsa farklı kod çıkar.
+const TV_PAIRING_CHANNEL = "tv-eslestirme";
+const TV_PAIR_INFO = "sita-tv-eslestirme-v1";
+const TV_EMAIL_DOMAIN = "tv.sita-yapi.invalid";
+const PAIRING_TTL_MS = 20_000;
+const MAX_PAIRING_REQUESTS = 20;
+let tvPairingChannel = null;
+let tvPairingWatching = false;
+let onTvPairingCallback = null;
+let pairingPruneTimer = null;
+// `${tvId}:${code}` → { tvId, pub, code, name, version, seenAt }
+const pairingRequests = new Map();
+// Onaylanan istek için gönderilen bilgi; TV kaçırıp tekrar isterse yeniden yollanır.
+const recentGrants = new Map();
+
+export function tvPairingCode(pubB64) {
+  const h = crypto.createHash("sha256").update(Buffer.from(pubB64, "base64")).digest();
+  return String(h.readUInt32BE(0) % 1_000_000).padStart(6, "0");
+}
+
+function tvEmail(tvId) {
+  return `tv-${String(tvId).toLowerCase()}@${TV_EMAIL_DOMAIN}`;
+}
+
+function pendingPairings() {
+  return [...pairingRequests.values()]
+    .sort((a, b) => a.tvId.localeCompare(b.tvId))
+    .map(({ tvId, code, name, version }) => ({ tvId, code, name, version }));
+}
+
+function emitPairings() {
+  onTvPairingCallback?.(pendingPairings());
+}
+
+export function onTvPairingChange(callback) {
+  onTvPairingCallback = callback;
+}
+
+// Yalnız masaüstü çağırır (main.js); mobil API sunucusu TV eşleştirmez.
+export function watchTvPairing() {
+  tvPairingWatching = true;
+  if (tvPairingChannel) return;
+  const channel = supabase.channel(TV_PAIRING_CHANNEL, { config: { broadcast: { self: false, ack: true } } });
+  channel.on("broadcast", { event: "pair-request" }, ({ payload }) => {
+    const tvId = String(payload?.tvId || "").toLowerCase();
+    const pub = String(payload?.pub || "");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(tvId)) return;
+    if (pub.length < 80 || pub.length > 200 || !/^[A-Za-z0-9+/=]+$/.test(pub)) return;
+    const code = tvPairingCode(pub);
+    const key = `${tvId}:${code}`;
+    const grant = recentGrants.get(key);
+    if (grant && Date.now() - grant.at < 120_000) {
+      channel.send({ type: "broadcast", event: "pair-grant", payload: grant.payload }).catch(() => {});
+      return;
+    }
+    const isNew = !pairingRequests.has(key);
+    if (isNew && pairingRequests.size >= MAX_PAIRING_REQUESTS) return;
+    pairingRequests.set(key, {
+      tvId,
+      pub,
+      code,
+      name: String(payload?.name || "TV").slice(0, 40),
+      version: String(payload?.version || "").slice(0, 20),
+      seenAt: Date.now(),
+    });
+    if (isNew) emitPairings();
+  });
+  channel.subscribe((status) => {
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      if (tvPairingChannel === channel) {
+        tvPairingChannel = null;
+        setTimeout(() => tvPairingWatching && watchTvPairing(), 5000);
+      }
+    }
+  });
+  tvPairingChannel = channel;
+  clearInterval(pairingPruneTimer);
+  pairingPruneTimer = setInterval(() => {
+    let changed = false;
+    for (const [key, r] of pairingRequests) {
+      if (Date.now() - r.seenAt > PAIRING_TTL_MS) {
+        pairingRequests.delete(key);
+        changed = true;
+      }
+    }
+    for (const [key, g] of recentGrants) if (Date.now() - g.at > 120_000) recentGrants.delete(key);
+    if (changed) emitPairings();
+  }, 5000);
+}
+
+async function listTvAuthUsers() {
+  const users = [];
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(`TV hesapları okunamadı: ${error.message}`);
+    users.push(...data.users.filter((u) => u.email?.endsWith(`@${TV_EMAIL_DOMAIN}`)));
+    if (data.users.length < 200) break;
+  }
+  return users;
+}
+
+async function listPairedTvIds() {
+  return (await listTvAuthUsers()).map((u) => u.app_metadata?.tvId).filter(Boolean);
+}
+
+function encryptForTv(pubB64, tvId, plaintext) {
+  const tvKey = crypto.createPublicKey({ key: Buffer.from(pubB64, "base64"), format: "der", type: "spki" });
+  if (tvKey.asymmetricKeyType !== "ec" || tvKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
+    throw new Error("TV'nin anahtarı geçersiz.");
+  }
+  const eph = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const shared = crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: tvKey });
+  const key = crypto.createHash("sha256").update(shared).update(TV_PAIR_INFO).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(tvId, "utf8"));
+  const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final(), cipher.getAuthTag()]);
+  return {
+    epk: eph.publicKey.export({ type: "spki", format: "der" }).toString("base64"),
+    iv: iv.toString("base64"),
+    ct: ct.toString("base64"),
+  };
+}
+
+export async function approveTvPairing(tvId, code) {
+  tvId = String(tvId || "").toLowerCase();
+  const key = `${tvId}:${code}`;
+  const req = pairingRequests.get(key);
+  if (!req) throw new Error("Eşleştirme isteği bulunamadı — TV açık mı ve kod ekranda görünüyor mu kontrol edin.");
+  if (!tvPairingChannel) throw new Error("Eşleştirme kanalına bağlı değil — internet bağlantısını kontrol edin.");
+  const email = tvEmail(tvId);
+  const password = crypto.randomBytes(32).toString("base64url");
+  const attrs = { password, email_confirm: true, app_metadata: { role: "tv", tvId } };
+  const existing = (await listTvAuthUsers()).find((u) => u.email?.toLowerCase() === email);
+  const { error } = existing
+    ? await supabase.auth.admin.updateUserById(existing.id, attrs)
+    : await supabase.auth.admin.createUser({ email, ...attrs });
+  if (error) throw new Error(`TV hesabı oluşturulamadı: ${error.message}`);
+  const payload = { tvId, code, ...encryptForTv(req.pub, tvId, JSON.stringify({ email, password })) };
+  const result = await tvPairingChannel.send({ type: "broadcast", event: "pair-grant", payload });
+  if (result !== "ok") throw new Error("TV'ye ulaşılamadı — internet bağlantısını kontrol edin.");
+  recentGrants.set(key, { at: Date.now(), payload });
+  for (const k of [...pairingRequests.keys()]) if (k.startsWith(`${tvId}:`)) pairingRequests.delete(k);
+  emitPairings();
+}
+
+// TV hesabını siler; TV'ye de özel kanaldan haber verilir, ekranı eşleştirmeye döner.
+// (Silinen hesabın elindeki erişim anahtarı en geç 1 saatte geçersizleşir.)
+export async function unpairTv(tvId) {
+  tvId = String(tvId || "").toLowerCase();
+  const user = (await listTvAuthUsers()).find((u) => u.email?.toLowerCase() === tvEmail(tvId));
+  if (tvChannel) await tvChannel.send({ type: "broadcast", event: "unpair", payload: { target: tvId } }).catch(() => {});
+  if (user) {
+    const { error } = await supabase.auth.admin.deleteUser(user.id);
+    if (error) throw new Error(`TV hesabı silinemedi: ${error.message}`);
+  }
 }
 
 // Başka bir bilgisayarın yayını bu bilgisayarınkini ancak aynı TV'ye (ya da
@@ -512,7 +679,11 @@ function setCurrentTvPayload(payload) {
 function subscribeToTvChannel() {
   clearTimeout(tvReconnectTimer);
   if (tvChannel) supabase.removeChannel(tvChannel);
-  const channel = supabase.channel(TV_CHANNEL, { config: { broadcast: { ack: true } } });
+  // ÖZEL kanal: Supabase'de realtime.messages RLS politikası yalnız eşleştirilmiş
+  // TV hesaplarına (app_metadata.role = "tv") izin verir; masaüstü/sunucu servis
+  // anahtarıyla bağlanır. Aynı adlı açık kanal tamamen ayrıdır — anahtarı bilen
+  // biri açık "tv-yayin"a girse de TV'lere ulaşamaz (bkz. docs/TV-ESLESTIRME.md).
+  const channel = supabase.channel(TV_CHANNEL, { config: { private: true, broadcast: { ack: true } } });
   channel.on("broadcast", { event: "show" }, ({ payload }) => {
     if (overlaps(payload?.target)) setCurrentTvPayload(null);
   });

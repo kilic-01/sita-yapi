@@ -194,6 +194,14 @@ contextBridge.exposeInMainWorld("api", {
   refreshRoutesOnTv: (input) => ipcRenderer.invoke("tv:refreshRoutes", input),
   refreshQuoteOnTv: (quote, totals) => ipcRenderer.invoke("tv:refreshQuote", { quote, totals }),
   requestTvUpdateCheck: (actingUserId) => ipcRenderer.invoke("tv:checkUpdate", actingUserId),
+  approveTvPairing: (tvId, code, actingUserId) => ipcRenderer.invoke("tv:approvePairing", { tvId, code, actingUserId }),
+  unpairTv: (tvId, actingUserId) => ipcRenderer.invoke("tv:unpair", { tvId, actingUserId }),
+  // callback({ pairing: [{ tvId, code, name, version }] }) — eşleştirme bekleyen TV'ler
+  onTvPairingChange: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on("tv:pairing", listener);
+    return () => ipcRenderer.removeListener("tv:pairing", listener);
+  },
   // callback({ online: [{ tvId, name, mode, version }] })
   onTvPresenceChange: (callback) => {
     const listener = (_e, payload) => callback(payload);

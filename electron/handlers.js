@@ -1322,6 +1322,18 @@ export async function saveTvDevice(tvId, cfg, actingUserId) {
   return db.saveTvDevice(tvId, clean, actingUserId);
 }
 
+export async function approveTvPairing(tvId, code, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV eşleştirme");
+  if (!/^\d{6}$/.test(String(code || ""))) throw new Error("Geçersiz eşleştirme kodu.");
+  return db.approveTvPairing(tvId, String(code));
+}
+
+export async function unpairTv(tvId, actingUserId) {
+  await db.requireAdmin(actingUserId, "TV eşleşmesini kaldırma");
+  if (!tvId) throw new Error("TV seçilmedi.");
+  return db.unpairTv(tvId);
+}
+
 export async function requestTvUpdateCheck(actingUserId) {
   await db.requireAdmin(actingUserId, "TV güncellemesi");
   return db.requestTvUpdateCheck();
