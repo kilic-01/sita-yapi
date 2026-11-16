@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yalnız DEBUG derlemesi: ofis Mac'indeki test sunucusuna (http://<LAN-IP>:4173)
+     bağlanabilmek için şifresiz bağlantıya izin verilir. Yayın (release) derlemesi
+     yalnız HTTPS kullanır (src/main/AndroidManifest.xml). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
+</manifest>

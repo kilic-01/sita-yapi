@@ -27,7 +27,11 @@ object ApiClient {
     private val isEmulator: Boolean =
         Build.FINGERPRINT.contains("generic") || Build.MODEL.contains("sdk") || Build.PRODUCT.contains("sdk")
 
-    val defaultServerAddress: String = if (isEmulator) "10.0.2.2:4173" else "192.168.1.120:4173"
+    // Gerçek cihaz: canlı sunucu (Render, veri Supabase PROD). Geliştirmede giriş
+    // ekranındaki Sunucu alanına ofis Mac'inin LAN adresi yazılabilir (yalnız debug
+    // derlemesi şifresiz bağlantıya izin verir — src/debug/AndroidManifest.xml).
+    val defaultServerAddress: String =
+        if (isEmulator) "10.0.2.2:4173" else "https://sita-yapi-api.onrender.com"
 
     // Mac'in LAN IP'si Wi-Fi değiştikçe kayıyor — sabit yazılı adreste bu,
     // HER özelliği aynı anda bozup yeniden derleme gerektiriyordu. Artık

@@ -26,8 +26,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Play Store yükleme anahtarı (upload key): iCloud DIŞINDA ~/.sita-android/
+    // upload-keystore.jks; şifre Mac Anahtar Zinciri'nde ("sita-android-upload").
+    // scripts/build-android-release.sh şifreyi ortam değişkenine koyup derler —
+    // anahtar ve şifre depoya ASLA girmez. Google Play App Signing açık olduğu için
+    // bu anahtar kaybolursa Play Console'dan sıfırlanabilir.
+    signingConfigs {
+        release {
+            def ks = System.getenv("SITA_UPLOAD_KEYSTORE") ?: "${System.getProperty('user.home')}/.sita-android/upload-keystore.jks"
+            def pw = System.getenv("SITA_UPLOAD_STORE_PASSWORD")
+            if (pw && file(ks).exists()) {
+                storeFile file(ks)
+                storePassword pw
+                keyAlias "upload"
+                keyPassword pw
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release.storeFile ? signingConfigs.release : null
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
