@@ -228,8 +228,13 @@ function reportRealtimeStatus() {
 
 function subscribeToRealtime() {
   clearTimeout(reconnectTimer);
-  for (const channel of realtimeChannels.values()) supabase.removeChannel(channel);
+  // Önce haritadan çıkarılır, SONRA kapatılır: removeChannel eski kanalın
+  // subscribe geri çağrısını "CLOSED" ile çağırır; harita boşaltılmadan
+  // kapatılırsa bu, yeni bir yeniden bağlanmayı tetikliyor ve kanallar her 5
+  // saniyede bir kapanıp açılan bir döngüye giriyordu (2026-11-17).
+  const old = [...realtimeChannels.values()];
   realtimeChannels.clear();
+  for (const channel of old) supabase.removeChannel(channel);
   realtimeTableStatus.clear();
   for (const table of REALTIME_TABLES) {
     if (realtimeDisabledTables.has(table)) continue;
@@ -253,6 +258,8 @@ function subscribeToRealtime() {
       }
     });
     channel.subscribe((status) => {
+      // Yerine yenisi kurulmuş (ya da kapatılmış) eski kanalın olayları yok sayılır.
+      if (realtimeChannels.get(table) !== channel) return;
       if (realtimeDisabledTables.has(table)) return;
       realtimeTableStatus.set(table, status);
       reportRealtimeStatus();
@@ -678,7 +685,13 @@ function setCurrentTvPayload(payload) {
 
 function subscribeToTvChannel() {
   clearTimeout(tvReconnectTimer);
-  if (tvChannel) supabase.removeChannel(tvChannel);
+  // Eski kanal önce bırakılır, sonra kapatılır — bkz. subscribeToRealtime: kapanan
+  // eski kanalın "CLOSED" olayı yeniden bağlanmayı tetikleyip kanalı her 5 sn'de
+  // bir yeniden kuran bir döngü başlatıyordu; TV'nin "gösterildi" onayı bu arada
+  // kayboluyor, yayın "TV gösteremedi" diye geri çekiliyordu (2026-11-17).
+  const old = tvChannel;
+  tvChannel = null;
+  if (old) supabase.removeChannel(old);
   // ÖZEL kanal: Supabase'de realtime.messages RLS politikası yalnız eşleştirilmiş
   // TV hesaplarına (app_metadata.role = "tv") izin verir; masaüstü/sunucu servis
   // anahtarıyla bağlanır. Aynı adlı açık kanal tamamen ayrıdır — anahtarı bilen
@@ -719,12 +732,14 @@ function subscribeToTvChannel() {
     onTvPresenceCallback?.(onlineTvs);
   });
   tvPresenceSynced = false;
+  tvChannel = channel;
   channel.subscribe((status) => {
+    if (tvChannel !== channel) return;
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      clearTimeout(tvReconnectTimer);
       tvReconnectTimer = setTimeout(subscribeToTvChannel, 5000);
     }
   });
-  tvChannel = channel;
 }
 
 // Kanala yeni katıldıysak (ör. test sunucusu yeni açıldı) bağlı TV listesi
