@@ -1944,3 +1944,21 @@ td {
   background: var(--accent);
   transition: width 0.4s ease;
 }
+
+/* Program widget'ı: yeni eklenen randevu yukarıdan kayarak gelir (bkz. homeWidgets.jsx ProgramWidget). */
+@keyframes schedule-row-enter {
+  0% { opacity: 0; transform: translateY(-14px); max-height: 0; }
+  60% { opacity: 1; transform: translateY(2px); max-height: 120px; }
+  100% { opacity: 1; transform: translateY(0); max-height: 120px; }
+}
+@keyframes schedule-row-glow {
+  0%, 100% { background: transparent; }
+  30% { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+}
+.schedule-row-enter {
+  animation: schedule-row-enter 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both, schedule-row-glow 1.6s ease-out;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .schedule-row-enter { animation: schedule-row-glow 1.6s ease-out; }
+}

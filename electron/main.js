@@ -245,6 +245,11 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("tv:presence", { online });
   });
 
+  // Başka bir bilgisayarın/telefonun TV yayını (durdurma düğmesiz şerit).
+  db.onTvRemoteStateChange((payload) => {
+    mainWindow?.webContents.send("tv:remote", { payload });
+  });
+
   // Eşleştirme bekleyen TV'ler (Ayarlar > TV Ekranları). Yalnız masaüstü dinler.
   db.onTvPairingChange((pairing) => {
     mainWindow?.webContents.send("tv:pairing", { pairing });
@@ -654,6 +659,7 @@ ipcMain.handle("tv:approvePairing", (_e, { tvId, code, actingUserId }) => handle
 ipcMain.handle("tv:unpair", (_e, { tvId, actingUserId }) => handlers.unpairTv(tvId, actingUserId));
 ipcMain.handle("stock:syncVitraImages", (_e, actingUserId) => handlers.syncVitraStockImages(actingUserId));
 ipcMain.handle("tv:current", () => handlers.getCurrentTvPayload());
+ipcMain.handle("tv:remote", () => db.getRemoteTvPayload());
 
 ipcMain.handle("suppliers:list", () => handlers.listSuppliers());
 

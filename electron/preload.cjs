@@ -209,6 +209,13 @@ contextBridge.exposeInMainWorld("api", {
     return () => ipcRenderer.removeListener("tv:presence", listener);
   },
   getCurrentTvPayload: () => ipcRenderer.invoke("tv:current"),
+  // Başka bir bilgisayarın/telefonun TV yayını — callback({ payload })
+  getRemoteTvPayload: () => ipcRenderer.invoke("tv:remote"),
+  onTvRemoteStateChange: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on("tv:remote", listener);
+    return () => ipcRenderer.removeListener("tv:remote", listener);
+  },
   // callback({ payload }) alır — payload null ise bu bilgisayar yayında değil.
   onTvStateChange: (callback) => {
     const listener = (_e, payload) => callback(payload);

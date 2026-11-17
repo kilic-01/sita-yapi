@@ -299,6 +299,10 @@ let tvChannel = null;
 let tvReconnectTimer = null;
 let currentTvPayload = null;
 let onTvStateCallback = null;
+// Başka bir bilgisayarın / telefonun (sunucu üzerinden) şu an TV'deki yayını —
+// bu bilgisayarda durdurma düğmesi olmadan şerit olarak gösterilir.
+let remoteTvPayload = null;
+let onTvRemoteCallback = null;
 // Birden fazla TV: yayınlar seçilen TV'ye (kimliği) ya da hepsine (null) gider.
 let tvTarget = null;
 // Bağlı TV'ler (Supabase presence): [{ tvId, name, mode, version }]
@@ -314,6 +318,19 @@ let tvPresenceSynced = false;
 
 export function onTvStateChange(callback) {
   onTvStateCallback = callback;
+}
+
+export function onTvRemoteStateChange(callback) {
+  onTvRemoteCallback = callback;
+}
+
+export function getRemoteTvPayload() {
+  return remoteTvPayload;
+}
+
+function setRemoteTvPayload(payload) {
+  remoteTvPayload = payload;
+  onTvRemoteCallback?.(payload);
 }
 
 export function onTvPresenceChange(callback) {
@@ -681,6 +698,14 @@ function overlaps(otherTarget) {
 function setCurrentTvPayload(payload) {
   currentTvPayload = payload;
   onTvStateCallback?.(payload);
+  // Bu bilgisayar yayına başladıysa başkasının (artık geçersiz) yayın şeridi kalkar.
+  if (payload && remoteTvPayload && overlapsRemote(payload.target)) setRemoteTvPayload(null);
+}
+
+function overlapsRemote(otherTarget) {
+  if (!remoteTvPayload) return false;
+  const theirs = remoteTvPayload.target ?? null;
+  return theirs === null || (otherTarget ?? null) === null || theirs === otherTarget;
 }
 
 function subscribeToTvChannel() {
@@ -699,9 +724,20 @@ function subscribeToTvChannel() {
   const channel = supabase.channel(TV_CHANNEL, { config: { private: true, broadcast: { ack: true } } });
   channel.on("broadcast", { event: "show" }, ({ payload }) => {
     if (overlaps(payload?.target)) setCurrentTvPayload(null);
+    if (payload?.kind || payload?.product) setRemoteTvPayload(payload);
   });
   channel.on("broadcast", { event: "clear" }, ({ payload }) => {
     if (overlaps(payload?.target)) setCurrentTvPayload(null);
+    if (overlapsRemote(payload?.target)) setRemoteTvPayload(null);
+  });
+  // Sonradan açılan bilgisayar "şu an yayında olan var mı" diye sorar; yayını
+  // yapan (masaüstü ya da mobil API sunucusu) "onair" ile cevaplar. TV bu iki
+  // olayı tanımaz, yok sayar.
+  channel.on("broadcast", { event: "onair-query" }, () => {
+    if (currentTvPayload) channel.send({ type: "broadcast", event: "onair", payload: currentTvPayload }).catch(() => {});
+  });
+  channel.on("broadcast", { event: "onair" }, ({ payload }) => {
+    if (!currentTvPayload && !remoteTvPayload && (payload?.kind || payload?.product)) setRemoteTvPayload(payload);
   });
   // TV (yeniden) bağlandı: ayarlarını ve — bu TV'ye gidiyorsa — yayındaki içeriği yolla.
   // Canlı mobil API sunucusunda kapalı (Dockerfile: SITA_TV_AUTORESPOND=off): TV'yi
@@ -735,6 +771,9 @@ function subscribeToTvChannel() {
   tvChannel = channel;
   channel.subscribe((status) => {
     if (tvChannel !== channel) return;
+    if (status === "SUBSCRIBED") {
+      channel.send({ type: "broadcast", event: "onair-query", payload: {} }).catch(() => {});
+    }
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
       clearTimeout(tvReconnectTimer);
       tvReconnectTimer = setTimeout(subscribeToTvChannel, 5000);

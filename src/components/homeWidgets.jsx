@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
   ChevronLeft,
@@ -342,6 +342,30 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
   );
   const [selectedDay, setSelectedDay] = useState(today);
 
+  // Başka bir cihazdan (ya da bu bilgisayardan) yeni eklenen randevu Program'a
+  // yukarıdan kayarak gelir. İlk yüklemedeki randevular canlandırılmaz.
+  const seenIdsRef = useRef(null);
+  const [freshIds, setFreshIds] = useState(() => new Set());
+  useEffect(() => {
+    const ids = appointments.map((a) => a.id);
+    if (seenIdsRef.current === null) {
+      seenIdsRef.current = new Set(ids);
+      return undefined;
+    }
+    const added = ids.filter((id) => !seenIdsRef.current.has(id));
+    for (const id of ids) seenIdsRef.current.add(id);
+    if (added.length === 0 || added.length > 20) return undefined;
+    setFreshIds((prev) => new Set([...prev, ...added]));
+    const timer = setTimeout(() => {
+      setFreshIds((prev) => {
+        const next = new Set(prev);
+        for (const id of added) next.delete(id);
+        return next;
+      });
+    }, 1600);
+    return () => clearTimeout(timer);
+  }, [appointments]);
+
   // Bu haftada bugün, başka haftada o haftanın pazartesisi seçili gelir.
   function changeWeek(offset) {
     setWeekOffset(offset);
@@ -427,7 +451,7 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
             return (
               <div
                 key={a.id}
-                className="schedule-row"
+                className={freshIds.has(a.id) ? "schedule-row schedule-row-enter" : "schedule-row"}
                 onClick={() => setInfoAppointment(a)}
                 // RouteBuilder'daki tamamlanmış durak stiliyle aynı (opacity
                 // 0.55 + ✔) — tamamlanmış bir iş burada da listeden
