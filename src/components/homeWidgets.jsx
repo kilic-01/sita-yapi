@@ -331,6 +331,41 @@ export function TomorrowAppointmentsWidget({ appointments, onNavigate }) {
   );
 }
 
+// Yeni randevu düşünce çalan kısa, yumuşak üç notalı zil (Do-Mi-Sol; dosya gerekmez —
+// Web Audio ile üretilir). Arka arkaya gelen randevularda en fazla 2 sn'de bir.
+let lastChimeAt = 0;
+function playNewAppointmentChime() {
+  const now = Date.now();
+  if (now - lastChimeAt < 2000) return;
+  lastChimeAt = now;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [
+      { freq: 1046.5, at: 0, dur: 0.6 },
+      { freq: 1318.5, at: 0.11, dur: 0.6 },
+      { freq: 1568, at: 0.22, dur: 0.9 },
+    ];
+    for (const { freq, at, dur } of notes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t0 = ctx.currentTime + at;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.14, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    }
+    setTimeout(() => ctx.close().catch(() => {}), 1600);
+  } catch {
+    // ses çalınamazsa sessiz geç
+  }
+}
+
 export function ProgramWidget({ appointments, technicians, currentUser, onEditAppointment }) {
   const today = todayISO();
   // 0 = bu hafta, -1 = geçen hafta, +1 = gelecek hafta…
@@ -356,13 +391,14 @@ export function ProgramWidget({ appointments, technicians, currentUser, onEditAp
     for (const id of ids) seenIdsRef.current.add(id);
     if (added.length === 0 || added.length > 20) return undefined;
     setFreshIds((prev) => new Set([...prev, ...added]));
+    playNewAppointmentChime();
     const timer = setTimeout(() => {
       setFreshIds((prev) => {
         const next = new Set(prev);
         for (const id of added) next.delete(id);
         return next;
       });
-    }, 1600);
+    }, 12500);
     return () => clearTimeout(timer);
   }, [appointments]);
 
